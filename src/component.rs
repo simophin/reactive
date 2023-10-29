@@ -4,6 +4,10 @@ pub trait Component: 'static {
 
 pub type BoxedComponent = Box<dyn Component>;
 
+pub fn boxed_component(component: impl Component + 'static) -> BoxedComponent {
+    Box::new(component)
+}
+
 impl<F, C> Component for F
 where
     F: FnMut() -> C + 'static,

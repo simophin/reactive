@@ -1,19 +1,15 @@
-use std::{
-    any::Any,
-    cell::RefCell,
-    marker::PhantomData,
-    rc::{Rc, Weak},
-};
+use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
-    node::Node,
-    registry::{Registry, SignalID},
+    node::{Node, WeakNodeRef},
+    registry::SignalID,
     tracker::Tracker,
 };
 
 pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, SignalWriter<T>) {
     let id = Node::with_current(|n| {
         n.expect("create_signal can be only called within the set up phase")
+            .borrow_mut()
             .add_signal()
     });
 
@@ -29,7 +25,7 @@ pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, Sig
         SignalWriter {
             id,
             value: state,
-            registry: Rc::downgrade(&Registry::current()),
+            node: Node::require_current(),
             _marker: PhantomData,
         },
     )
@@ -67,7 +63,7 @@ impl<T: 'static> Signal<T> {
 pub struct SignalWriter<T> {
     id: SignalID,
     value: Rc<SignalValue>,
-    registry: Weak<RefCell<Registry>>,
+    node: WeakNodeRef,
     _marker: PhantomData<T>,
 }
 
@@ -77,7 +73,7 @@ impl<T: 'static> SignalWriter<T> {
     }
 
     pub fn update_with(&self, update: impl FnOnce(&mut T)) {
-        let Some(registry) = self.registry.upgrade() else {
+        let Some(node) = self.node.upgrade() else {
             return;
         };
 
@@ -90,6 +86,6 @@ impl<T: 'static> SignalWriter<T> {
             update(&mut value);
         }
 
-        registry.borrow_mut().notify_signal_changed(self.id);
+        node.borrow_mut().notify_signal_changed(self.id);
     }
 }
