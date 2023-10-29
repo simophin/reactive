@@ -1,17 +1,73 @@
 mod clean_up;
 mod component;
 mod effect;
+mod node;
+mod registry;
 mod render;
 mod signal;
-
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+mod tracker;
+mod util;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{future::pending, time::Duration};
 
-    #[test]
-    fn it_works() {}
+    use tokio::{
+        task::{spawn_local, LocalSet},
+        time::sleep,
+    };
+
+    use crate::{
+        clean_up::on_clean_up,
+        component::Component,
+        effect::create_effect,
+        render::RenderContext,
+        signal::{create_signal, Signal},
+    };
+
+    pub fn app() -> impl Component {
+        let (title, set_title) = create_signal("hello_world");
+
+        create_effect(move || {
+            let set_title = set_title.clone();
+            spawn_local(async move {
+                let mut id = 0;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    set_title.set(format!("hello_world_{}", id));
+                    id += 1;
+                }
+            });
+        });
+
+        on_clean_up(|| {
+            println!("app clean up");
+        });
+
+        move || header(title.clone())
+    }
+
+    pub fn header(title: Signal<String>) {
+        create_effect(move || {
+            println!("Title: {}", title.get());
+        });
+
+        on_clean_up(|| {
+            println!("header clean up");
+        });
+    }
+
+    #[tokio::test]
+    async fn reactive_works() {
+        let set = LocalSet::new();
+        set.run_until(async move {
+            let mounted = RenderContext::new(Box::new(app)).mount();
+
+            sleep(Duration::from_secs(5)).await;
+
+            mounted.unmount();
+            pending::<()>().await;
+        })
+        .await;
+    }
 }

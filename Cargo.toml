@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 derive_more = "0.99.17"
+
+[dev-dependencies]
+tokio = { version = "1.33.0", features = ["full"] }
