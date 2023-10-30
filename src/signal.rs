@@ -1,22 +1,22 @@
 use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
-    node::{NodeRef, WeakNodeRef},
+    node_ref::{NodeRef, WeakNodeRef},
     registry::SignalID,
     tracker::Tracker,
 };
 
-pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, SignalWriter<T>) {
+pub fn create_signal<T: 'static>(initial_value: T) -> (SignalReader<T>, SignalWriter<T>) {
     let id = NodeRef::with_current(|n| {
         n.expect("create_signal can be only called within the set up phase")
             .add_signal()
     });
 
-    let value: Box<dyn Any> = Box::new(initial_value.into());
+    let value: Box<dyn Any> = Box::new(initial_value);
     let state = Rc::new(SignalValue::new(value));
 
     (
-        Signal {
+        SignalReader {
             id,
             value: state.clone(),
             _marker: PhantomData,
@@ -30,31 +30,74 @@ pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, Sig
     )
 }
 
+pub trait Signal: Clone + 'static {
+    type Value: 'static;
+
+    fn get(&self) -> Self::Value
+    where
+        Self::Value: Clone;
+
+    fn with<R>(&self, access: impl FnOnce(&Self::Value) -> R) -> R;
+}
+
+impl<F, T> Signal for F
+where
+    F: Fn() -> T + Clone + 'static,
+    T: 'static,
+{
+    type Value = T;
+
+    #[inline]
+    fn get(&self) -> T
+    where
+        Self::Value: Clone,
+    {
+        self()
+    }
+
+    #[inline]
+    fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
+        access(&self())
+    }
+}
+
 type SignalValue = RefCell<Box<dyn Any>>;
-#[derive(Clone)]
-pub struct Signal<T> {
+
+pub struct SignalReader<T> {
     id: SignalID,
     value: Rc<SignalValue>,
     _marker: PhantomData<T>,
 }
 
-impl<T: 'static> Signal<T> {
+impl<T: 'static> Signal for SignalReader<T> {
+    type Value = T;
+
     #[inline]
-    pub fn get(&self) -> T
+    fn get(&self) -> T
     where
-        T: Clone,
+        Self::Value: Clone,
     {
         self.with(T::clone)
     }
 
     #[inline]
-    pub fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
+    fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
         Tracker::track_signal(self.id);
         self.value
             .borrow()
             .downcast_ref()
             .map(access)
             .expect("Value must be of type T")
+    }
+}
+
+impl<T> Clone for SignalReader<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            value: self.value.clone(),
+            _marker: PhantomData,
+        }
     }
 }
 

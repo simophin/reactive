@@ -1,4 +1,4 @@
-use crate::node::NodeRef;
+use crate::node_ref::NodeRef;
 
 pub fn on_clean_up(clean_up: impl CleanUp) {
     NodeRef::with_current(move |s| {
@@ -11,7 +11,9 @@ pub trait CleanUp: 'static {
     fn clean_up(&mut self);
 }
 
-impl CleanUp for Box<dyn CleanUp> {
+pub type BoxedCleanUp = Box<dyn CleanUp>;
+
+impl CleanUp for BoxedCleanUp {
     fn clean_up(&mut self) {
         self.as_mut().clean_up()
     }

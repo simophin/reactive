@@ -1,5 +1,7 @@
+use crate::setup::SetupContext;
+
 pub trait Component: 'static {
-    fn render(&self, output: &mut Vec<BoxedComponent>);
+    fn setup(&mut self);
 }
 
 pub type BoxedComponent = Box<dyn Component>;
@@ -13,45 +15,45 @@ where
     F: Fn() -> C + 'static,
     C: Component + 'static,
 {
-    fn render(&self, output: &mut Vec<BoxedComponent>) {
+    fn setup(&mut self) {
         let child: BoxedComponent = Box::new(self());
-        output.push(child);
+        SetupContext::with_current(|ctx| ctx.children.push(child));
     }
 }
 
 impl Component for BoxedComponent {
-    fn render(&self, output: &mut Vec<BoxedComponent>) {
-        self.as_ref().render(output);
+    fn setup(&mut self) {
+        self.as_mut().setup();
     }
 }
 
 impl Component for () {
-    fn render(&self, _output: &mut Vec<BoxedComponent>) {}
+    fn setup(&mut self) {}
 }
 
 impl Component for bool {
-    fn render(&self, _output: &mut Vec<BoxedComponent>) {}
+    fn setup(&mut self) {}
 }
 
 impl<C: Component> Component for Option<C> {
-    fn render(&self, output: &mut Vec<BoxedComponent>) {
+    fn setup(&mut self) {
         if let Some(child) = self {
-            child.render(output);
+            child.setup();
         }
     }
 }
 
 impl<C: Component> Component for Vec<C> {
-    fn render(&self, output: &mut Vec<BoxedComponent>) {
+    fn setup(&mut self) {
         for child in self {
-            child.render(output);
+            child.setup();
         }
     }
 }
 impl<C: Component, const N: usize> Component for [C; N] {
-    fn render(&self, output: &mut Vec<BoxedComponent>) {
+    fn setup(&mut self) {
         for child in self {
-            child.render(output);
+            child.setup();
         }
     }
 }

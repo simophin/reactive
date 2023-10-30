@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     effect::{Effect, EffectCleanup},
-    node::{NodeRef, WeakNodeRef},
+    node_ref::{NodeRef, WeakNodeRef},
     tracker::Tracker,
     util::diff::{diff_sorted, DiffResult},
 };

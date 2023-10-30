@@ -1,12 +1,17 @@
 mod clean_up;
 mod component;
+mod core_component;
 mod effect;
-mod node;
+mod node_ref;
 mod registry;
 mod render;
 mod signal;
 mod tracker;
 mod util;
+mod setup;
+mod node;
+mod react_context;
+mod task;
 
 #[cfg(test)]
 mod tests {
@@ -20,24 +25,32 @@ mod tests {
     use crate::{
         clean_up::on_clean_up,
         component::{boxed_component, Component},
+        core_component::Show,
         effect::create_effect,
         render::RenderContext,
         signal::{create_signal, Signal},
     };
 
     pub fn app() -> impl Component {
-        let (title, set_title) = create_signal("hello_world");
-        let (body, set_body) = create_signal("body");
+        let (index, set_index) = create_signal(1usize);
+
+        let title = {
+            let index = index.clone();
+            move || format!("hello_world_{}", index.get())
+        };
+
+        let body = {
+            let index = index.clone();
+            move || format!("body_{}", index.clone().get())
+        };
 
         create_effect(move || {
-            let set_title = set_title.clone();
-            let set_body = set_body.clone();
+            let set_index = set_index.clone();
             spawn_local(async move {
-                let mut id = 0;
+                let mut id = 0usize;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    set_title.set(format!("hello_world_{}", id));
-                    set_body.set(format!("body_{}", id));
+                    set_index.set(id);
                     id += 1;
                 }
             });
@@ -47,13 +60,19 @@ mod tests {
             println!("app clean up");
         });
 
+        let show = Show::new(
+            move || index.get() % 2 == 0,
+            move || content(body.clone()),
+            (),
+        );
+
         vec![
             boxed_component(move || header(title.clone())),
-            boxed_component(move || content(body.clone())),
+            boxed_component(show),
         ]
     }
 
-    pub fn header(title: Signal<String>) {
+    pub fn header(title: impl Signal<Value = String>) {
         create_effect(move || {
             println!("Title: {}", title.get());
         });
@@ -63,11 +82,11 @@ mod tests {
         });
     }
 
-    pub fn content(body: Signal<String>) {
+    pub fn content(body: impl Signal<Value = String>) {
         create_effect(move || {
-            println!("Body: {}", body.get());
+            println!("content: {}", body.get());
 
-            || println!("Body clean up")
+            || println!("content effect clean up")
         });
 
         on_clean_up(|| {

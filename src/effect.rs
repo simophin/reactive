@@ -1,4 +1,4 @@
-use crate::node::NodeRef;
+use crate::node_ref::NodeRef;
 
 pub fn create_effect(func: impl Effect) {
     NodeRef::with_current(|s| {
@@ -10,7 +10,9 @@ pub trait Effect: 'static {
     fn run(&mut self) -> Box<dyn EffectCleanup>;
 }
 
-impl Effect for Box<dyn Effect> {
+pub type BoxedEffect = Box<dyn Effect>;
+
+impl Effect for BoxedEffect {
     fn run(&mut self) -> Box<dyn EffectCleanup> {
         self.as_mut().run()
     }
