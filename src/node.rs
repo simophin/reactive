@@ -1,6 +1,3 @@
-mod init;
-mod mounting;
-
 use std::{
     cell::{Ref, RefCell, RefMut},
     rc::{Rc, Weak},
@@ -10,9 +7,7 @@ use crate::{
     clean_up::CleanUp,
     component::BoxedComponent,
     effect::Effect,
-    registry::{self, EffectID, EffectStateRef, Registry, RegistryRef, SignalID},
-    tracker::Tracker,
-    util::diff::{self, diff_sorted, DiffResult},
+    registry::{EffectID, Registry, RegistryRef, SignalID},
 };
 
 thread_local! {
