@@ -1,18 +1,12 @@
-
-pub struct DiffResult<T> {
-    pub added: Vec<T>,
-    pub removed: Vec<T>,
-}
-
-pub fn diff_sorted<T>(
-    old: impl Iterator<Item = T>,
-    new: impl Iterator<Item = T>
-) -> DiffResult<T> where T: Ord + Eq {
+pub fn diff_sorted<T>(old: impl Iterator<Item = T>, new: impl Iterator<Item = T>) -> DiffResult<T>
+where
+    T: Ord + Eq,
+{
     let mut old = old.peekable();
     let mut new = new.peekable();
 
-    let mut added = Vec::new();
-    let mut removed = Vec::new();
+    let mut added: Vec<_> = Default::default();
+    let mut removed: Vec<_> = Default::default();
 
     loop {
         match (old.peek(), new.peek()) {
@@ -39,4 +33,17 @@ pub fn diff_sorted<T>(
     }
 
     DiffResult { added, removed }
+}
+
+#[derive(Default)]
+pub struct DiffResult<T> {
+    pub added: Vec<T>,
+    pub removed: Vec<T>,
+}
+
+impl<T> DiffResult<T> {
+    pub fn clear(&mut self) {
+        self.added.clear();
+        self.removed.clear();
+    }
 }

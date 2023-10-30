@@ -1,15 +1,14 @@
 use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
-    node::{Node, WeakNodeRef},
+    node::{NodeRef, WeakNodeRef},
     registry::SignalID,
     tracker::Tracker,
 };
 
 pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, SignalWriter<T>) {
-    let id = Node::with_current(|n| {
+    let id = NodeRef::with_current(|n| {
         n.expect("create_signal can be only called within the set up phase")
-            .borrow_mut()
             .add_signal()
     });
 
@@ -25,7 +24,7 @@ pub fn create_signal<T: 'static>(initial_value: impl Into<T>) -> (Signal<T>, Sig
         SignalWriter {
             id,
             value: state,
-            node: Node::require_current(),
+            node: NodeRef::require_current(),
             _marker: PhantomData,
         },
     )
@@ -86,6 +85,6 @@ impl<T: 'static> SignalWriter<T> {
             update(&mut value);
         }
 
-        node.borrow_mut().notify_signal_changed(self.id);
+        node.notify_signal_changed(self.id);
     }
 }

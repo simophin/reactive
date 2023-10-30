@@ -66,6 +66,8 @@ mod tests {
     pub fn content(body: Signal<String>) {
         create_effect(move || {
             println!("Body: {}", body.get());
+
+            || println!("Body clean up")
         });
 
         on_clean_up(|| {
