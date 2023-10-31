@@ -1,49 +1,52 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{
+    component::{boxed_component, BoxedComponent, Component, ComponentFactory},
+    effect_context::EffectContext,
+    setup_context::SetupContext,
+};
 
-use crate::{component::Component, effect::create_effect, node_ref::NodeRef};
+pub struct Show<F, CS, CF>(Option<ShowData<F, CS, CF>>);
 
-pub struct Show<F, CS, CF> {
-    test: Rc<RefCell<F>>,
-    success: Rc<RefCell<CS>>,
-    fail: Rc<RefCell<CF>>,
+struct ShowData<F, CS, CF> {
+    test: F,
+    success: CS,
+    fail: CF,
 }
 
-impl<F, CS, CF> Show<F, CS, CF> {
-    pub fn new(test: F, success: CS, fail: CF) -> Self {
-        Self {
-            test: Rc::new(RefCell::new(test)),
-            success: Rc::new(RefCell::new(success)),
-            fail: Rc::new(RefCell::new(fail)),
-        }
+impl<F, CS, CF> Show<F, CS, CF>
+where
+    F: FnMut() -> bool + 'static,
+    CS: ComponentFactory,
+    CF: ComponentFactory,
+{
+    pub fn new(test: F, success: CS, fail: CF) -> BoxedComponent {
+        boxed_component(Self(Some(ShowData {
+            test,
+            success,
+            fail,
+        })))
     }
 }
 
 impl<F, CS, CF> Component for Show<F, CS, CF>
 where
     F: FnMut() -> bool + 'static,
-    CS: Component,
-    CF: Component,
+    CS: ComponentFactory,
+    CF: ComponentFactory,
 {
-    fn setup(&mut self, _output: &mut Vec<Box<dyn Component>>) {
-        let test = self.test.clone();
-        let success = self.success.clone();
-        let fail = self.fail.clone();
-        create_effect(move || {
-            let mut children = Vec::with_capacity(1);
+    fn setup(&mut self, ctx: &mut SetupContext) {
+        let mut data = self
+            .0
+            .take()
+            .expect("Setup called twice for Show component");
 
-            if test.borrow_mut()() {
-                success.borrow_mut().setup(&mut children);
+        ctx.create_effect(move |ctx: &mut EffectContext| {
+            let child: BoxedComponent = if (data.test)() {
+                Box::new(data.success.create())
             } else {
-                fail.borrow_mut().setup(&mut children);
-            }
+                Box::new(data.fail.create())
+            };
 
-            NodeRef::with_current(move |node| {
-                let node = node.expect("To have current node");
-                node.remove_all_children();
-                for child in children {
-                    node.append_child(child);
-                }
-            })
+            ctx.queue_children_replacement(vec![child])
         });
     }
 }

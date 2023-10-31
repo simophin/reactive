@@ -1,10 +1,11 @@
+use futures::{channel::mpsc, Future};
+
 use crate::{
     clean_up::BoxedCleanUp,
     component::BoxedComponent,
     effect::BoxedEffect,
-    react_context::ReactiveContext,
-    registry::{EffectID, SignalID},
-    setup::SetupContext,
+    react_context::{EffectID, ReactiveContext, SignalID},
+    setup_context::SetupContext,
 };
 
 pub struct Node {
@@ -16,28 +17,29 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn setup_from(mut component: BoxedComponent) -> Self {
-        SetupContext::set_current(Some(Default::default()));
+    pub fn setup_from(
+        signal_change_sender: mpsc::Sender<SignalID>,
+        mut component: BoxedComponent,
+    ) -> Self {
+        let mut ctx = SetupContext::new(signal_change_sender);
+        component.setup(&mut ctx);
 
-        component.setup();
-
-        let SetupContext {
-            effects,
-            signals,
-            clean_ups,
-            children,
-        } = SetupContext::set_current(None).expect("To have setup context set before");
+        let signal_change_sender = ctx.signal_change_sender;
 
         Self {
-            effects,
-            signals,
-            clean_ups,
+            effects: ctx.effects,
+            signals: ctx.signals,
+            clean_ups: ctx.clean_ups,
             component,
-            children: children.into_iter().map(Self::setup_from).collect(),
+            children: ctx
+                .children
+                .into_iter()
+                .map(|child| Self::setup_from(signal_change_sender.clone(), child))
+                .collect(),
         }
     }
 
-    pub fn mount(self, ctx: &mut ReactiveContext) -> MountedNode {
+    pub fn mount(self, ctx: &mut ReactiveContext<impl Future>) -> MountedNode {
         let children = self.children.into_iter().map(|c| c.mount(ctx)).collect();
 
         let mut effects = vec![];
@@ -66,7 +68,7 @@ pub struct MountedNode {
 }
 
 impl MountedNode {
-    pub fn unmount(self, ctx: &mut ReactiveContext) -> BoxedComponent {
+    pub fn unmount(self, ctx: &mut ReactiveContext<impl Future>) -> BoxedComponent {
         for child in self.children.into_iter() {
             child.unmount(ctx);
         }

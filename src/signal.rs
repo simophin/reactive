@@ -1,34 +1,11 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{any::Any, marker::PhantomData, sync::Arc};
+
+use parking_lot::RwLock;
 
 use crate::{
-    node_ref::{NodeRef, WeakNodeRef},
-    registry::SignalID,
+    react_context::{SignalID, SignalNotifier},
     tracker::Tracker,
 };
-
-pub fn create_signal<T: 'static>(initial_value: T) -> (SignalReader<T>, SignalWriter<T>) {
-    let id = NodeRef::with_current(|n| {
-        n.expect("create_signal can be only called within the set up phase")
-            .add_signal()
-    });
-
-    let value: Box<dyn Any> = Box::new(initial_value);
-    let state = Rc::new(SignalValue::new(value));
-
-    (
-        SignalReader {
-            id,
-            value: state.clone(),
-            _marker: PhantomData,
-        },
-        SignalWriter {
-            id,
-            value: state,
-            node: NodeRef::require_current(),
-            _marker: PhantomData,
-        },
-    )
-}
 
 pub trait Signal: Clone + 'static {
     type Value: 'static;
@@ -61,12 +38,32 @@ where
     }
 }
 
-type SignalValue = RefCell<Box<dyn Any>>;
+type SignalValue = Arc<RwLock<Box<dyn Any>>>;
 
 pub struct SignalReader<T> {
     id: SignalID,
-    value: Rc<SignalValue>,
+    value: SignalValue,
     _marker: PhantomData<T>,
+}
+
+pub fn signal_pair<T: 'static>(
+    id: SignalID,
+    value: T,
+    notifier: SignalNotifier,
+) -> (SignalReader<T>, SignalWriter<T>) {
+    let value = SignalValue::new(RwLock::new(Box::new(value)));
+    (
+        SignalReader {
+            id,
+            value: value.clone(),
+            _marker: PhantomData,
+        },
+        SignalWriter {
+            value,
+            notifier,
+            _marker: PhantomData,
+        },
+    )
 }
 
 impl<T: 'static> Signal for SignalReader<T> {
@@ -84,7 +81,7 @@ impl<T: 'static> Signal for SignalReader<T> {
     fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
         Tracker::track_signal(self.id);
         self.value
-            .borrow()
+            .read()
             .downcast_ref()
             .map(access)
             .expect("Value must be of type T")
@@ -103,24 +100,26 @@ impl<T> Clone for SignalReader<T> {
 
 #[derive(Clone)]
 pub struct SignalWriter<T> {
-    id: SignalID,
-    value: Rc<SignalValue>,
-    node: WeakNodeRef,
+    value: SignalValue,
+    notifier: SignalNotifier,
     _marker: PhantomData<T>,
 }
 
 impl<T: 'static> SignalWriter<T> {
-    pub fn set(&self, value: impl Into<T>) {
-        self.update_with(|v| *v = value.into());
+    pub fn set(&mut self, value: T)
+    where
+        T: Eq,
+    {
+        self.update_with(|old_value| {
+            let changed = old_value != &value;
+            *old_value = value;
+            changed
+        });
     }
 
-    pub fn update_with(&self, update: impl FnOnce(&mut T)) {
-        let Some(node) = self.node.upgrade() else {
-            return;
-        };
-
+    pub fn update_with(&mut self, update: impl FnOnce(&mut T) -> bool) {
         {
-            let mut value = self.value.borrow_mut();
+            let mut value = self.value.write();
             let mut value = value
                 .downcast_mut::<T>()
                 .expect("Value must be of type T during signal update");
@@ -128,6 +127,6 @@ impl<T: 'static> SignalWriter<T> {
             update(&mut value);
         }
 
-        node.notify_signal_changed(self.id);
+        self.notifier.notify_changed();
     }
 }

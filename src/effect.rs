@@ -1,30 +1,24 @@
-use crate::node_ref::NodeRef;
+use crate::effect_context::EffectContext;
 
-pub fn create_effect(func: impl Effect) {
-    NodeRef::with_current(|s| {
-        s.expect("create_effect can be only called within the set up phase")
-            .add_effect(func);
-    });
-}
 pub trait Effect: 'static {
-    fn run(&mut self) -> Box<dyn EffectCleanup>;
+    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup>;
 }
 
 pub type BoxedEffect = Box<dyn Effect>;
 
 impl Effect for BoxedEffect {
-    fn run(&mut self) -> Box<dyn EffectCleanup> {
-        self.as_mut().run()
+    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup> {
+        self.as_mut().run(ctx)
     }
 }
 
 impl<F, C> Effect for F
 where
-    F: FnMut() -> C + 'static,
+    F: for<'a> FnMut(&'a mut EffectContext) -> C + 'static,
     C: EffectCleanup,
 {
-    fn run(&mut self) -> Box<dyn EffectCleanup> {
-        Box::new(self())
+    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup> {
+        Box::new(self(ctx))
     }
 }
 

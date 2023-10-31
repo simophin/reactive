@@ -2,37 +2,33 @@ mod clean_up;
 mod component;
 mod core_component;
 mod effect;
-mod node_ref;
-mod registry;
-mod render;
-mod signal;
-mod tracker;
-mod util;
-mod setup;
+mod effect_context;
 mod node;
 mod react_context;
+mod render;
+mod setup_context;
+mod signal;
 mod task;
+mod tracker;
+mod util;
 
 #[cfg(test)]
 mod tests {
-    use std::{future::pending, time::Duration};
+    use std::future::pending;
 
-    use tokio::{
-        task::{spawn_local, LocalSet},
-        time::sleep,
-    };
+    use tokio::task::{spawn_local, LocalSet};
 
     use crate::{
-        clean_up::on_clean_up,
         component::{boxed_component, Component},
         core_component::Show,
-        effect::create_effect,
+        effect_context::EffectContext,
         render::RenderContext,
-        signal::{create_signal, Signal},
+        setup_context::SetupContext,
+        signal::Signal,
     };
 
-    pub fn app() -> impl Component {
-        let (index, set_index) = create_signal(1usize);
+    pub fn app(ctx: &mut SetupContext) -> impl Component {
+        let (index, set_index) = ctx.create_signal(1usize);
 
         let title = {
             let index = index.clone();
@@ -44,8 +40,8 @@ mod tests {
             move || format!("body_{}", index.clone().get())
         };
 
-        create_effect(move || {
-            let set_index = set_index.clone();
+        ctx.create_effect(move |_: &mut _| {
+            let mut set_index = set_index.clone();
             spawn_local(async move {
                 let mut id = 0usize;
                 loop {
@@ -56,40 +52,43 @@ mod tests {
             });
         });
 
-        on_clean_up(|| {
+        ctx.on_clean_up(|| {
             println!("app clean up");
         });
 
         let show = Show::new(
             move || index.get() % 2 == 0,
-            move || content(body.clone()),
-            (),
+            move || {
+                let body = body.clone();
+                move |ctx: &mut SetupContext| content(ctx, body.clone())
+            },
+            || (),
         );
 
         vec![
-            boxed_component(move || header(title.clone())),
+            boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
             boxed_component(show),
         ]
     }
 
-    pub fn header(title: impl Signal<Value = String>) {
-        create_effect(move || {
+    pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) {
+        ctx.create_effect(move |_: &mut EffectContext| {
             println!("Title: {}", title.get());
         });
 
-        on_clean_up(|| {
+        ctx.on_clean_up(|| {
             println!("header clean up");
         });
     }
 
-    pub fn content(body: impl Signal<Value = String>) {
-        create_effect(move || {
+    pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
+        ctx.create_effect(move |ctx: &mut _| {
             println!("content: {}", body.get());
 
             || println!("content effect clean up")
         });
 
-        on_clean_up(|| {
+        ctx.on_clean_up(|| {
             println!("content clean up");
         });
     }
@@ -98,9 +97,9 @@ mod tests {
     async fn reactive_works() {
         let set = LocalSet::new();
         set.run_until(async move {
-            let mounted = RenderContext::new(Box::new(app)).mount();
+            let mut mounted = RenderContext::new(Box::new(app)).setup().mount();
 
-            sleep(Duration::from_secs(5)).await;
+            mounted.wait().await;
 
             mounted.unmount();
             pending::<()>().await;

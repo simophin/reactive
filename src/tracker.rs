@@ -2,7 +2,7 @@ use derive_more::{Deref, DerefMut};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use crate::registry::SignalID;
+use crate::react_context::SignalID;
 
 thread_local! {
     static CURRENT_TRACKER: RefCell<Option<Tracker>> = RefCell::new(None);

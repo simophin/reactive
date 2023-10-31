@@ -1,133 +1,93 @@
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    task::Waker,
+    collections::{BTreeSet, HashMap},
+    pin::{pin, Pin},
+    rc::Rc,
+    task::{Context, Poll},
 };
 
+use async_broadcast::Sender;
+use futures::Future;
 use linked_hash_set::LinkedHashSet;
 
 use crate::{
     effect::{BoxedEffect, EffectCleanup},
-    registry::{EffectID, SignalID},
-    task::Task,
+    effect_context::EffectContext,
+    task::WeakTask,
     tracker::Tracker,
-    util::diff::{diff_sorted, DiffResult},
+    util::{
+        diff::{diff_sorted, DiffResult},
+        mpsc,
+    },
 };
 
-#[derive(Default)]
-pub struct ReactiveContext {
+pub type SignalID = usize;
+pub type EffectID = usize;
+
+pub struct ReactiveContext<F> {
     effect_id_seq: EffectID,
-    effects: HashMap<EffectID, EffectState>,
+    effects: HashMap<EffectID, EffectStateRef>,
     signal_deps: HashMap<SignalID, LinkedHashSet<EffectID>>,
-    waker: Option<Waker>,
-    pending_tasks: VecDeque<Task>,
-    pending_effect_runs: LinkedHashSet<EffectID>,
+
+    task_sender: mpsc::Sender<WeakTask>,
+
+    running_future: F,
 }
 
-thread_local! {
-    static CURRENT: RefCell<Option<ReactiveContext>> = Default::default();
+impl<F> ReactiveContext<F> {
+    pub fn new() -> ReactiveContext<impl Future + 'static> {
+        let (task_sender, mut task_rx) = mpsc::channel(512);
+
+        ReactiveContext {
+            effect_id_seq: 0,
+            effects: Default::default(),
+            signal_deps: Default::default(),
+            task_sender,
+            running_future: async move {
+                while let Some(task) = task_rx.next().await {
+                    task.await;
+                }
+            },
+        }
+    }
 }
 
-impl ReactiveContext {
-    pub fn set_current(context: Option<ReactiveContext>) -> Option<ReactiveContext> {
-        CURRENT.with(|current| current.replace(context))
-    }
-
-    pub fn with_current<T>(f: impl FnOnce(&mut ReactiveContext) -> T) -> T {
-        CURRENT.with(move |current| {
-            let mut current = current.borrow_mut();
-            f(current
-                .as_mut()
-                .expect("To have reactive context set before"))
-        })
-    }
-}
-
-impl ReactiveContext {
-    pub fn set_waker(&mut self, waker: &Waker) {
-        self.waker.replace(waker.clone());
-    }
-
+impl<F> ReactiveContext<F> {
     pub fn new_effect(&mut self, effect: BoxedEffect) -> EffectID {
         let id = self.effect_id_seq;
         self.effect_id_seq += 1;
         self.effects.insert(
             id,
-            EffectState {
+            Rc::new(RefCell::new(EffectState {
                 id,
                 effect,
                 last_clean_up: None,
                 last_tracked_signals: Default::default(),
-            },
+            })),
         );
         id
     }
 
-    pub fn remove_effect(&mut self, id: EffectID) {
-        self.pending_effect_runs.remove(&id);
-        let Some(mut effect) = self.effects.remove(&id) else {
-            return;
-        };
-
-        for signal in effect.last_tracked_signals {
-            self.remove_signal_dep(id, signal);
-        }
+    pub fn poll(&mut self) -> ReactiveContextPoll<'_, F> {
+        ReactiveContextPoll { ctx: self }
     }
+}
 
-    pub fn push_task(&mut self, task: Task) {
-        self.pending_tasks.push_back(task);
-        self.waker.wake_by_ref();
-    }
+pub struct ReactiveContextPoll<'a, F> {
+    ctx: &'a mut ReactiveContext<F>,
+}
 
-    pub fn pop_task(&mut self) -> Option<Task> {
-        self.pending_tasks.pop_front()
-    }
+impl<'a, F: Future> Future for ReactiveContextPoll<'a, F>
+where
+    F: Future,
+{
+    type Output = ();
 
-    pub fn run_pending_effects(&mut self) {
-        for id in self.pending_effect_runs.iter() {
-            let effect = self.effects.get_mut(id).expect("To have effect");
-            let diff = effect.run();
-            self.update_signal_deps(*id, diff);
-        }
-    }
-
-    pub fn schedule_effect_run(&mut self, id: EffectID) {
-        self.pending_effect_runs.insert(id);
-        self.waker.wake_by_ref();
-    }
-
-    pub fn notify_signal_read(&mut self, signal: SignalID) {
-        if let Some(deps) = self.signal_deps.get(&signal) {
-            for id in deps.iter().cloned() {
-                self.pending_effect_runs.insert(id);
-            }
-
-            if !deps.is_empty() {
-                self.waker.wake_by_ref();
-            }
-        }
-    }
-
-    pub fn update_signal_deps(&mut self, id: EffectID, diff: DiffResult<SignalID>) {
-        let DiffResult { added, removed } = diff;
-
-        for signal_id in added {
-            self.signal_deps.entry(signal_id).or_default().insert(id);
-        }
-
-        for signal_id in removed {
-            self.remove_signal_dep(id, signal_id);
-        }
-    }
-
-    fn remove_signal_dep(&mut self, effect: EffectID, signal: SignalID) {
-        if let Some(deps) = self.signal_deps.get_mut(&signal) {
-            deps.remove(&effect);
-
-            if deps.is_empty() {
-                self.signal_deps.remove(&signal);
-            }
-        }
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut future = &mut self.ctx.running_future;
+        pin!(future);
+        // Pin::new(future).poll(cx)
+        todo!()
     }
 }
 
@@ -138,14 +98,17 @@ pub struct EffectState {
     pub last_tracked_signals: BTreeSet<SignalID>,
 }
 
+pub type EffectStateRef = Rc<RefCell<EffectState>>;
+
 impl EffectState {
-    fn run(&mut self) -> DiffResult<SignalID> {
+    pub fn run(&mut self) -> DiffResult<SignalID> {
         if let Some(mut clean_up) = self.last_clean_up.take() {
             clean_up.cleanup();
         }
 
+        let mut ctx = EffectContext::new();
         Tracker::set_current(Some(Default::default()));
-        self.last_clean_up.replace(self.effect.run());
+        self.last_clean_up.replace(self.effect.run(&mut ctx));
         let tracker = Tracker::set_current(None).expect("To have tracker set before");
 
         let result = diff_sorted(
@@ -162,6 +125,24 @@ impl Drop for EffectState {
     fn drop(&mut self) {
         if let Some(mut clean_up) = self.last_clean_up.take() {
             clean_up.cleanup();
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SignalNotifier(SignalID, Sender<SignalID>);
+
+impl SignalNotifier {
+    pub fn new(id: SignalID, sender: Sender<SignalID>) -> Self {
+        Self(id, sender)
+    }
+
+    pub fn notify_changed(&mut self) {
+        match self.1.try_broadcast(self.0) {
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("Unable to delivery signal changes due to: {e:?}");
+            }
         }
     }
 }
