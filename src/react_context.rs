@@ -1,131 +1,113 @@
 use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    pin::{pin, Pin},
-    rc::Rc,
+    pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 
-use async_broadcast::Sender;
+use async_broadcast::{Receiver, Sender};
 use futures::Future;
-use linked_hash_set::LinkedHashSet;
 
 use crate::{
-    effect::{BoxedEffect, EffectCleanup},
-    effect_context::EffectContext,
-    task::WeakTask,
-    tracker::Tracker,
-    util::{
-        diff::{diff_sorted, DiffResult},
-        mpsc,
-    },
+    component::Component,
+    effect_run::EffectRun,
+    node::Node,
+    setup_context::SetupContext,
+    tasks_queue::{TaskQueue, TaskQueueHandle},
 };
 
 pub type SignalID = usize;
-pub type EffectID = usize;
+pub type NodeID = usize;
 
-pub struct ReactiveContext<F> {
-    effect_id_seq: EffectID,
-    effects: HashMap<EffectID, EffectStateRef>,
-    signal_deps: HashMap<SignalID, LinkedHashSet<EffectID>>,
+pub struct ReactiveContext {
+    tasks: TaskQueue,
+    signal_receiver: Receiver<SignalID>,
+    signal_sender: Sender<SignalID>,
 
-    task_sender: mpsc::Sender<WeakTask>,
-
-    running_future: F,
+    root: Option<Node>,
 }
 
-impl<F> ReactiveContext<F> {
-    pub fn new() -> ReactiveContext<impl Future + 'static> {
-        let (task_sender, mut task_rx) = mpsc::channel(512);
+impl Default for ReactiveContext {
+    fn default() -> Self {
+        let (signal_sender, signal_receiver) = async_broadcast::broadcast(256);
 
-        ReactiveContext {
-            effect_id_seq: 0,
-            effects: Default::default(),
-            signal_deps: Default::default(),
-            task_sender,
-            running_future: async move {
-                while let Some(task) = task_rx.next().await {
-                    task.await;
-                }
-            },
+        Self {
+            tasks: TaskQueue::default(),
+            root: Default::default(),
+            signal_receiver,
+            signal_sender,
         }
     }
 }
 
-impl<F> ReactiveContext<F> {
-    pub fn new_effect(&mut self, effect: BoxedEffect) -> EffectID {
-        let id = self.effect_id_seq;
-        self.effect_id_seq += 1;
-        self.effects.insert(
-            id,
-            Rc::new(RefCell::new(EffectState {
-                id,
-                effect,
-                last_clean_up: None,
-                last_tracked_signals: Default::default(),
-            })),
-        );
-        id
-    }
-
-    pub fn poll(&mut self) -> ReactiveContextPoll<'_, F> {
+impl ReactiveContext {
+    pub fn poll(&mut self) -> ReactiveContextPoll<'_> {
         ReactiveContextPoll { ctx: self }
     }
+
+    pub fn signal_receiver(&self) -> Receiver<SignalID> {
+        self.signal_receiver.clone()
+    }
+
+    pub fn task_queue_handle(&self) -> TaskQueueHandle {
+        self.tasks.handle()
+    }
+
+    pub fn set_root(&mut self, node: Option<Node>) {
+        self.root = node;
+    }
+
+    pub fn mount_node(&mut self, mut component: impl Component) -> Node {
+        let mut ctx = SetupContext::new(self.signal_sender.clone());
+        component.setup(&mut ctx);
+
+        let node_id = ctx.node_id();
+
+        // Set up children first
+        let children = ctx
+            .children
+            .into_iter()
+            .map(|c| self.mount_node(c))
+            .collect();
+
+        // Setup effects
+        let effects = ctx
+            .effects
+            .into_iter()
+            .map(|e| EffectRun::new(self.task_queue_handle(), self.signal_receiver(), e))
+            .collect();
+
+        Node {
+            id: node_id,
+            effects,
+            clean_ups: ctx.clean_ups,
+            children,
+        }
+    }
+
+    pub fn find_node(&mut self, id: NodeID) -> Option<&mut Node> {
+        self.root.as_mut().and_then(|root| root.find_by(id))
+    }
 }
 
-pub struct ReactiveContextPoll<'a, F> {
-    ctx: &'a mut ReactiveContext<F>,
+pub struct ReactiveContextPoll<'a> {
+    ctx: &'a mut ReactiveContext,
 }
 
-impl<'a, F: Future> Future for ReactiveContextPoll<'a, F>
-where
-    F: Future,
-{
+impl<'a> Future for ReactiveContextPoll<'a> {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut future = &mut self.ctx.running_future;
-        pin!(future);
-        // Pin::new(future).poll(cx)
-        todo!()
-    }
-}
+        self.ctx.tasks.apply_pending(cx);
 
-pub struct EffectState {
-    pub id: EffectID,
-    pub effect: BoxedEffect,
-    pub last_clean_up: Option<Box<dyn EffectCleanup>>,
-    pub last_tracked_signals: BTreeSet<SignalID>,
-}
+        let mut tasks = vec![];
+        std::mem::swap(&mut self.ctx.tasks.active, &mut tasks);
 
-pub type EffectStateRef = Rc<RefCell<EffectState>>;
+        // Poll all the task and remove the completed ones
+        tasks.retain_mut(|t| Pin::new(t).poll(cx, self.ctx).is_pending());
 
-impl EffectState {
-    pub fn run(&mut self) -> DiffResult<SignalID> {
-        if let Some(mut clean_up) = self.last_clean_up.take() {
-            clean_up.cleanup();
-        }
+        std::mem::swap(&mut self.ctx.tasks.active, &mut tasks);
 
-        let mut ctx = EffectContext::new();
-        Tracker::set_current(Some(Default::default()));
-        self.last_clean_up.replace(self.effect.run(&mut ctx));
-        let tracker = Tracker::set_current(None).expect("To have tracker set before");
-
-        let result = diff_sorted(
-            self.last_tracked_signals.iter().cloned(),
-            tracker.iter().cloned(),
-        );
-
-        self.last_tracked_signals = tracker.into_inner();
-        result
-    }
-}
-
-impl Drop for EffectState {
-    fn drop(&mut self) {
-        if let Some(mut clean_up) = self.last_clean_up.take() {
-            clean_up.cleanup();
-        }
+        Poll::Pending
     }
 }
 
@@ -137,6 +119,10 @@ impl SignalNotifier {
         Self(id, sender)
     }
 
+    pub fn signal_id(&self) -> SignalID {
+        self.0
+    }
+
     pub fn notify_changed(&mut self) {
         match self.1.try_broadcast(self.0) {
             Ok(_) => {}
@@ -145,4 +131,20 @@ impl SignalNotifier {
             }
         }
     }
+}
+
+pub fn new_signal_id() -> SignalID {
+    lazy_static::lazy_static! {
+        static ref SIGNAL_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
+    }
+
+    SIGNAL_ID_SEQ.fetch_add(1, Ordering::SeqCst)
+}
+
+pub fn new_node_id() -> NodeID {
+    lazy_static::lazy_static! {
+        static ref NODE_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
+    }
+
+    NODE_ID_SEQ.fetch_add(1, Ordering::SeqCst)
 }

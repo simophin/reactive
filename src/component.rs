@@ -2,6 +2,10 @@ use crate::setup_context::SetupContext;
 
 pub trait Component: 'static {
     fn setup(&mut self, ctx: &mut SetupContext);
+
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 pub type BoxedComponent = Box<dyn Component>;

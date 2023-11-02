@@ -1,7 +1,10 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::{
     component::{boxed_component, BoxedComponent, Component, ComponentFactory},
     effect_context::EffectContext,
     setup_context::SetupContext,
+    task::Task,
 };
 
 pub struct Show<F, CS, CF>(Option<ShowData<F, CS, CF>>);
@@ -39,14 +42,39 @@ where
             .take()
             .expect("Setup called twice for Show component");
 
+        let last_success = AtomicBool::new((data.test)());
+
+        ctx.children.push(if last_success.load(Ordering::Relaxed) {
+            Box::new(data.success.create())
+        } else {
+            Box::new(data.fail.create())
+        });
+
+        let node_id = ctx.node_id();
+
         ctx.create_effect(move |ctx: &mut EffectContext| {
-            let child: BoxedComponent = if (data.test)() {
+            let new_success = (data.test)();
+            if new_success == last_success.load(Ordering::Relaxed) {
+                return None;
+            }
+
+            let child: BoxedComponent = if new_success {
                 Box::new(data.success.create())
             } else {
                 Box::new(data.fail.create())
             };
 
-            ctx.queue_children_replacement(vec![child])
+            let (task, handle) = Task::new_reactive_context(move |r| {
+                let child = r.mount_node(child);
+                if let Some(node) = r.find_node(node_id) {
+                    node.children.clear();
+                    node.children.push(child);
+                }
+            });
+
+            let _ = ctx.task_queue_handle.queue_task(task);
+
+            Some(handle)
         });
     }
 }

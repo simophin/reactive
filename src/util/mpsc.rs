@@ -4,22 +4,14 @@ use std::{
     future::Future,
     pin::Pin,
     rc::{Rc, Weak},
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
+
+use local_waker::LocalWaker;
 
 struct Inner<T> {
     buf: RefCell<VecDeque<T>>,
-    waker: RefCell<Option<Waker>>,
-}
-
-impl<T> Inner<T> {
-    fn replace_waker_if_different(&self, waker: &Waker) {
-        let mut w = self.waker.borrow_mut();
-        match w.as_ref() {
-            Some(w) if w.will_wake(waker) => {}
-            _ => *w = Some(waker.clone()),
-        }
-    }
+    waker: LocalWaker,
 }
 
 pub struct Sender<T>(Weak<Inner<T>>);
@@ -43,10 +35,7 @@ impl<T> Sender<T> {
 
         buf.push_back(value);
 
-        if let Some(waker) = inner.waker.borrow().as_ref() {
-            waker.wake_by_ref();
-        }
-
+        inner.waker.wake();
         Ok(())
     }
 }
@@ -71,11 +60,11 @@ impl<'a, T> Future for ReceiverNext<'a, T> {
     type Output = Option<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let inner = self.0 .0;
+        let inner = self.0 .0.as_ref();
 
-        let mut buf = inner.buf.borrow_mut();
-        if let Some(value) = buf.pop_front() {
-            inner.replace_waker_if_different(cx.waker());
+        inner.waker.register(cx.waker());
+
+        if let Some(value) = inner.buf.borrow_mut().pop_front() {
             cx.waker().wake_by_ref();
             return Poll::Ready(Some(value));
         }

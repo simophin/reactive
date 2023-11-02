@@ -3,12 +3,13 @@ mod component;
 mod core_component;
 mod effect;
 mod effect_context;
+mod effect_run;
 mod node;
 mod react_context;
-mod render;
 mod setup_context;
 mod signal;
 mod task;
+mod tasks_queue;
 mod tracker;
 mod util;
 
@@ -16,13 +17,16 @@ mod util;
 mod tests {
     use std::future::pending;
 
-    use tokio::task::{spawn_local, LocalSet};
+    use tokio::{
+        select,
+        task::{spawn_local, LocalSet},
+    };
 
     use crate::{
         component::{boxed_component, Component},
         core_component::Show,
         effect_context::EffectContext,
-        render::RenderContext,
+        react_context::ReactiveContext,
         setup_context::SetupContext,
         signal::Signal,
     };
@@ -43,11 +47,9 @@ mod tests {
         ctx.create_effect(move |_: &mut _| {
             let mut set_index = set_index.clone();
             spawn_local(async move {
-                let mut id = 0usize;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    set_index.set(id);
-                    id += 1;
+                    set_index.update_with(|v| *v + 1);
                 }
             });
         });
@@ -85,7 +87,7 @@ mod tests {
         ctx.create_effect(move |ctx: &mut _| {
             println!("content: {}", body.get());
 
-            || println!("content effect clean up")
+            Some(|| println!("content effect clean up"))
         });
 
         ctx.on_clean_up(|| {
@@ -95,14 +97,21 @@ mod tests {
 
     #[tokio::test]
     async fn reactive_works() {
+        let _ = dotenvy::dotenv();
+        env_logger::init();
+
         let set = LocalSet::new();
         set.run_until(async move {
-            let mut mounted = RenderContext::new(Box::new(app)).setup().mount();
+            let mut ctx = ReactiveContext::default();
 
-            mounted.wait().await;
+            let root = ctx.mount_node(app);
+            ctx.set_root(Some(root));
+            ctx.poll().await;
 
-            mounted.unmount();
-            pending::<()>().await;
+            // select! {
+            //     _ = ctx.poll() => {},
+            //     _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {},
+            // }
         })
         .await;
     }

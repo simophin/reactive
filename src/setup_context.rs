@@ -1,31 +1,27 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use async_broadcast::Sender;
 
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
     effect::{BoxedEffect, Effect},
-    react_context::{SignalID, SignalNotifier},
+    react_context::{new_node_id, new_signal_id, NodeID, SignalID, SignalNotifier},
     signal::{signal_pair, SignalReader, SignalWriter},
 };
 
 pub struct SetupContext {
-    pub signal_change_sender: Sender<SignalID>,
+    node_id: NodeID,
+    signal_change_sender: Sender<SignalID>,
     pub effects: Vec<BoxedEffect>,
-    pub signals: Vec<SignalID>,
     pub clean_ups: Vec<BoxedCleanUp>,
     pub children: Vec<BoxedComponent>,
 }
-
-static SIGNAL_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
 
 impl SetupContext {
     pub fn new(signal_change_sender: Sender<SignalID>) -> Self {
         Self {
             signal_change_sender,
+            node_id: new_node_id(),
             effects: Default::default(),
-            signals: Default::default(),
             clean_ups: Default::default(),
             children: Default::default(),
         }
@@ -33,7 +29,11 @@ impl SetupContext {
 }
 
 impl SetupContext {
-    pub fn create_effect<'a, 'b>(&'a mut self, effect: impl Effect + 'b) {
+    pub fn node_id(&self) -> NodeID {
+        self.node_id
+    }
+
+    pub fn create_effect(&mut self, effect: impl Effect) {
         self.effects.push(Box::new(effect));
     }
 
@@ -41,11 +41,8 @@ impl SetupContext {
         &mut self,
         initial_value: T,
     ) -> (SignalReader<T>, SignalWriter<T>) {
-        let id = SIGNAL_ID_SEQ.fetch_add(1, Ordering::SeqCst);
-        self.signals.push(id);
-
+        let id = new_signal_id();
         signal_pair(
-            id,
             initial_value,
             SignalNotifier::new(id, self.signal_change_sender.clone()),
         )
@@ -53,5 +50,9 @@ impl SetupContext {
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
         self.clean_ups.push(Box::new(clean_up));
+    }
+
+    pub fn set_children<'a>(&mut self, children: impl Iterator<Item = BoxedComponent> + 'a) {
+        self.children = children.collect();
     }
 }

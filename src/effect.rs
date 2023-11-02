@@ -1,4 +1,4 @@
-use crate::effect_context::EffectContext;
+use crate::{effect_context::EffectContext, task::TaskHandle};
 
 pub trait Effect: 'static {
     fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup>;
@@ -30,11 +30,17 @@ impl EffectCleanup for () {
     fn cleanup(&mut self) {}
 }
 
-impl<F> EffectCleanup for F
+impl EffectCleanup for Option<TaskHandle> {
+    fn cleanup(&mut self) {}
+}
+
+impl<F> EffectCleanup for Option<F>
 where
-    F: FnMut() + 'static,
+    F: FnOnce() + 'static,
 {
     fn cleanup(&mut self) {
-        self()
+        if let Some(f) = self.take() {
+            f();
+        }
     }
 }

@@ -7,29 +7,61 @@ use std::{
 
 use futures::Future;
 
-pub struct WeakTask(Weak<RefCell<Box<dyn Future<Output = ()> + Unpin>>>);
+use crate::react_context::ReactiveContext;
 
-impl WeakTask {
-    pub fn new(
-        future: impl Future<Output = ()> + Unpin + 'static,
-    ) -> Rc<RefCell<Box<dyn Future<Output = ()>>>> {
-        todo!()
-    }
+pub type FutureTask = RefCell<Pin<Box<dyn Future<Output = ()>>>>;
+pub type ReactiveContextTask = RefCell<Option<Box<dyn FnOnce(&mut ReactiveContext) + 'static>>>;
+
+pub struct Task(pub Weak<TaskHandleInner>);
+
+pub enum TaskHandleInner {
+    Future(FutureTask),
+    ReactiveContext(ReactiveContextTask),
 }
 
-impl Future for WeakTask {
-    type Output = ();
+pub struct TaskHandle(Rc<TaskHandleInner>);
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.0.upgrade() {
-            Some(future) => {
-                let mut borrow = future.borrow_mut();
-                let future = &mut *borrow;
-                let future = future.as_mut();
-                Pin::new(future).poll(cx)
+impl Task {
+    pub fn new_future(future: impl Future<Output = ()> + 'static) -> (Self, TaskHandle) {
+        let future: Box<dyn Future<Output = ()>> = Box::new(future);
+        let handle = TaskHandle(Rc::new(TaskHandleInner::Future(RefCell::new(
+            future.into(),
+        ))));
+
+        (Self(Rc::downgrade(&handle.0)), handle)
+    }
+
+    pub fn new_reactive_context(
+        task: impl for<'a> FnOnce(&'a mut ReactiveContext) + 'static,
+    ) -> (Self, TaskHandle) {
+        let handle = TaskHandle(Rc::new(TaskHandleInner::ReactiveContext(RefCell::new(
+            Some(Box::new(task)),
+        ))));
+
+        (Self(Rc::downgrade(&handle.0)), handle)
+    }
+
+    pub fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        reactive_context: &mut ReactiveContext,
+    ) -> Poll<()> {
+        let Some(inner) = self.0.upgrade() else {
+            return Poll::Ready(());
+        };
+
+        match &*inner {
+            TaskHandleInner::Future(future) => {
+                let mut future = future.borrow_mut();
+                future.as_mut().poll(cx)
             }
 
-            None => Poll::Ready(()),
+            TaskHandleInner::ReactiveContext(task) => {
+                if let Some(mut task) = task.borrow_mut().take() {
+                    task(reactive_context);
+                }
+                Poll::Ready(())
+            }
         }
     }
 }

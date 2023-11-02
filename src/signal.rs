@@ -47,14 +47,13 @@ pub struct SignalReader<T> {
 }
 
 pub fn signal_pair<T: 'static>(
-    id: SignalID,
     value: T,
     notifier: SignalNotifier,
 ) -> (SignalReader<T>, SignalWriter<T>) {
     let value = SignalValue::new(RwLock::new(Box::new(value)));
     (
         SignalReader {
-            id,
+            id: notifier.signal_id(),
             value: value.clone(),
             _marker: PhantomData,
         },
@@ -110,14 +109,26 @@ impl<T: 'static> SignalWriter<T> {
     where
         T: Eq,
     {
-        self.update_with(|old_value| {
+        self.modify(|old_value| {
             let changed = old_value != &value;
             *old_value = value;
             changed
         });
     }
 
-    pub fn update_with(&mut self, update: impl FnOnce(&mut T) -> bool) {
+    pub fn update_with(&mut self, update: impl FnOnce(&T) -> T)
+    where
+        T: Eq,
+    {
+        self.modify(|old_value| {
+            let new_value = update(old_value);
+            let changed = old_value != &new_value;
+            *old_value = new_value;
+            changed
+        });
+    }
+
+    pub fn modify(&mut self, update: impl FnOnce(&mut T) -> bool) {
         {
             let mut value = self.value.write();
             let mut value = value
