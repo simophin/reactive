@@ -1,12 +1,10 @@
-use async_broadcast::Receiver;
-
 use crate::{
     effect::{Effect, EffectCleanup},
     effect_context::EffectContext,
-    react_context::SignalID,
     task::{Task, TaskCleanUp},
     tasks_queue::TaskQueueRef,
     tracker::Tracker,
+    util::signal_broadcast::Receiver,
 };
 
 pub struct EffectRun {
@@ -16,7 +14,7 @@ pub struct EffectRun {
 impl EffectRun {
     pub fn new(
         task_queue_handle: &TaskQueueRef,
-        mut signal_receiver: Receiver<SignalID>,
+        mut signal_receiver: Receiver,
         mut effect: impl Effect,
     ) -> Self {
         let task = {
@@ -32,13 +30,14 @@ impl EffectRun {
                     _last_clean_up = AutoEffectCleanUp::new(effect.run(&mut effect_ctx));
                     task_queue_handle = effect_ctx.task_queue_handle;
                     tracker = Tracker::set_current(None).expect("To have tracker back");
+                    signal_receiver.set_subscribing(tracker.iter());
 
                     // Wait for signal changes
                     loop {
-                        match signal_receiver.recv().await {
-                            Ok(id) if tracker.contains(id) => break,
-                            Ok(_) => {}
-                            Err(_) => return,
+                        if signal_receiver.next().await.is_some() {
+                            break;
+                        } else {
+                            return;
                         }
                     }
                 }

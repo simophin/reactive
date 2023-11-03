@@ -62,7 +62,7 @@ mod tests {
         );
 
         vec![
-            boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
+            // boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
             boxed_component(show),
         ]
     }

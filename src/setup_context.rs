@@ -1,34 +1,27 @@
-use async_broadcast::{Receiver, Sender};
-
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
     effect::Effect,
     effect_run::EffectRun,
-    react_context::{new_node_id, new_signal_id, NodeID, SignalID, SignalNotifier},
+    react_context::{new_node_id, new_signal_id, NodeID, SignalNotifier},
     signal::{signal_pair, SignalReader, SignalWriter},
     tasks_queue::TaskQueueRef,
+    util::signal_broadcast::Sender,
 };
 
 pub struct SetupContext {
     node_id: NodeID,
     queue: TaskQueueRef,
-    signal_change_sender: Sender<SignalID>,
-    signal_change_receiver: Receiver<SignalID>,
+    signal_sender: Sender,
     pub effects: Vec<EffectRun>,
     pub clean_ups: Vec<BoxedCleanUp>,
     pub children: Vec<BoxedComponent>,
 }
 
 impl SetupContext {
-    pub fn new(
-        signal_change_sender: Sender<SignalID>,
-        signal_change_receiver: Receiver<SignalID>,
-        queue: TaskQueueRef,
-    ) -> Self {
+    pub fn new(signal_sender: Sender, queue: TaskQueueRef) -> Self {
         Self {
-            signal_change_sender,
-            signal_change_receiver,
+            signal_sender,
             queue,
             node_id: new_node_id(),
             effects: Default::default(),
@@ -46,7 +39,7 @@ impl SetupContext {
     pub fn create_effect(&mut self, effect: impl Effect) {
         self.effects.push(EffectRun::new(
             &self.queue,
-            self.signal_change_receiver.clone(),
+            self.signal_sender.subscribe(),
             effect,
         ));
     }
@@ -58,7 +51,7 @@ impl SetupContext {
         let id = new_signal_id();
         signal_pair(
             initial_value,
-            SignalNotifier::new(id, self.signal_change_sender.clone()),
+            SignalNotifier::new(id, self.signal_sender.clone()),
         )
     }
 

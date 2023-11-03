@@ -4,48 +4,30 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_broadcast::{Receiver, Sender};
 use futures::Future;
 
 use crate::{
     component::Component,
-    effect_run::EffectRun,
     node::Node,
     setup_context::SetupContext,
     tasks_queue::{TaskQueue, TaskQueueRef},
+    util::signal_broadcast::Sender,
 };
 
 pub type SignalID = usize;
 pub type NodeID = usize;
 
+#[derive(Default)]
 pub struct ReactiveContext {
     tasks: TaskQueue,
-    signal_receiver: Receiver<SignalID>,
-    signal_sender: Sender<SignalID>,
+    signal_sender: Sender,
 
     root: Option<Node>,
-}
-
-impl Default for ReactiveContext {
-    fn default() -> Self {
-        let (signal_sender, signal_receiver) = async_broadcast::broadcast(256);
-
-        Self {
-            tasks: TaskQueue::default(),
-            root: Default::default(),
-            signal_receiver,
-            signal_sender,
-        }
-    }
 }
 
 impl ReactiveContext {
     pub fn poll(&mut self) -> ReactiveContextPoll<'_> {
         ReactiveContextPoll { ctx: self }
-    }
-
-    pub fn signal_receiver(&self) -> Receiver<SignalID> {
-        self.signal_receiver.clone()
     }
 
     pub fn task_queue_handle(&self) -> TaskQueueRef {
@@ -57,11 +39,7 @@ impl ReactiveContext {
     }
 
     pub fn mount_node(&mut self, mut component: impl Component) -> Node {
-        let mut ctx = SetupContext::new(
-            self.signal_sender.clone(),
-            self.signal_receiver.clone(),
-            self.task_queue_handle(),
-        );
+        let mut ctx = SetupContext::new(self.signal_sender.clone(), self.task_queue_handle());
         component.setup(&mut ctx);
 
         let node_id = ctx.node_id();
@@ -109,10 +87,10 @@ impl<'a> Future for ReactiveContextPoll<'a> {
 }
 
 #[derive(Clone)]
-pub struct SignalNotifier(SignalID, Sender<SignalID>);
+pub struct SignalNotifier(SignalID, Sender);
 
 impl SignalNotifier {
-    pub fn new(id: SignalID, sender: Sender<SignalID>) -> Self {
+    pub fn new(id: SignalID, sender: Sender) -> Self {
         Self(id, sender)
     }
 
@@ -121,12 +99,7 @@ impl SignalNotifier {
     }
 
     pub fn notify_changed(&mut self) {
-        match self.1.try_broadcast(self.0) {
-            Ok(_) => {}
-            Err(e) => {
-                log::warn!("Unable to delivery signal changes due to: {e:?}");
-            }
-        }
+        self.1.send(self.0);
     }
 }
 

@@ -13,7 +13,7 @@ where
 {
     type Cleanup = C;
 
-    fn run(&mut self, ctx: &mut EffectContext) -> C {
+    fn run(&mut self, _ctx: &mut EffectContext) -> C {
         self()
     }
 }
