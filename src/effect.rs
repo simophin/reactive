@@ -1,24 +1,20 @@
-use crate::{effect_context::EffectContext, task::TaskHandle};
+use crate::effect_context::EffectContext;
 
 pub trait Effect: 'static {
-    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup>;
-}
+    type Cleanup: EffectCleanup;
 
-pub type BoxedEffect = Box<dyn Effect>;
-
-impl Effect for BoxedEffect {
-    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup> {
-        self.as_mut().run(ctx)
-    }
+    fn run(&mut self, ctx: &mut EffectContext) -> Self::Cleanup;
 }
 
 impl<F, C> Effect for F
 where
-    F: for<'a> FnMut(&'a mut EffectContext) -> C + 'static,
+    F: FnMut() -> C + 'static,
     C: EffectCleanup,
 {
-    fn run(&mut self, ctx: &mut EffectContext) -> Box<dyn EffectCleanup> {
-        Box::new(self(ctx))
+    type Cleanup = C;
+
+    fn run(&mut self, ctx: &mut EffectContext) -> C {
+        self()
     }
 }
 
@@ -30,17 +26,19 @@ impl EffectCleanup for () {
     fn cleanup(&mut self) {}
 }
 
-impl EffectCleanup for Option<TaskHandle> {
-    fn cleanup(&mut self) {}
-}
-
-impl<F> EffectCleanup for Option<F>
+impl<F> EffectCleanup for F
 where
-    F: FnOnce() + 'static,
+    F: FnMut() + 'static,
 {
     fn cleanup(&mut self) {
-        if let Some(f) = self.take() {
-            f();
+        self()
+    }
+}
+
+impl<C: EffectCleanup> EffectCleanup for Option<C> {
+    fn cleanup(&mut self) {
+        if let Some(mut c) = self.take() {
+            c.cleanup();
         }
     }
 }

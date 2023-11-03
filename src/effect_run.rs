@@ -4,26 +4,26 @@ use crate::{
     effect::{Effect, EffectCleanup},
     effect_context::EffectContext,
     react_context::SignalID,
-    task::{Task, TaskHandle},
-    tasks_queue::TaskQueueHandle,
+    task::{Task, TaskCleanUp},
+    tasks_queue::TaskQueueRef,
     tracker::Tracker,
 };
 
 pub struct EffectRun {
-    _handle: TaskHandle,
+    _clean_up: TaskCleanUp,
 }
 
 impl EffectRun {
     pub fn new(
-        task_queue_handle: TaskQueueHandle,
+        task_queue_handle: &TaskQueueRef,
         mut signal_receiver: Receiver<SignalID>,
         mut effect: impl Effect,
     ) -> Self {
-        let (task, handle) = {
+        let task = {
             let mut task_queue_handle = task_queue_handle.clone();
             Task::new_future(async move {
                 let mut tracker = Tracker::default();
-                let mut _last_clean_up: AutoEffectCleanUp;
+                let mut _last_clean_up: AutoEffectCleanUp<_>;
 
                 loop {
                     tracker.clear();
@@ -45,9 +45,10 @@ impl EffectRun {
             })
         };
 
+        let _clean_up = TaskCleanUp::new(task_queue_handle.clone(), task.id());
         let _ = task_queue_handle.queue_task(task);
 
-        Self { _handle: handle }
+        Self { _clean_up }
     }
 }
 
@@ -57,15 +58,21 @@ impl Drop for EffectRun {
     }
 }
 
-struct AutoEffectCleanUp(Option<Box<dyn EffectCleanup>>);
+struct AutoEffectCleanUp<C: EffectCleanup>(Option<C>);
 
-impl AutoEffectCleanUp {
-    fn new(clean_up: Box<dyn EffectCleanup>) -> Self {
+impl<C> AutoEffectCleanUp<C>
+where
+    C: EffectCleanup,
+{
+    fn new(clean_up: C) -> Self {
         Self(Some(clean_up))
     }
 }
 
-impl Drop for AutoEffectCleanUp {
+impl<C> Drop for AutoEffectCleanUp<C>
+where
+    C: EffectCleanup,
+{
     fn drop(&mut self) {
         self.0.take().unwrap().cleanup();
     }

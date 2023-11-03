@@ -22,7 +22,7 @@ pub enum SendError<T> {
 }
 
 impl<T> Sender<T> {
-    pub fn send(&self, value: T) -> Result<(), SendError<T>> {
+    pub fn try_send(&self, value: T) -> Result<(), SendError<T>> {
         let Some(inner) = self.0.upgrade() else {
             return Err(SendError::Closed(value));
         };
@@ -83,4 +83,30 @@ pub fn channel<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
     let receiver = Receiver(inner);
 
     (sender, receiver)
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::task::{spawn_local, yield_now, LocalSet};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn channel_works() {
+        let (sender, mut receiver) = channel(1);
+
+        let ls = LocalSet::new();
+
+        ls.run_until(async move {
+            spawn_local(async move {
+                assert_eq!(receiver.recv().await, Some(1));
+                assert_eq!(receiver.recv().await, Some(2));
+            });
+
+            assert!(sender.try_send(1).is_ok());
+            yield_now().await;
+            assert!(sender.try_send(2).is_ok());
+        })
+        .await;
+    }
 }

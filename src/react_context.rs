@@ -12,7 +12,7 @@ use crate::{
     effect_run::EffectRun,
     node::Node,
     setup_context::SetupContext,
-    tasks_queue::{TaskQueue, TaskQueueHandle},
+    tasks_queue::{TaskQueue, TaskQueueRef},
 };
 
 pub type SignalID = usize;
@@ -48,7 +48,7 @@ impl ReactiveContext {
         self.signal_receiver.clone()
     }
 
-    pub fn task_queue_handle(&self) -> TaskQueueHandle {
+    pub fn task_queue_handle(&self) -> TaskQueueRef {
         self.tasks.handle()
     }
 
@@ -57,7 +57,11 @@ impl ReactiveContext {
     }
 
     pub fn mount_node(&mut self, mut component: impl Component) -> Node {
-        let mut ctx = SetupContext::new(self.signal_sender.clone());
+        let mut ctx = SetupContext::new(
+            self.signal_sender.clone(),
+            self.signal_receiver.clone(),
+            self.task_queue_handle(),
+        );
         component.setup(&mut ctx);
 
         let node_id = ctx.node_id();
@@ -69,16 +73,9 @@ impl ReactiveContext {
             .map(|c| self.mount_node(c))
             .collect();
 
-        // Setup effects
-        let effects = ctx
-            .effects
-            .into_iter()
-            .map(|e| EffectRun::new(self.task_queue_handle(), self.signal_receiver(), e))
-            .collect();
-
         Node {
             id: node_id,
-            effects,
+            effects: ctx.effects,
             clean_ups: ctx.clean_ups,
             children,
         }

@@ -1,15 +1,11 @@
-use crate::{component::BoxedComponent, tasks_queue::TaskQueueHandle};
+use crate::tasks_queue::TaskQueueRef;
 
 pub struct EffectContext {
-    pub task_queue_handle: TaskQueueHandle,
+    pub task_queue_handle: TaskQueueRef,
 }
 
 impl EffectContext {
-    pub fn new(task_queue_handle: TaskQueueHandle) -> Self {
+    pub fn new(task_queue_handle: TaskQueueRef) -> Self {
         Self { task_queue_handle }
-    }
-
-    pub fn queue_children_replacement(&mut self, children: Vec<BoxedComponent>) {
-        //todo
     }
 }

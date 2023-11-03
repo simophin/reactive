@@ -15,17 +15,11 @@ mod util;
 
 #[cfg(test)]
 mod tests {
-    use std::future::pending;
-
-    use tokio::{
-        select,
-        task::{spawn_local, LocalSet},
-    };
+    use tokio::task::{spawn_local, LocalSet};
 
     use crate::{
         component::{boxed_component, Component},
         core_component::Show,
-        effect_context::EffectContext,
         react_context::ReactiveContext,
         setup_context::SetupContext,
         signal::Signal,
@@ -44,7 +38,7 @@ mod tests {
             move || format!("body_{}", index.clone().get())
         };
 
-        ctx.create_effect(move |_: &mut _| {
+        ctx.create_effect(move || {
             let mut set_index = set_index.clone();
             spawn_local(async move {
                 loop {
@@ -74,7 +68,7 @@ mod tests {
     }
 
     pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) {
-        ctx.create_effect(move |_: &mut EffectContext| {
+        ctx.create_effect(move || {
             println!("Title: {}", title.get());
         });
 
@@ -84,7 +78,7 @@ mod tests {
     }
 
     pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
-        ctx.create_effect(move |ctx: &mut _| {
+        ctx.create_effect(move || {
             println!("content: {}", body.get());
 
             Some(|| println!("content effect clean up"))

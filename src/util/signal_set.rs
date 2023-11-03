@@ -25,3 +25,28 @@ impl SignalSet {
         self.0.iter().cloned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signal_set_works() {
+        let mut set = SignalSet::default();
+
+        set.insert(3);
+        set.insert(2);
+        set.insert(1);
+
+        // Ensure order is correct
+        assert_eq!(set.iter().collect::<Vec<_>>(), vec![1, 2, 3]);
+
+        assert!(!set.contains(4));
+
+        set.clear();
+
+        assert!(!set.contains(1));
+        assert!(!set.contains(2));
+        assert!(!set.contains(3));
+    }
+}
