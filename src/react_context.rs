@@ -104,17 +104,11 @@ impl SignalNotifier {
 }
 
 pub fn new_signal_id() -> SignalID {
-    lazy_static::lazy_static! {
-        static ref SIGNAL_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
-    }
-
+    static SIGNAL_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
     SIGNAL_ID_SEQ.fetch_add(1, Ordering::SeqCst)
 }
 
 pub fn new_node_id() -> NodeID {
-    lazy_static::lazy_static! {
-        static ref NODE_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
-    }
-
+    static NODE_ID_SEQ: AtomicUsize = AtomicUsize::new(0);
     NODE_ID_SEQ.fetch_add(1, Ordering::SeqCst)
 }

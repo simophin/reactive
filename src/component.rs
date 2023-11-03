@@ -32,11 +32,11 @@ impl Component for BoxedComponent {
 }
 
 impl Component for () {
-    fn setup(&mut self, ctx: &mut SetupContext) {}
+    fn setup(&mut self, _ctx: &mut SetupContext) {}
 }
 
 impl Component for bool {
-    fn setup(&mut self, ctx: &mut SetupContext) {}
+    fn setup(&mut self, _ctx: &mut SetupContext) {}
 }
 
 impl<C: Component> Component for Option<C> {

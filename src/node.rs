@@ -27,7 +27,7 @@ impl Drop for Node {
     fn drop(&mut self) {
         self.children.clear();
 
-        for clean_up in &mut self.clean_ups {
+        for clean_up in self.clean_ups.drain(..) {
             clean_up.clean_up();
         }
     }

@@ -19,25 +19,25 @@ where
 }
 
 pub trait EffectCleanup: 'static {
-    fn cleanup(&mut self);
+    fn cleanup(self);
 }
 
 impl EffectCleanup for () {
-    fn cleanup(&mut self) {}
+    fn cleanup(self) {}
 }
 
 impl<F> EffectCleanup for F
 where
-    F: FnMut() + 'static,
+    F: FnOnce() + 'static,
 {
-    fn cleanup(&mut self) {
+    fn cleanup(self) {
         self()
     }
 }
 
 impl<C: EffectCleanup> EffectCleanup for Option<C> {
-    fn cleanup(&mut self) {
-        if let Some(mut c) = self.take() {
+    fn cleanup(self) {
+        if let Some(mut c) = self {
             c.cleanup();
         }
     }

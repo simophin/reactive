@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -9,9 +8,6 @@ use futures::Future;
 use crate::{effect::EffectCleanup, react_context::ReactiveContext, tasks_queue::TaskQueueRef};
 
 pub type TaskID = usize;
-
-pub type FutureTask = RefCell<Pin<Box<dyn Future<Output = ()>>>>;
-pub type ReactiveContextTask = RefCell<Option<Box<dyn FnOnce(&mut ReactiveContext) + 'static>>>;
 
 pub struct Task {
     id: TaskID,
@@ -67,19 +63,23 @@ impl TaskCleanUp {
     pub fn new(queue: TaskQueueRef, id: TaskID) -> Self {
         Self(Some((queue, id)))
     }
+
+    fn do_clean_up(&mut self) {
+        if let Some((queue, id)) = self.0.take() {
+            queue.queue_task_removal(id);
+        }
+    }
 }
 
 impl Drop for TaskCleanUp {
     fn drop(&mut self) {
-        self.cleanup();
+        self.do_clean_up();
     }
 }
 
 impl EffectCleanup for TaskCleanUp {
-    fn cleanup(&mut self) {
-        if let Some((queue, id)) = self.0.take() {
-            queue.queue_task_removal(id);
-        }
+    fn cleanup(mut self) {
+        self.do_clean_up();
     }
 }
 

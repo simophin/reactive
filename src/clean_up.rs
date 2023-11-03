@@ -1,20 +1,14 @@
 pub trait CleanUp: 'static {
-    fn clean_up(&mut self);
+    fn clean_up(self: Box<Self>);
 }
 
 pub type BoxedCleanUp = Box<dyn CleanUp>;
 
-impl CleanUp for BoxedCleanUp {
-    fn clean_up(&mut self) {
-        self.as_mut().clean_up()
-    }
-}
-
 impl<F> CleanUp for F
 where
-    F: FnMut() + 'static,
+    F: FnOnce() + 'static,
 {
-    fn clean_up(&mut self) {
+    fn clean_up(self: Box<Self>) {
         self()
     }
 }

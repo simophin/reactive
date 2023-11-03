@@ -58,8 +58,4 @@ impl SetupContext {
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
         self.clean_ups.push(Box::new(clean_up));
     }
-
-    pub fn set_children<'a>(&mut self, children: impl Iterator<Item = BoxedComponent> + 'a) {
-        self.children = children.collect();
-    }
 }
