@@ -8,13 +8,9 @@ use crate::{
 };
 
 pub trait Signal: Clone + 'static {
-    type Value: 'static;
+    type Value<'a>;
 
-    fn get(&self) -> Self::Value
-    where
-        Self::Value: Clone;
-
-    fn with<R>(&self, access: impl FnOnce(&Self::Value) -> R) -> R;
+    fn with<R>(&self, access: impl for<'a> FnOnce(Self::Value<'a>) -> R) -> R;
 }
 
 impl<F, T> Signal for F
@@ -22,19 +18,25 @@ where
     F: Fn() -> T + Clone + 'static,
     T: 'static,
 {
-    type Value = T;
-
-    #[inline]
-    fn get(&self) -> T
-    where
-        Self::Value: Clone,
-    {
-        self()
-    }
+    type Value<'a> = &'a T;
 
     #[inline]
     fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
         access(&self())
+    }
+}
+
+pub trait SignalGetter<T>: Signal {
+    fn get(&self) -> T;
+}
+
+impl<S, T> SignalGetter<T> for S
+where
+    S: for<'a> Signal<Value<'a> = &'a T>,
+    T: Clone,
+{
+    fn get(&self) -> T {
+        self.with(T::clone)
     }
 }
 
@@ -66,18 +68,10 @@ pub fn signal_pair<T: 'static>(
 }
 
 impl<T: 'static> Signal for SignalReader<T> {
-    type Value = T;
+    type Value<'a> = &'a T;
 
     #[inline]
-    fn get(&self) -> T
-    where
-        Self::Value: Clone,
-    {
-        self.with(T::clone)
-    }
-
-    #[inline]
-    fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
+    fn with<R>(&self, access: impl for<'a> FnOnce(Self::Value<'a>) -> R) -> R {
         Tracker::track_signal(self.id);
         self.value
             .read()

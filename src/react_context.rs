@@ -7,7 +7,7 @@ use std::{
 use futures::Future;
 
 use crate::{
-    component::Component,
+    component::{BoxedComponent, Component},
     node::Node,
     setup_context::SetupContext,
     tasks_queue::{TaskQueue, TaskQueueRef},
@@ -38,7 +38,7 @@ impl ReactiveContext {
         self.root = node;
     }
 
-    pub fn mount_node(&mut self, mut component: impl Component) -> Node {
+    pub fn mount_node(&mut self, mut component: BoxedComponent) -> Node {
         let mut ctx = SetupContext::new(self.signal_sender.clone(), self.task_queue_handle());
         component.setup(&mut ctx);
 

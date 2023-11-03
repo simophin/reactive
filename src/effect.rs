@@ -42,3 +42,23 @@ impl<C: EffectCleanup> EffectCleanup for Option<C> {
         }
     }
 }
+
+struct EffectFn<F>(F);
+
+impl<F, C> Effect for EffectFn<F>
+where
+    F: FnMut(&mut EffectContext) -> C + 'static,
+    C: EffectCleanup,
+{
+    type Cleanup = C;
+
+    fn run(&mut self, ctx: &mut EffectContext) -> C {
+        (self.0)(ctx)
+    }
+}
+
+pub fn effect_fn<C: EffectCleanup>(
+    f: impl FnMut(&mut EffectContext) -> C + 'static,
+) -> impl Effect {
+    EffectFn(f)
+}

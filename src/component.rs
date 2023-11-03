@@ -1,7 +1,7 @@
 use crate::setup_context::SetupContext;
 
 pub trait Component: 'static {
-    fn setup(&mut self, ctx: &mut SetupContext);
+    fn setup(self: Box<Self>, ctx: &mut SetupContext);
 
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
@@ -16,47 +16,50 @@ pub fn boxed_component(component: impl Component) -> BoxedComponent {
 
 impl<F, C> Component for F
 where
-    F: for<'a> Fn(&'a mut SetupContext) -> C + 'static,
+    F: for<'a> FnOnce(&'a mut SetupContext) -> C + 'static,
     C: Component,
 {
-    fn setup(&mut self, ctx: &mut SetupContext) {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let c = self(ctx);
         ctx.children.push(Box::new(c));
     }
 }
 
-impl Component for BoxedComponent {
-    fn setup(&mut self, ctx: &mut SetupContext) {
-        self.as_mut().setup(ctx);
-    }
-}
-
 impl Component for () {
-    fn setup(&mut self, _ctx: &mut SetupContext) {}
+    fn setup(self: Box<Self>, _ctx: &mut SetupContext) {}
 }
 
 impl Component for bool {
-    fn setup(&mut self, _ctx: &mut SetupContext) {}
+    fn setup(self: Box<Self>, _ctx: &mut SetupContext) {}
 }
 
 impl<C: Component> Component for Option<C> {
-    fn setup(&mut self, ctx: &mut SetupContext) {
-        if let Some(child) = self {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        if let Some(child) = *self {
+            Box::new(child).setup(ctx);
+        }
+    }
+}
+
+impl Component for Option<BoxedComponent> {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        if let Some(child) = *self {
             child.setup(ctx);
         }
     }
 }
 
 impl<C: Component> Component for Vec<C> {
-    fn setup(&mut self, ctx: &mut SetupContext) {
-        for child in self {
-            child.setup(ctx);
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        for child in *self {
+            Box::new(child).setup(ctx);
         }
     }
 }
-impl<C: Component, const N: usize> Component for [C; N] {
-    fn setup(&mut self, ctx: &mut SetupContext) {
-        for child in self {
+
+impl Component for Vec<BoxedComponent> {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        for child in *self {
             child.setup(ctx);
         }
     }

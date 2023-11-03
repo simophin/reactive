@@ -6,6 +6,7 @@ mod effect_context;
 mod effect_run;
 mod node;
 mod react_context;
+mod resource;
 mod setup_context;
 mod signal;
 mod task;
@@ -19,10 +20,10 @@ mod tests {
 
     use crate::{
         component::{boxed_component, Component},
-        core_component::Show,
+        core_component::ShowBuilder,
         react_context::ReactiveContext,
         setup_context::SetupContext,
-        signal::Signal,
+        signal::{Signal, SignalGetter},
     };
 
     pub fn app(ctx: &mut SetupContext) -> impl Component {
@@ -52,14 +53,17 @@ mod tests {
             println!("app clean up");
         });
 
-        let show = Show::new(
-            move || index.get() % 2 == 0,
-            move || {
+        let mut builder = ShowBuilder::default();
+
+        let show = builder
+            .test(move || index.get() % 2 == 0)
+            .success(move || {
                 let body = body.clone();
                 move |ctx: &mut SetupContext| content(ctx, body.clone())
-            },
-            || (),
-        );
+            })
+            .fail(|| ())
+            .build()
+            .unwrap();
 
         vec![
             // boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
@@ -67,7 +71,7 @@ mod tests {
         ]
     }
 
-    pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) {
+    pub fn header(ctx: &mut SetupContext, title: impl for<'a> Signal<Value<'a> = &'a String>) {
         ctx.create_effect(move || {
             println!("Title: {}", title.get());
         });
@@ -77,7 +81,7 @@ mod tests {
         });
     }
 
-    pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
+    pub fn content(ctx: &mut SetupContext, body: impl for<'a> Signal<Value<'a> = &'a String>) {
         ctx.create_effect(move || {
             println!("content: {}", body.get());
 
@@ -98,7 +102,7 @@ mod tests {
         set.run_until(async move {
             let mut ctx = ReactiveContext::default();
 
-            let root = ctx.mount_node(app);
+            let root = ctx.mount_node(boxed_component(app));
             ctx.set_root(Some(root));
             ctx.poll().await;
 
