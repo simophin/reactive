@@ -14,7 +14,7 @@ use crate::{
     util::signal_broadcast::Sender,
 };
 
-pub type SignalID = usize;
+pub(crate) type SignalID = usize;
 pub type NodeID = usize;
 
 #[derive(Default)]
@@ -38,7 +38,7 @@ impl ReactiveContext {
         self.root = node;
     }
 
-    pub fn mount_node(&mut self, mut component: BoxedComponent) -> Node {
+    pub fn mount_node(&mut self, component: BoxedComponent) -> Node {
         let mut ctx = SetupContext::new(self.signal_sender.clone(), self.task_queue_handle());
         component.setup(&mut ctx);
 

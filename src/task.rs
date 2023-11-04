@@ -5,7 +5,7 @@ use std::{
 
 use futures::Future;
 
-use crate::{effect::EffectCleanup, react_context::ReactiveContext, tasks_queue::TaskQueueRef};
+use crate::{clean_up::CleanUp, react_context::ReactiveContext, tasks_queue::TaskQueueRef};
 
 pub type TaskID = usize;
 
@@ -77,8 +77,8 @@ impl Drop for TaskCleanUp {
     }
 }
 
-impl EffectCleanup for TaskCleanUp {
-    fn cleanup(mut self) {
+impl CleanUp for TaskCleanUp {
+    fn clean_up(mut self: Box<Self>) {
         self.do_clean_up();
     }
 }

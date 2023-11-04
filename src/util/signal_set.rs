@@ -2,7 +2,7 @@ use smallvec::SmallVec;
 
 use crate::react_context::SignalID;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct SignalSet(SmallVec<[SignalID; 3]>);
 
 impl SignalSet {

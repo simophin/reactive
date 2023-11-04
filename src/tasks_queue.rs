@@ -7,7 +7,7 @@ use std::{
 
 use local_waker::LocalWaker;
 
-use crate::task::{Task, TaskID};
+use crate::task::{Task, TaskCleanUp, TaskID};
 
 #[derive(Default)]
 struct PendingQueue {
@@ -42,15 +42,17 @@ impl TaskQueue {
 pub struct TaskQueueRef(Weak<RefCell<PendingQueue>>);
 
 impl TaskQueueRef {
-    pub fn queue_task(&self, task: Task) -> Result<(), Task> {
+    pub fn queue_task(&self, task: Task) -> Result<TaskCleanUp, Task> {
         let Some(inner) = self.0.upgrade() else {
             return Err(task);
         };
 
+        let clean_up = TaskCleanUp::new(self.clone(), task.id());
+
         let mut inner = inner.borrow_mut();
         inner.adding.push(task);
         inner.waker.wake();
-        Ok(())
+        Ok(clean_up)
     }
 
     pub fn queue_task_removal(&self, id: TaskID) {

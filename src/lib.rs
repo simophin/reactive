@@ -1,12 +1,11 @@
 mod clean_up;
 mod component;
 mod core_component;
-mod effect;
 mod effect_context;
 mod effect_run;
 mod node;
 mod react_context;
-mod resource;
+// mod resource;
 mod setup_context;
 mod signal;
 mod task;
@@ -16,7 +15,7 @@ mod util;
 
 #[cfg(test)]
 mod tests {
-    use tokio::task::{spawn_local, LocalSet};
+    use tokio::task::LocalSet;
 
     use crate::{
         component::{boxed_component, Component},
@@ -39,12 +38,17 @@ mod tests {
             move || format!("body_{}", index.clone().get())
         };
 
-        ctx.create_effect(move || {
-            let mut set_index = set_index.clone();
-            spawn_local(async move {
+        ctx.create_effect(move |ctx| {
+            let set_index = set_index.clone();
+            ctx.spawn(async move {
+                let mut set_index = set_index.clone();
+
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    set_index.update_with(|v| *v + 1);
+                    set_index.update_with(|v| {
+                        *v = *v + 1;
+                        true
+                    });
                 }
             });
         });
@@ -71,8 +75,8 @@ mod tests {
         ]
     }
 
-    pub fn header(ctx: &mut SetupContext, title: impl for<'a> Signal<Value<'a> = &'a String>) {
-        ctx.create_effect(move || {
+    pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) {
+        ctx.create_effect_simple(move || {
             println!("Title: {}", title.get());
         });
 
@@ -81,11 +85,11 @@ mod tests {
         });
     }
 
-    pub fn content(ctx: &mut SetupContext, body: impl for<'a> Signal<Value<'a> = &'a String>) {
-        ctx.create_effect(move || {
+    pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
+        ctx.create_effect(move |ctx| {
             println!("content: {}", body.get());
 
-            Some(|| println!("content effect clean up"))
+            ctx.add_clean_up(|| println!("content effect clean up"));
         });
 
         ctx.on_clean_up(|| {

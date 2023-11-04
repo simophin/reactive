@@ -2,7 +2,7 @@ use derive_builder::Builder;
 
 use crate::{
     component::{BoxedComponent, Component, ComponentFactory},
-    effect::effect_fn,
+    effect_context::EffectContext,
     setup_context::SetupContext,
     task::{Task, TaskCleanUp},
 };
@@ -12,21 +12,6 @@ pub struct Show<F, CS, CF> {
     test: F,
     success: CS,
     fail: CF,
-}
-
-impl<F, CS, CF> Show<F, CS, CF>
-where
-    F: FnMut() -> bool + 'static,
-    CS: ComponentFactory,
-    CF: ComponentFactory,
-{
-    pub fn new(test: F, success: CS, fail: CF) -> impl Component {
-        Show {
-            test,
-            success,
-            fail,
-        }
-    }
 }
 
 impl<F, CS, CF> Component for Show<F, CS, CF>
@@ -39,11 +24,11 @@ where
         let node_id = ctx.node_id();
         let mut last_success = None;
 
-        ctx.create_effect(effect_fn(move |ctx| {
+        ctx.create_effect(move |ctx| {
             let new_success = (self.test)();
             log::debug!("ShowEffect: new_success={new_success}, last={last_success:?}");
             match (last_success, new_success) {
-                (Some(last), new) if last == new => return None,
+                (Some(last), new) if last == new => return,
                 _ => {}
             }
 
@@ -63,10 +48,12 @@ where
                 }
             });
 
-            let cleanup = TaskCleanUp::new(ctx.task_queue_handle.clone(), task.id());
-            let _ = ctx.task_queue_handle.queue_task(task);
+            let Ok(clean_up) = ctx.queue().queue_task(task) else {
+                log::warn!("ShowEffect task queue is dropped before the effect is run");
+                return;
+            };
 
-            Some(cleanup)
-        }));
+            ctx.add_clean_up(clean_up);
+        });
     }
 }
