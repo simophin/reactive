@@ -5,6 +5,7 @@ pub struct Node {
     pub effects: Vec<EffectRun>,
     pub clean_ups: Vec<BoxedCleanUp>,
     pub children: Vec<Node>,
+    pub content_type: Option<&'static str>,
 }
 
 impl Node {

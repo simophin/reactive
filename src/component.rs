@@ -3,8 +3,8 @@ use crate::setup_context::SetupContext;
 pub trait Component: 'static {
     fn setup(self: Box<Self>, ctx: &mut SetupContext);
 
-    fn name(&self) -> &'static str {
-        std::any::type_name::<Self>()
+    fn content_type(&self) -> Option<&'static str> {
+        None
     }
 }
 
@@ -22,6 +22,16 @@ where
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let c = self(ctx);
         ctx.children.push(Box::new(c));
+    }
+}
+
+impl<C: Component> Component for (C, &'static str) {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        ctx.children.push(Box::new(self.0));
+    }
+
+    fn content_type(&self) -> Option<&'static str> {
+        Some(self.1)
     }
 }
 

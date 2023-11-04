@@ -19,7 +19,7 @@ mod tests {
 
     use crate::{
         component::{boxed_component, Component},
-        core_component::ShowBuilder,
+        core_component::{CaseBuilder, ShowBuilder, SwitchBuilder},
         react_context::ReactiveContext,
         setup_context::SetupContext,
         signal::{Signal, SignalGetter},
@@ -57,9 +57,7 @@ mod tests {
             println!("app clean up");
         });
 
-        let mut builder = ShowBuilder::default();
-
-        let show = builder
+        let show = ShowBuilder::default()
             .test(move || index.get() % 2 == 0)
             .success(move || {
                 let body = body.clone();
@@ -70,19 +68,64 @@ mod tests {
             .unwrap();
 
         vec![
-            // boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
+            boxed_component(move |ctx: &mut SetupContext| header(ctx, title.clone())),
             boxed_component(show),
         ]
     }
 
-    pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) {
-        ctx.create_effect_simple(move || {
-            println!("Title: {}", title.get());
-        });
-
+    pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) -> impl Component {
         ctx.on_clean_up(|| {
             println!("header clean up");
         });
+
+        SwitchBuilder::default()
+            .source(title)
+            .children(vec![
+                CaseBuilder::default()
+                    .test(|title: &String| {
+                        if title.ends_with("1") {
+                            Some(title.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .child(|title: String| {
+                        move |ctx: &mut SetupContext| {
+                            ctx.create_effect_simple(move || {
+                                println!("Case 1: {title}");
+                            });
+
+                            ctx.on_clean_up(|| {
+                                println!("Case 1 clean up");
+                            });
+                        }
+                    })
+                    .build()
+                    .unwrap(),
+                CaseBuilder::default()
+                    .test(|title: &String| {
+                        if title.ends_with("2") {
+                            Some(title.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .child(|title: String| {
+                        move |ctx: &mut SetupContext| {
+                            ctx.create_effect_simple(move || {
+                                println!("Case 2: {title}");
+                            });
+
+                            ctx.on_clean_up(|| {
+                                println!("Case 2 clean up");
+                            });
+                        }
+                    })
+                    .build()
+                    .unwrap(),
+            ])
+            .build()
+            .expect("To build switch")
     }
 
     pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {

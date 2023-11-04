@@ -40,6 +40,7 @@ impl ReactiveContext {
 
     pub fn mount_node(&mut self, component: BoxedComponent) -> Node {
         let mut ctx = SetupContext::new(self.signal_sender.clone(), self.task_queue_handle());
+        let content_type = component.content_type();
         component.setup(&mut ctx);
 
         let node_id = ctx.node_id();
@@ -56,6 +57,7 @@ impl ReactiveContext {
             effects: ctx.effects,
             clean_ups: ctx.clean_ups,
             children,
+            content_type,
         }
     }
 

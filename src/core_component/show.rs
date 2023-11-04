@@ -2,12 +2,12 @@ use derive_builder::Builder;
 
 use crate::{
     component::{BoxedComponent, Component, ComponentFactory},
-    effect_context::EffectContext,
     setup_context::SetupContext,
-    task::{Task, TaskCleanUp},
+    task::Task,
 };
 
 #[derive(Builder)]
+#[builder(pattern = "owned")]
 pub struct Show<F, CS, CF> {
     test: F,
     success: CS,

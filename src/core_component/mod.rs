@@ -1,4 +1,5 @@
 mod show;
-pub mod switch;
+mod switch;
 
-pub use show::{Show, ShowBuilder};
+pub use show::*;
+pub use switch::*;
