@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::BTreeSet,
+    collections::{BTreeSet, LinkedList},
     rc::{Rc, Weak},
     task::Context,
 };
@@ -19,18 +19,32 @@ struct PendingQueue {
 #[derive(Default)]
 pub struct TaskQueue {
     pending: Rc<RefCell<PendingQueue>>,
-    pub active: Vec<Task>,
+    pub active: Vec<Option<Task>>,
 }
 
 impl TaskQueue {
     pub fn apply_pending(&mut self, cx: &Context<'_>) {
-        let mut pending = self.pending.borrow_mut();
-        self.active.append(&mut pending.adding);
-        self.active
-            .retain(|task| !pending.removing.contains(&task.id()));
-        pending.adding.clear();
-        pending.removing.clear();
-        pending.waker.register(cx.waker());
+        let mut removing;
+
+        {
+            let mut pending = self.pending.borrow_mut();
+            self.active
+                .extend(pending.adding.drain(..).map(|t| Some(t)));
+
+            // Reuse memory inside pending.adding for recording the tasks being removed
+            removing = std::mem::take(&mut pending.adding);
+
+            // Go through active tasks and remove the ones we need
+            for task in &mut self.active {
+                if let Some(t) = task {
+                    if pending.removing.contains(&t.id()) {
+                        removing.push(task.take().unwrap());
+                    }
+                }
+            }
+            pending.removing.clear();
+            pending.waker.register(cx.waker());
+        }
     }
 
     pub fn handle(&self) -> TaskQueueRef {

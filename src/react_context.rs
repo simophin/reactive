@@ -11,7 +11,7 @@ use crate::{
     node::Node,
     setup_context::SetupContext,
     tasks_queue::{TaskQueue, TaskQueueRef},
-    util::signal_broadcast::Sender,
+    util::{signal_broadcast::Sender, vec::VecExt},
 };
 
 pub(crate) type SignalID = usize;
@@ -80,8 +80,15 @@ impl<'a> Future for ReactiveContextPoll<'a> {
         std::mem::swap(&mut self.ctx.tasks.active, &mut tasks);
 
         // Poll all the task and remove the completed ones
-        tasks.retain_mut(|t| Pin::new(t).poll(cx, self.ctx).is_pending());
+        for task in &mut tasks {
+            if let Some(t) = task.as_mut() {
+                if Pin::new(t).poll(cx, self.ctx).is_ready() {
+                    *task = None;
+                }
+            }
+        }
 
+        tasks.condense();
         std::mem::swap(&mut self.ctx.tasks.active, &mut tasks);
 
         Poll::Pending
