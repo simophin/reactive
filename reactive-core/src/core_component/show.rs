@@ -7,17 +7,20 @@ use crate::{
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
-pub struct Show<F, CS, CF> {
-    test: F,
-    success: CS,
-    fail: CF,
+pub struct Show<T>
+where
+    T: FnMut() -> bool + 'static,
+{
+    test: T,
+    #[builder(setter(into))]
+    child: ComponentFactory,
+    #[builder(setter(into), default = "ComponentFactory::empty()")]
+    fallback: ComponentFactory,
 }
 
-impl<F, CS, CF> Component for Show<F, CS, CF>
+impl<T> Component for Show<T>
 where
-    F: FnMut() -> bool + 'static,
-    CS: ComponentFactory,
-    CF: ComponentFactory,
+    T: FnMut() -> bool + 'static,
 {
     fn setup(mut self: Box<Self>, ctx: &mut SetupContext) {
         let mut last_success = None;
@@ -33,9 +36,9 @@ where
             last_success.replace(new_success);
 
             let child: BoxedComponent = if new_success {
-                Box::new(self.success.create())
+                self.child.create()
             } else {
-                Box::new(self.fail.create())
+                self.fallback.create()
             };
 
             let child = ctx.mount_node(child);

@@ -25,6 +25,12 @@ where
     }
 }
 
+impl Component for BoxedComponent {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        (*self).setup(ctx)
+    }
+}
+
 impl<C: Component> Component for (C, &'static str) {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         ctx.children.push(Box::new(self.0));
@@ -51,14 +57,6 @@ impl<C: Component> Component for Option<C> {
     }
 }
 
-impl Component for Option<BoxedComponent> {
-    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        if let Some(child) = *self {
-            child.setup(ctx);
-        }
-    }
-}
-
 impl<C: Component> Component for Vec<C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         for child in *self {
@@ -67,28 +65,24 @@ impl<C: Component> Component for Vec<C> {
     }
 }
 
-impl Component for Vec<BoxedComponent> {
-    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        for child in *self {
-            child.setup(ctx);
-        }
+pub struct ComponentFactory(Box<dyn FnMut() -> BoxedComponent + 'static>);
+
+impl ComponentFactory {
+    pub fn create(&mut self) -> BoxedComponent {
+        (self.0)()
+    }
+
+    pub fn empty() -> ComponentFactory {
+        ComponentFactory(Box::new(|| Box::new(())))
     }
 }
 
-pub trait ComponentFactory: 'static {
-    type C: Component;
-
-    fn create(&mut self) -> Self::C;
-}
-
-impl<F, C> ComponentFactory for F
+impl<F, C> From<F> for ComponentFactory
 where
     F: FnMut() -> C + 'static,
     C: Component,
 {
-    type C = C;
-
-    fn create(&mut self) -> Self::C {
-        (self)()
+    fn from(mut value: F) -> Self {
+        Self(Box::new(move || Box::new(value())))
     }
 }

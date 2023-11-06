@@ -49,23 +49,23 @@ impl<S> Case<S> {
         }
     }
 
-    fn fallback(mut factory: impl ComponentFactory) -> Self {
+    fn fallback(mut factory: ComponentFactory) -> Self {
         Self {
-            create: Box::new(move |_| CreateState::Created(boxed_component(factory.create()))),
+            create: Box::new(move |_| CreateState::Created(factory.create())),
         }
     }
 }
 
 pub struct CaseBuilder<TestFn, Factory> {
     test: Option<TestFn>,
-    child: Option<Factory>,
+    children: Option<Factory>,
 }
 
 impl<TestFn, Factory> Default for CaseBuilder<TestFn, Factory> {
     fn default() -> Self {
         Self {
             test: None,
-            child: None,
+            children: None,
         }
     }
 }
@@ -87,7 +87,7 @@ impl<TestFn, Factory> CaseBuilder<TestFn, Factory> {
         C: Component,
     {
         Self {
-            child: Some(create),
+            children: Some(create),
             ..self
         }
     }
@@ -100,38 +100,23 @@ impl<TestFn, Factory> CaseBuilder<TestFn, Factory> {
         C: Component,
     {
         let test = self.test.ok_or("test is not set")?;
-        let child = self.child.ok_or("child is not set")?;
+        let child = self.children.ok_or("child is not set")?;
 
         Ok(Case::new(test, child))
     }
 }
 
-pub struct FallbackBuilder<C> {
-    child: Option<C>,
+pub struct Fallback<S>(Case<S>);
+
+impl<S, F: FnMut() -> C + 'static, C: Component> From<F> for Fallback<S> {
+    fn from(factory: F) -> Self {
+        Self(Case::fallback(factory.into()))
+    }
 }
 
-impl<T> Default for FallbackBuilder<T> {
+impl<S> Default for Fallback<S> {
     fn default() -> Self {
-        Self { child: None }
-    }
-}
-
-impl<C> FallbackBuilder<C> {
-    pub fn child(self, create: C) -> Self {
-        Self {
-            child: Some(create),
-            ..self
-        }
-    }
-
-    pub fn build<S, R>(self) -> Result<Case<S>, &'static str>
-    where
-        C: ComponentFactory,
-        R: Component,
-    {
-        let child = self.child.ok_or("child is not set")?;
-
-        Ok(Case::fallback(child))
+        Self(Case::fallback(ComponentFactory::empty()))
     }
 }
 
@@ -143,7 +128,25 @@ where
     S: Signal<Value = T>,
 {
     source: S,
+    #[builder(setter(into), default)]
+    fallback: Fallback<T>,
     children: Vec<Case<T>>,
+}
+
+impl<S, T> SwitchBuilder<S, T>
+where
+    T: Clone + 'static,
+    S: Signal<Value = T>,
+{
+    pub fn child(self, child: Case<T>) -> Self {
+        let mut children = self.children.unwrap_or_default();
+        children.clear();
+        children.push(child);
+        Self {
+            children: Some(children),
+            ..self
+        }
+    }
 }
 
 impl<S, T> Component for Switch<S, T>
@@ -154,12 +157,13 @@ where
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let source = self.source;
         let mut cases = self.children;
+        let mut fallback = self.fallback;
 
         ctx.create_effect(move |ctx| {
             let source = source.get();
             let mut create_state = CreateState::None;
 
-            for case in &mut cases {
+            for case in cases.iter_mut().chain(std::iter::once(&mut fallback.0)) {
                 let state = (case.create)(&source);
                 match &state {
                     CreateState::Created(_) | CreateState::MatchedUnchanged => {
