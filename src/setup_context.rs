@@ -3,6 +3,7 @@ use crate::{
     component::BoxedComponent,
     effect_context::EffectContext,
     effect_run::EffectRun,
+    node::Node,
     react_context::{new_node_id, new_signal_id, NodeID, SignalNotifier},
     // resource::{ResourceFactory, ResourceRun},
     signal::{signal, SignalReader, SignalWriter},
@@ -32,6 +33,28 @@ impl SetupContext {
             children: Default::default(),
         }
     }
+
+    pub fn mount_node(mut self, component: BoxedComponent) -> Node {
+        let content_type = component.content_type();
+        component.setup(&mut self);
+
+        // Set up children first
+        let children = self
+            .children
+            .into_iter()
+            .map(|c| {
+                SetupContext::new(self.signal_sender.clone(), self.queue.clone()).mount_node(c)
+            })
+            .collect();
+
+        Node {
+            id: self.node_id,
+            effects: self.effects,
+            clean_ups: self.clean_ups,
+            children,
+            content_type,
+        }
+    }
 }
 
 impl SetupContext {
@@ -41,8 +64,9 @@ impl SetupContext {
 
     pub fn create_effect(&mut self, effect: impl FnMut(&mut EffectContext) + 'static) {
         self.effects.push(EffectRun::new(
+            self.node_id,
+            self.signal_sender.clone(),
             &self.queue,
-            self.signal_sender.subscribe(),
             effect,
         ));
     }

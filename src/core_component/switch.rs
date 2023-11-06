@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use derive_builder::Builder;
 
 use crate::{
@@ -157,8 +155,6 @@ where
         let source = self.source;
         let mut cases = self.children;
 
-        let node_id = ctx.node_id();
-
         ctx.create_effect(move |ctx| {
             let source = source.get();
             let mut create_state = CreateState::None;
@@ -176,20 +172,16 @@ where
 
             match create_state {
                 CreateState::Created(child) => {
-                    ctx.spawn_reactive_task(move |ctx| {
-                        let node = ctx.mount_node(child);
-                        if let Some(this) = ctx.find_node(node_id) {
-                            this.children.clear();
-                            this.children.push(node);
-                        }
+                    let child = ctx.mount_node(child);
+                    ctx.with_current_node(move |node| {
+                        node.children.clear();
+                        node.children.push(child);
                     });
                 }
                 CreateState::MatchedUnchanged => {}
                 CreateState::None => {
-                    ctx.spawn_reactive_task(move |ctx| {
-                        if let Some(this) = ctx.find_node(node_id) {
-                            this.children.clear();
-                        }
+                    ctx.with_current_node(move |node| {
+                        node.children.clear();
                     });
                 }
             }

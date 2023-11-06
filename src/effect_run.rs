@@ -1,24 +1,27 @@
 use crate::{
     effect_context::EffectContext,
+    react_context::NodeID,
     task::{Task, TaskCleanUp},
     tasks_queue::TaskQueueRef,
     tracker::Tracker,
-    util::signal_broadcast::Receiver,
+    util::signal_broadcast::Sender,
 };
 
 pub struct EffectRun(Option<TaskCleanUp>);
 
 impl EffectRun {
     pub fn new(
+        node_id: NodeID,
+        signal_sender: Sender,
         task_queue_handle: &TaskQueueRef,
-        mut signal_receiver: Receiver,
         mut effect: impl FnMut(&mut EffectContext) + 'static,
     ) -> Self {
         let task = {
             let task_queue_handle = task_queue_handle.clone();
             Task::new_future(async move {
                 let mut tracker = Tracker::default();
-                let mut effect_ctx = EffectContext::new(task_queue_handle);
+                let mut signal_receiver = signal_sender.subscribe();
+                let mut effect_ctx = EffectContext::new(node_id, signal_sender, task_queue_handle);
 
                 loop {
                     effect_ctx.clear();

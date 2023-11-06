@@ -3,7 +3,6 @@ use derive_builder::Builder;
 use crate::{
     component::{BoxedComponent, Component, ComponentFactory},
     setup_context::SetupContext,
-    task::Task,
 };
 
 #[derive(Builder)]
@@ -21,7 +20,6 @@ where
     CF: ComponentFactory,
 {
     fn setup(mut self: Box<Self>, ctx: &mut SetupContext) {
-        let node_id = ctx.node_id();
         let mut last_success = None;
 
         ctx.create_effect(move |ctx| {
@@ -40,20 +38,12 @@ where
                 Box::new(self.fail.create())
             };
 
-            let task = Task::new_reactive_context(move |r| {
-                let child = r.mount_node(child);
-                if let Some(node) = r.find_node(node_id) {
-                    node.children.clear();
-                    node.children.push(child);
-                }
+            let child = ctx.mount_node(child);
+
+            ctx.with_current_node(move |node| {
+                node.children.clear();
+                node.children.push(child);
             });
-
-            let Ok(clean_up) = ctx.queue().queue_task(task) else {
-                log::warn!("ShowEffect task queue is dropped before the effect is run");
-                return;
-            };
-
-            ctx.add_clean_up(clean_up);
         });
     }
 }

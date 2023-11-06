@@ -24,6 +24,7 @@ pub struct TaskQueue {
 
 impl TaskQueue {
     pub fn apply_pending(&mut self, cx: &Context<'_>) {
+        // Removing a task needs to happen outside of the pending mutable borrow scope
         let mut removing;
 
         {

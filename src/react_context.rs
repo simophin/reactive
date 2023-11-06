@@ -7,7 +7,7 @@ use std::{
 use futures::Future;
 
 use crate::{
-    component::{BoxedComponent, Component},
+    component::BoxedComponent,
     node::Node,
     setup_context::SetupContext,
     tasks_queue::{TaskQueue, TaskQueueRef},
@@ -39,26 +39,8 @@ impl ReactiveContext {
     }
 
     pub fn mount_node(&mut self, component: BoxedComponent) -> Node {
-        let mut ctx = SetupContext::new(self.signal_sender.clone(), self.task_queue_handle());
-        let content_type = component.content_type();
-        component.setup(&mut ctx);
-
-        let node_id = ctx.node_id();
-
-        // Set up children first
-        let children = ctx
-            .children
-            .into_iter()
-            .map(|c| self.mount_node(c))
-            .collect();
-
-        Node {
-            id: node_id,
-            effects: ctx.effects,
-            clean_ups: ctx.clean_ups,
-            children,
-            content_type,
-        }
+        SetupContext::new(self.signal_sender.clone(), self.task_queue_handle())
+            .mount_node(component)
     }
 
     pub fn find_node(&mut self, id: NodeID) -> Option<&mut Node> {
