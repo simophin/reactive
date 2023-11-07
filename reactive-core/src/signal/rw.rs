@@ -28,17 +28,22 @@ impl<T: 'static> Signal for SignalReader<T> {
         Tracker::track_signal(self.1);
         r
     }
-
-    fn id(&self) -> Option<SignalID> {
-        Some(self.1)
-    }
 }
 
-#[derive(Clone)]
 pub struct SignalWriter<T> {
     value: ValueRef,
     notifier: SignalNotifier,
     _marker: PhantomData<T>,
+}
+
+impl<T> Clone for SignalWriter<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            notifier: self.notifier.clone(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T: 'static> SignalWriter<T> {

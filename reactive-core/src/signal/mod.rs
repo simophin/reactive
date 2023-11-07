@@ -3,7 +3,6 @@ mod rw;
 pub trait Signal: 'static {
     type Value;
 
-    fn id(&self) -> Option<SignalID>;
     fn with<R>(&self, access: impl for<'a> FnOnce(&Self::Value) -> R) -> R;
 }
 
@@ -18,17 +17,22 @@ where
     fn with<R>(&self, access: impl FnOnce(&T) -> R) -> R {
         access(&self())
     }
+}
 
-    fn id(&self) -> Option<SignalID> {
-        None
+impl Signal for () {
+    type Value = ();
+
+    #[inline]
+    fn with<R>(&self, access: impl FnOnce(&Self::Value) -> R) -> R {
+        access(&())
     }
 }
 
-pub trait SignalGetter<T>: Signal {
-    fn get(&self) -> T;
+pub trait SignalGetter: Signal {
+    fn get(&self) -> Self::Value;
 }
 
-impl<S> SignalGetter<<S as Signal>::Value> for S
+impl<S> SignalGetter for S
 where
     S: Signal,
     <S as Signal>::Value: Clone,
@@ -39,5 +43,3 @@ where
 }
 
 pub use rw::*;
-
-use crate::react_context::SignalID;

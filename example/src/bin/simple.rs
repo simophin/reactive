@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use reactive_core::{
     boxed_component,
     core_component::{CaseBuilder, ShowBuilder, SwitchBuilder},
-    Component, ReactiveContext, SetupContext, Signal, SignalGetter,
+    Component, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal, SignalGetter,
 };
 use reactive_macros::jsx;
-use tokio::task::LocalSet;
+use tokio::{task::LocalSet, time::sleep};
 
 pub fn app(ctx: &mut SetupContext) -> impl Component {
     let (index, set_index) = ctx.create_signal(1usize);
@@ -19,7 +21,7 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
         move || format!("body_{}", index.clone().get())
     };
 
-    ctx.create_effect(move |ctx| {
+    ctx.create_effect_fn(move |ctx| {
         let set_index = set_index.clone();
         ctx.spawn(async move {
             let mut set_index = set_index.clone();
@@ -39,16 +41,12 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
     });
 
     jsx! {
-        <>
-            <Show test=move || index.get() % 2 == 0>
+            <Show test=move || { index.get() > 2 } >
             {move || {
                 let body = body.clone();
                 move |ctx: &mut SetupContext| content(ctx, body.clone())
             }}
             </Show>
-
-            {|ctx: &mut SetupContext| header(ctx, title.clone())}
-        </>
     }
 
     // let show = ShowBuilder::default()
@@ -118,10 +116,22 @@ pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) -> imp
 }
 
 pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
-    ctx.create_effect(move |ctx| {
-        println!("content: {}", body.get());
+    let ResourceResult {
+        mut trigger,
+        state,
+        update,
+    } = ctx.create_resource((), |_| async move {
+        sleep(Duration::from_secs(10)).await;
+        "Future result"
+    });
 
-        ctx.add_clean_up(|| println!("content effect clean up"));
+    ctx.create_effect_simple(move || {
+        println!("Future load result: {:?}", state.get());
+
+        if state.with(|v| v.state) == LoadState::Loaded {
+            println!("Reload result");
+            trigger();
+        }
     });
 
     ctx.on_clean_up(|| {

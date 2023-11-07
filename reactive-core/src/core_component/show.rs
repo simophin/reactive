@@ -25,7 +25,7 @@ where
     fn setup(mut self: Box<Self>, ctx: &mut SetupContext) {
         let mut last_success = None;
 
-        ctx.create_effect(move |ctx| {
+        ctx.create_effect_fn(move |ctx| {
             let new_success = (self.test)();
             log::debug!("ShowEffect: new_success={new_success}, last={last_success:?}");
             match (last_success, new_success) {

@@ -1,14 +1,17 @@
+use futures::Future;
+
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
-    effect_context::EffectContext,
+    effect::Effect,
     effect_run::EffectRun,
     node::Node,
     react_context::{new_node_id, new_signal_id, NodeID, SignalNotifier},
-    // resource::{ResourceFactory, ResourceRun},
+    resource::{new_resource_effect, Resource, ResourceFactory},
     signal::{signal, SignalReader, SignalWriter},
     tasks_queue::TaskQueueRef,
     util::signal_broadcast::Sender,
+    EffectContext, Signal, SignalGetter,
 };
 
 pub struct SetupContext {
@@ -62,7 +65,19 @@ impl SetupContext {
         self.node_id
     }
 
-    pub fn create_effect(&mut self, effect: impl FnMut(&mut EffectContext) + 'static) {
+    pub fn create_effect(&mut self, effect: impl Effect) {
+        self.effects.push(EffectRun::new(
+            self.node_id,
+            self.signal_sender.clone(),
+            &self.queue,
+            effect,
+        ));
+    }
+
+    pub fn create_effect_fn<F>(&mut self, effect: F)
+    where
+        F: for<'a> FnMut(&'a mut EffectContext) -> () + 'static,
+    {
         self.effects.push(EffectRun::new(
             self.node_id,
             self.signal_sender.clone(),
@@ -75,7 +90,7 @@ impl SetupContext {
     where
         F: FnMut() -> () + 'static,
     {
-        self.create_effect(move |_ctx| effect());
+        self.create_effect_fn(move |_ctx| effect());
     }
 
     pub fn create_signal<T: 'static>(
@@ -89,36 +104,57 @@ impl SetupContext {
         )
     }
 
-    // pub fn create_resource<S, F, T>(
-    //     &mut self,
-    //     signal: S,
-    //     factory: F,
-    // ) -> ResourceResult<impl Fn() + 'static, impl for<'a> Signal<Value<'a> = Option<&'a T>>>
-    // where
-    //     T: 'static,
-    //     S: for<'a> Signal<Value<'a> = &'a S>,
-    //     F: ResourceFactory<S, T> + 'static,
-    // {
-    //     let (run, trigger) =
-    //         ResourceRun::new(&self.queue, self.signal_sender.subscribe(), signal, factory);
+    pub fn create_resource<S, F, T, FutT>(
+        &mut self,
+        input_signal: S,
+        factory: F,
+    ) -> ResourceResult<impl FnMut() + Clone + 'static, T>
+    where
+        S: Signal,
+        <S as Signal>::Value: Clone,
+        F: ResourceFactory<S::Value, FutT>,
+        FutT: Future<Output = T> + 'static,
+        T: 'static,
+    {
+        let (state_r, state_w) = self.create_signal(Resource::default());
+        let (trigger_r, mut trigger_w) = self.create_signal(());
 
-    //     let result = ResourceResult {
-    //         trigger: move || {
-    //             let _ = trigger.try_send(());
-    //         },
-    //         result: run.as_signal(),
-    //     };
+        let input_signal = move || {
+            let _ = trigger_r.get();
+            input_signal.get()
+        };
 
-    //     self.resources.push(run);
-    //     result
-    // }
+        self.create_effect(new_resource_effect(input_signal, state_w.clone(), factory));
+
+        ResourceResult {
+            trigger: move || trigger_w.update(()),
+            state: state_r,
+            update: state_w,
+        }
+    }
+
+    pub fn create_resource_fn<S, F, O, FutO>(
+        &mut self,
+        input_signal: S,
+        factory: F,
+    ) -> ResourceResult<impl FnMut() + Clone + 'static, O>
+    where
+        S: Signal,
+        <S as Signal>::Value: Clone,
+        F: FnMut(S::Value) -> FutO + 'static,
+        FutO: Future<Output = O> + 'static,
+        O: 'static,
+    {
+        self.create_resource(input_signal, factory)
+    }
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
         self.clean_ups.push(Box::new(clean_up));
     }
 }
 
-pub struct ResourceResult<TRI, S> {
-    pub trigger: TRI,
-    pub result: S,
+pub struct ResourceResult<TF, T> {
+    pub trigger: TF,
+    pub state: SignalReader<Resource<T>>,
+    pub update: SignalWriter<Resource<T>>,
 }

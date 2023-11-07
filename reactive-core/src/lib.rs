@@ -1,11 +1,12 @@
 mod clean_up;
 mod component;
 pub mod core_component;
+mod effect;
 mod effect_context;
 mod effect_run;
 mod node;
 mod react_context;
-// mod resource;
+mod resource;
 mod setup_context;
 mod signal;
 mod task;
@@ -14,8 +15,10 @@ mod tracker;
 mod util;
 
 pub use component::*;
+pub use effect::*;
 pub use effect_context::EffectContext;
 pub use node::Node;
 pub use react_context::ReactiveContext;
-pub use setup_context::SetupContext;
+pub use resource::*;
+pub use setup_context::*;
 pub use signal::*;

@@ -1,105 +1,75 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
-
-use futures::{select, Future, FutureExt};
+use futures::Future;
 
 use crate::{
     signal::{Signal, SignalGetter},
-    task::{Task, TaskCleanUp},
-    tasks_queue::TaskQueueRef,
-    util::{mpsc, signal_broadcast::Receiver},
+    Effect, EffectContext, SignalWriter,
 };
 
-pub struct ResourceRun {
-    clean_up: TaskCleanUp,
-    value: Rc<RefCell<Option<Box<dyn Any>>>>,
+#[derive(Debug, Clone)]
+pub struct Resource<T> {
+    pub value: Option<T>,
+    pub state: LoadState,
 }
 
-impl ResourceRun {
-    pub fn as_signal<T: 'static>(&self) -> ResourceAccess<T> {
-        ResourceAccess(self.value.clone(), PhantomData)
+impl<T> Default for Resource<T> {
+    fn default() -> Self {
+        Self {
+            value: None,
+            state: LoadState::Idle,
+        }
     }
+}
 
-    pub fn new<S, I, F, T: 'static>(
-        queue: &TaskQueueRef,
-        mut signal_receiver: Receiver,
-        signal: S,
-        factory: F,
-    ) -> (Self, mpsc::Sender<()>)
-    where
-        S: for<'a> Signal<Value<'a> = &'a I>,
-        I: Clone + 'static,
-        F: ResourceFactory<I, T> + 'static,
-    {
-        let value: Rc<RefCell<Option<Box<dyn Any>>>> = Default::default();
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoadState {
+    Idle,
+    Loading,
+    Loaded,
+}
 
-        let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(10);
-
-        let task = Task::new_future({
-            let value = value.clone();
-            async move {
-                let mut tracker = Tracker::default();
-                loop {
-                    Tracker::set_current(Some(tracker));
-                    let input = signal.get();
-                    tracker = Tracker::set_current(None).expect("To have tracker set before");
-                    signal_receiver.set_subscribing(tracker.iter());
-
-                    select! {
-                        out = factory.create(input).fuse() => {
-                            value.borrow_mut().replace(Box::new(out));
-                        }
-
-                        r = signal_receiver.next().fuse() => {
-                            if r.is_none() {
-                                break;
-                            }
-                        }
-
-                        v = trigger_rx.recv().fuse() => {
-                            if v.is_none() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+pub(crate) fn new_resource_effect<SI, T, FutT, F>(
+    signal_input: SI,
+    out_w: SignalWriter<Resource<T>>,
+    mut factory: F,
+) -> impl Effect
+where
+    SI: Signal,
+    <SI as Signal>::Value: Clone,
+    T: 'static,
+    FutT: Future<Output = T> + 'static,
+    F: ResourceFactory<<SI as Signal>::Value, FutT>,
+{
+    move |ctx: &mut EffectContext| {
+        let input = signal_input.get();
+        let mut out_w = out_w.clone();
+        out_w.update_with(|state| {
+            state.state = LoadState::Loading;
+            true
         });
 
-        let task_id = task.id();
-        let _ = queue.queue_task(task);
-        (
-            Self {
-                clean_up: TaskCleanUp::new(queue.clone(), task_id),
-                value,
-            },
-            trigger_tx,
-        )
+        let fut = factory.create(input);
+        ctx.spawn(async move {
+            let value = fut.await;
+            out_w.update_with(|state| {
+                state.value.replace(value);
+                state.state = LoadState::Loaded;
+                true
+            });
+        });
     }
 }
 
-pub trait ResourceFactory<Input: 'static, Output: 'static> {
-    type Fut: Future<Output = Output> + 'static;
-
-    fn create(&self, input: Input) -> Self::Fut;
+pub trait ResourceFactory<Input: 'static, Output: 'static>: 'static {
+    fn create(&mut self, input: Input) -> Output;
 }
 
-pub struct ResourceAccess<T>(Rc<RefCell<Option<Box<dyn Any>>>>, PhantomData<T>);
-
-impl<T> Clone for ResourceAccess<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
-    }
-}
-
-impl<T: 'static> Signal for ResourceAccess<T> {
-    type Value<'a> = Option<&'a T>;
-
-    fn with<R>(&self, access: impl FnOnce(Option<&T>) -> R) -> R {
-        self.0
-            .borrow()
-            .as_ref()
-            .map(|v| v.downcast_ref())
-            .map(access)
-            .unwrap()
+impl<F, I, O> ResourceFactory<I, O> for F
+where
+    F: FnMut(I) -> O + 'static,
+    I: 'static,
+    O: 'static,
+{
+    fn create(&mut self, input: I) -> O {
+        (self)(input)
     }
 }

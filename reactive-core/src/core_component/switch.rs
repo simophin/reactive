@@ -159,7 +159,7 @@ where
         let mut cases = self.children;
         let mut fallback = self.fallback;
 
-        ctx.create_effect(move |ctx| {
+        ctx.create_effect_fn(move |ctx| {
             let source = source.get();
             let mut create_state = CreateState::None;
 

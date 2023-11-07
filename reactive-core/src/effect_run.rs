@@ -1,4 +1,5 @@
 use crate::{
+    effect::Effect,
     effect_context::EffectContext,
     react_context::NodeID,
     task::{Task, TaskCleanUp},
@@ -14,7 +15,7 @@ impl EffectRun {
         node_id: NodeID,
         signal_sender: Sender,
         task_queue_handle: &TaskQueueRef,
-        mut effect: impl FnMut(&mut EffectContext) + 'static,
+        mut effect: impl Effect,
     ) -> Self {
         let task = {
             let task_queue_handle = task_queue_handle.clone();
@@ -28,7 +29,7 @@ impl EffectRun {
 
                     tracker.clear();
                     Tracker::set_current(Some(tracker));
-                    effect(&mut effect_ctx);
+                    effect.run(&mut effect_ctx);
                     tracker = Tracker::set_current(None).expect("To have tracker back");
 
                     signal_receiver.set_subscribing(tracker.iter());
