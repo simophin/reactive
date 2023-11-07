@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     react_context::{SignalID, SignalNotifier},
@@ -7,13 +7,19 @@ use crate::{
 
 use super::Signal;
 
-type ValueRef = Rc<RefCell<Box<dyn Any>>>;
+type ValueRef<T> = Rc<RefCell<T>>;
 
-pub struct SignalReader<T>(ValueRef, SignalID, PhantomData<T>);
+pub struct SignalReader<T> {
+    value: ValueRef<T>,
+    id: SignalID,
+}
 
 impl<T> Clone for SignalReader<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), PhantomData)
+        Self {
+            value: self.value.clone(),
+            id: self.id,
+        }
     }
 }
 
@@ -22,18 +28,15 @@ impl<T: 'static> Signal for SignalReader<T> {
 
     #[inline]
     fn with<R>(&self, access: impl FnOnce(&Self::Value) -> R) -> R {
-        let value = self.0.borrow();
-        let value = value.downcast_ref::<T>().expect("To have correct type");
-        let r = access(value);
-        Tracker::track_signal(self.1);
+        let r = access(&*self.value.borrow());
+        Tracker::track_signal(self.id);
         r
     }
 }
 
 pub struct SignalWriter<T> {
-    value: ValueRef,
+    value: ValueRef<T>,
     notifier: SignalNotifier,
-    _marker: PhantomData<T>,
 }
 
 impl<T> Clone for SignalWriter<T> {
@@ -41,19 +44,13 @@ impl<T> Clone for SignalWriter<T> {
         Self {
             value: self.value.clone(),
             notifier: self.notifier.clone(),
-            _marker: PhantomData,
         }
     }
 }
 
 impl<T: 'static> SignalWriter<T> {
     pub fn update_with(&mut self, update: impl FnOnce(&mut T) -> bool) {
-        let changed = update(
-            self.value
-                .borrow_mut()
-                .downcast_mut::<T>()
-                .expect("To have correct type"),
-        );
+        let changed = update(&mut *self.value.borrow_mut());
 
         if changed {
             self.notifier.notify_changed();
@@ -83,14 +80,12 @@ pub fn signal<T: 'static>(
     initial_value: T,
     notifier: SignalNotifier,
 ) -> (SignalReader<T>, SignalWriter<T>) {
-    let value: Box<dyn Any> = Box::new(initial_value);
-    let value = Rc::new(RefCell::new(value));
+    let value = Rc::new(RefCell::new(initial_value));
     (
-        SignalReader(value.clone(), notifier.signal_id(), PhantomData),
-        SignalWriter {
-            value,
-            notifier,
-            _marker: PhantomData,
+        SignalReader {
+            value: value.clone(),
+            id: notifier.signal_id(),
         },
+        SignalWriter { value, notifier },
     )
 }

@@ -20,7 +20,6 @@ pub struct SetupContext {
     signal_sender: Sender,
     pub effects: Vec<EffectRun>,
     pub clean_ups: Vec<BoxedCleanUp>,
-    // pub resources: Vec<ResourceRun>,
     pub children: Vec<BoxedComponent>,
 }
 
@@ -30,7 +29,6 @@ impl SetupContext {
             signal_sender,
             queue,
             node_id: new_node_id(),
-            // resources: Default::default(),
             effects: Default::default(),
             clean_ups: Default::default(),
             children: Default::default(),
