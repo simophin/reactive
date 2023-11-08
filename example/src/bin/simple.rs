@@ -9,7 +9,7 @@ use reactive_core::{
 use reactive_macros::jsx;
 use tokio::{task::LocalSet, time::sleep};
 
-static THEME: ContextKey<String> = ContextKey::new();
+static THEME: &ContextKey<String> = &ContextKey::new();
 
 pub fn app(ctx: &mut SetupContext) -> impl Component {
     let (index, set_index) = ctx.create_signal(1usize);
@@ -44,13 +44,8 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
     });
 
     jsx! {
-        <Provider key=&THEME value=|| String::from("dark")>
-            <Show test=move || { index.get() > 2 } >
-            {move || {
-                let body = body.clone();
-                move |ctx: &mut SetupContext| content(ctx, body.clone())
-            }}
-            </Show>
+        <Provider key=THEME value=|| String::from("dark")>
+            { move |ctx: &mut SetupContext| header(ctx, index.clone()) }
         </Provider>
     }
 
@@ -70,52 +65,65 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
     // ]
 }
 
-pub fn header(ctx: &mut SetupContext, title: impl Signal<Value = String>) -> impl Component {
+pub fn header(ctx: &mut SetupContext, index: impl Signal<Value = usize>) -> impl Component {
     ctx.on_clean_up(|| {
         println!("header clean up");
     });
 
     return jsx! {
-        <Switch source=title fallback=move || ()>
-            <Case test=|title: &String| {
-                if title.ends_with("1") {
-                    Some(title.clone())
+        <Switch
+            source=index
+            fallback=move || |ctx: &mut SetupContext| {
+                ctx.create_effect_simple(move || {
+                    println!("No match");
+                });
+            }>
+            <Case test=|index| {
+                if *index % 4 == 0 {
+                    Some(String::from("Even number header"))
                 } else {
                     None
                 }
             }>
-            {|title: String| {
+            {|title| {
                 move |ctx: &mut SetupContext| {
                     ctx.create_effect_simple(move || {
-                        println!("Case 1: {title}");
-                    });
-
-                    ctx.on_clean_up(|| {
-                        println!("Case 1 clean up");
+                        println!("{title}");
                     });
                 }
             }}
             </Case>
 
-            <Case test=|title: &String| {
-                if title.ends_with("2") {
-                    Some(title.clone())
+            <Case test=|index| {
+                if *index % 4 == 1 {
+                    Some(String::from("Odd number header"))
                 } else {
                     None
                 }
             }>
-            {|title: String| {
+            {|title| {
                 move |ctx: &mut SetupContext| {
                     ctx.create_effect_simple(move || {
-                        println!("Case 2: {title}");
-                    });
-
-                    ctx.on_clean_up(|| {
-                        println!("Case 2 clean up");
+                        println!("{title}");
                     });
                 }
             }}
             </Case>
+
+            <Case test=|index| if *index % 4 == 3 {
+                Ok(*index)
+            } else {
+                Err(())
+            }>
+            {|index| {
+                move |ctx: &mut SetupContext| {
+                    ctx.create_effect_simple(move || {
+                        println!("Boolean case: {index}");
+                    });
+                }
+            }}
+            </Case>
+
         </Switch>
     };
 }

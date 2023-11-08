@@ -6,8 +6,10 @@ use crate::{
     signal::{Signal, SignalGetter},
 };
 
+use super::testable::Testable;
+
 pub struct Case<S> {
-    create: Box<dyn for<'a> FnMut(&'a S) -> CreateState>,
+    create: Box<dyn for<'a> FnMut(&'a S, bool) -> CreateState>,
 }
 
 enum CreateState {
@@ -18,26 +20,24 @@ enum CreateState {
 
 impl<S> Case<S> {
     fn new<T, C>(
-        mut test: impl for<'a> FnMut(&'a S) -> Option<T> + 'static,
-        mut create: impl FnMut(T) -> C + 'static,
+        mut test: impl for<'a> FnMut(&'a S) -> T + 'static,
+        mut create: impl FnMut(T::Value) -> C + 'static,
     ) -> Self
     where
         C: Component,
-        T: Clone + Eq + 'static,
+        T: Testable + Clone + Eq,
     {
         let mut last_result: Option<T> = None;
-        let create = move |source: &S| -> CreateState {
+        let create = move |source: &S, force: bool| -> CreateState {
             let result = test(source);
 
-            let state = match (&last_result, result) {
-                (last, Some(result)) if last.as_ref() != Some(&result) => {
-                    last_result.replace(result.clone());
-                    CreateState::Created(boxed_component(create(result)))
-                }
-                (_, None) => CreateState::None,
-                (_, Some(result)) => {
-                    last_result.replace(result);
-                    CreateState::MatchedUnchanged
+            let state = match (&last_result, result, force) {
+                (_, r, _) if !r.is_ok() => CreateState::None,
+                (Some(last), r, false) if last == &r => CreateState::MatchedUnchanged,
+
+                (_, r, _) => {
+                    last_result.replace(r.clone());
+                    CreateState::Created(boxed_component(create(r.to_output())))
                 }
             };
 
@@ -51,21 +51,27 @@ impl<S> Case<S> {
 
     fn fallback(mut factory: ComponentFactory) -> Self {
         Self {
-            create: Box::new(move |_| CreateState::Created(factory.create())),
+            create: Box::new(move |_, force: bool| {
+                if force {
+                    CreateState::Created(factory.create())
+                } else {
+                    CreateState::MatchedUnchanged
+                }
+            }),
         }
     }
 }
 
 pub struct CaseBuilder<TestFn, Factory> {
     test: Option<TestFn>,
-    children: Option<Factory>,
+    child: Option<Factory>,
 }
 
 impl<TestFn, Factory> Default for CaseBuilder<TestFn, Factory> {
     fn default() -> Self {
         Self {
             test: None,
-            children: None,
+            child: None,
         }
     }
 }
@@ -73,7 +79,8 @@ impl<TestFn, Factory> Default for CaseBuilder<TestFn, Factory> {
 impl<TestFn, Factory> CaseBuilder<TestFn, Factory> {
     pub fn test<SourceValue, CaseInput>(self, test: TestFn) -> Self
     where
-        TestFn: FnMut(&SourceValue) -> Option<CaseInput> + 'static,
+        TestFn: FnMut(&SourceValue) -> CaseInput + 'static,
+        CaseInput: Testable + Clone + Eq,
     {
         Self {
             test: Some(test),
@@ -81,26 +88,26 @@ impl<TestFn, Factory> CaseBuilder<TestFn, Factory> {
         }
     }
 
-    pub fn child<CaseInput, C>(self, create: Factory) -> Self
+    pub fn child<Arg, C>(self, create: Factory) -> Self
     where
-        Factory: FnMut(CaseInput) -> C + 'static,
+        Factory: FnMut(Arg) -> C + 'static,
         C: Component,
     {
         Self {
-            children: Some(create),
+            child: Some(create),
             ..self
         }
     }
 
     pub fn build<SourceValue, CaseInput, C>(self) -> Result<Case<SourceValue>, &'static str>
     where
-        TestFn: FnMut(&SourceValue) -> Option<CaseInput> + 'static,
-        Factory: FnMut(CaseInput) -> C + 'static,
-        CaseInput: Clone + Eq + 'static,
+        TestFn: FnMut(&SourceValue) -> CaseInput + 'static,
+        Factory: FnMut(CaseInput::Value) -> C + 'static,
+        CaseInput: Testable + Clone + Eq,
         C: Component,
     {
         let test = self.test.ok_or("test is not set")?;
-        let child = self.children.ok_or("child is not set")?;
+        let child = self.child.ok_or("child is not set")?;
 
         Ok(Case::new(test, child))
     }
@@ -158,16 +165,24 @@ where
         let source = self.source;
         let mut cases = self.children;
         let mut fallback = self.fallback;
+        let mut last_match_index: Option<usize> = None;
 
         ctx.create_effect_fn(move |ctx| {
             let source = source.get();
             let mut create_state = CreateState::None;
 
-            for case in cases.iter_mut().chain(std::iter::once(&mut fallback.0)) {
-                let state = (case.create)(&source);
+            for (index, case) in cases
+                .iter_mut()
+                .chain(std::iter::once(&mut fallback.0))
+                .enumerate()
+            {
+                let state =
+                    (case.create)(&source, last_match_index.is_some_and(|last| last != index));
+
                 match &state {
                     CreateState::Created(_) | CreateState::MatchedUnchanged => {
                         create_state = state;
+                        last_match_index.replace(index);
                         break;
                     }
                     CreateState::None => {}

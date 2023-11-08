@@ -12,8 +12,11 @@ where
     V: Signal,
     C: Component,
 {
+    /// The key of the context.
     key: &'static ContextKey<T>,
+    /// The value of the context. Must be a signal.
     value: V,
+    /// The child component.
     child: C,
 }
 
