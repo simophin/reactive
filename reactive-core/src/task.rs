@@ -5,7 +5,7 @@ use std::{
 
 use futures::Future;
 
-use crate::{clean_up::CleanUp, react_context::ReactiveContext, tasks_queue::TaskQueueRef};
+use crate::{react_context::ReactiveContext, tasks_queue::new_task_id};
 
 pub type TaskID = usize;
 
@@ -55,36 +55,4 @@ impl Task {
             }
         }
     }
-}
-
-pub struct TaskCleanUp(Option<(TaskQueueRef, TaskID)>);
-
-impl TaskCleanUp {
-    pub fn new(queue: TaskQueueRef, id: TaskID) -> Self {
-        Self(Some((queue, id)))
-    }
-
-    fn do_clean_up(&mut self) {
-        if let Some((queue, id)) = self.0.take() {
-            queue.queue_task_removal(id);
-        }
-    }
-}
-
-impl Drop for TaskCleanUp {
-    fn drop(&mut self) {
-        self.do_clean_up();
-    }
-}
-
-impl CleanUp for TaskCleanUp {
-    fn clean_up(mut self: Box<Self>) {
-        self.do_clean_up();
-    }
-}
-
-pub fn new_task_id() -> TaskID {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-    NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }

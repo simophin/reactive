@@ -2,10 +2,6 @@ use crate::setup_context::SetupContext;
 
 pub trait Component: 'static {
     fn setup(self: Box<Self>, ctx: &mut SetupContext);
-
-    fn content_type(&self) -> Option<&'static str> {
-        None
-    }
 }
 
 pub type BoxedComponent = Box<dyn Component>;
@@ -28,16 +24,6 @@ where
 impl Component for BoxedComponent {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         (*self).setup(ctx)
-    }
-}
-
-impl<C: Component> Component for (C, &'static str) {
-    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        ctx.children.push(Box::new(self.0));
-    }
-
-    fn content_type(&self) -> Option<&'static str> {
-        Some(self.1)
     }
 }
 

@@ -13,6 +13,7 @@ local-waker = "0.1.4"
 log = "0.4.20"
 parking_lot = "0.12.1"
 smallvec = { version = "1.11.1", features = ["const_generics"] }
+thiserror = "1.0.50"
 
 [dev-dependencies]
 dotenvy = "0.15.7"

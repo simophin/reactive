@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use reactive_core::{
     boxed_component,
-    core_component::{CaseBuilder, ProviderBuilder, ShowBuilder, SwitchBuilder},
+    core_component::{CaseBuilder, ProviderBuilder, SwitchBuilder},
     Component, ContextKey, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal,
     SignalGetter,
 };
@@ -37,6 +37,15 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
                 });
             }
         });
+    });
+
+    let value = {
+        let index = index.clone();
+        ctx.create_memo(move || format!("memory_{}", index.get()))
+    };
+
+    ctx.create_effect_simple(move || {
+        value.with(|v| println!("Memo value: {v}"));
     });
 
     ctx.on_clean_up(|| {

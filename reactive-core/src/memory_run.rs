@@ -23,10 +23,10 @@ where
         }
     });
 
-    let Ok(clean_up) = ctx.data.queue.queue_task(task) else {
-        panic!("Reactive system has stopped accepting task");
+    match ctx.data.queue.queue_task(task) {
+        Ok(clean_up) => ctx.on_clean_up(clean_up),
+        Err(_) => log::warn!("Reactive system has stopped accepting task"),
     };
 
-    ctx.on_clean_up(clean_up);
     signal_r
 }

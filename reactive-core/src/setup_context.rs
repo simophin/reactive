@@ -7,14 +7,15 @@ use crate::{
     component::BoxedComponent,
     context::{ContextKey, ContextMap},
     effect::Effect,
-    effect_run::EffectRun,
+    effect_run::new_effect_run,
+    memory_run::new_memory_run,
     node::Node,
     react_context::{new_node_id, new_signal_id, NodeID, SignalNotifier},
     resource::{new_resource_effect, Resource, ResourceFactory},
     signal::{signal, SignalReader, SignalWriter},
     tasks_queue::TaskQueueRef,
     util::signal_broadcast::Sender,
-    EffectContext, Signal, SignalGetter, memory_run::new_memory_run,
+    EffectContext, Signal, SignalGetter,
 };
 
 #[derive(Clone)]
@@ -27,7 +28,6 @@ pub(crate) struct SetupContextData {
 
 pub struct SetupContext {
     pub(crate) data: SetupContextData,
-    pub(crate) effects: Vec<EffectRun>,
     pub(crate) clean_ups: Vec<BoxedCleanUp>,
     pub(crate) children: Vec<BoxedComponent>,
 }
@@ -36,14 +36,12 @@ impl SetupContext {
     pub(crate) fn new(data: SetupContextData) -> Self {
         Self {
             data,
-            effects: Default::default(),
             clean_ups: Default::default(),
             children: Default::default(),
         }
     }
 
     pub fn mount_node(mut self, component: BoxedComponent) -> Node {
-        let content_type = component.content_type();
         component.setup(&mut self);
 
         let node_id = self.data.node_id;
@@ -63,10 +61,8 @@ impl SetupContext {
 
         Node {
             id: node_id,
-            effects: self.effects,
             clean_ups: self.clean_ups,
             children,
-            content_type,
         }
     }
 }
@@ -77,14 +73,14 @@ impl SetupContext {
     }
 
     pub fn create_effect(&mut self, effect: impl Effect) {
-        self.effects.push(EffectRun::new(self.data.clone(), effect));
+        new_effect_run(self, effect);
     }
 
     pub fn create_effect_fn<F>(&mut self, effect: F)
     where
         F: for<'a> FnMut(&'a mut EffectContext) -> () + 'static,
     {
-        self.effects.push(EffectRun::new(self.data.clone(), effect));
+        new_effect_run(self, effect);
     }
 
     pub fn create_effect_simple<F>(&mut self, mut effect: F)

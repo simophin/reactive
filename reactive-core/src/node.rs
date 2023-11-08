@@ -1,11 +1,9 @@
-use crate::{clean_up::BoxedCleanUp, effect_run::EffectRun, react_context::NodeID};
+use crate::{clean_up::BoxedCleanUp, react_context::NodeID};
 
 pub struct Node {
     pub id: NodeID,
-    pub effects: Vec<EffectRun>,
     pub clean_ups: Vec<BoxedCleanUp>,
     pub children: Vec<Node>,
-    pub content_type: Option<&'static str>,
 }
 
 impl Node {

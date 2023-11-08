@@ -7,7 +7,10 @@ use std::{
 
 use local_waker::LocalWaker;
 
-use crate::task::{Task, TaskCleanUp, TaskID};
+use crate::{
+    clean_up::CleanUp,
+    task::{Task, TaskID},
+};
 
 #[derive(Default)]
 struct PendingQueue {
@@ -70,11 +73,43 @@ impl TaskQueueRef {
         Ok(clean_up)
     }
 
-    pub fn queue_task_removal(&self, id: TaskID) {
+    fn queue_task_removal(&self, id: TaskID) {
         if let Some(inner) = self.0.upgrade() {
             let mut inner = inner.borrow_mut();
             inner.removing.insert(id);
             inner.waker.wake();
         }
     }
+}
+
+pub struct TaskCleanUp(Option<(TaskQueueRef, TaskID)>);
+
+impl TaskCleanUp {
+    pub fn new(queue: TaskQueueRef, id: TaskID) -> Self {
+        Self(Some((queue, id)))
+    }
+
+    fn do_clean_up(&mut self) {
+        if let Some((queue, id)) = self.0.take() {
+            queue.queue_task_removal(id);
+        }
+    }
+}
+
+impl Drop for TaskCleanUp {
+    fn drop(&mut self) {
+        self.do_clean_up();
+    }
+}
+
+impl CleanUp for TaskCleanUp {
+    fn clean_up(mut self: Box<Self>) {
+        self.do_clean_up();
+    }
+}
+
+pub fn new_task_id() -> TaskID {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
