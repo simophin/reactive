@@ -14,6 +14,7 @@ mod task;
 mod tasks_queue;
 mod tracker;
 mod util;
+mod memory_run;
 
 pub use component::*;
 pub use context::ContextKey;

@@ -22,9 +22,7 @@ impl EffectRun {
                     effect_ctx.clear();
 
                     tracker.clear();
-                    Tracker::set_current(Some(tracker));
-                    effect.run(&mut effect_ctx);
-                    tracker = Tracker::set_current(None).expect("To have tracker back");
+                    tracker = tracker.with_current(|| effect.run(&mut effect_ctx)).0;
 
                     signal_receiver.set_subscribing(tracker.iter());
 

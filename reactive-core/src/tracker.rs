@@ -11,10 +11,11 @@ thread_local! {
 pub struct Tracker(SignalSet);
 
 impl Tracker {
-    pub fn set_current(tracker: Option<Self>) -> Option<Self> {
-        CURRENT_TRACKER.with(move |cell| match tracker {
-            Some(tracker) => cell.borrow_mut().replace(tracker),
-            None => cell.borrow_mut().take(),
+    pub fn with_current<T>(self, f: impl FnOnce() -> T) -> (Self, T) {
+        CURRENT_TRACKER.with(|cell| {
+            cell.borrow_mut().replace(self);
+            let r = f();
+            (cell.borrow_mut().take().unwrap(), r)
         })
     }
 

@@ -14,7 +14,7 @@ use crate::{
     signal::{signal, SignalReader, SignalWriter},
     tasks_queue::TaskQueueRef,
     util::signal_broadcast::Sender,
-    EffectContext, Signal, SignalGetter,
+    EffectContext, Signal, SignalGetter, memory_run::new_memory_run,
 };
 
 #[derive(Clone)]
@@ -161,6 +161,14 @@ impl SetupContext {
         key: &'static ContextKey<T>,
     ) -> impl Signal<Value = T> {
         self.use_context(key).expect("Context not found")
+    }
+
+    pub fn create_memo<F, T>(&mut self, factory: F) -> impl Signal<Value = T>
+    where
+        T: 'static,
+        F: FnMut() -> T + 'static,
+    {
+        new_memory_run(self, factory)
     }
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
