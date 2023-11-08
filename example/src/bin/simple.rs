@@ -2,11 +2,14 @@ use std::time::Duration;
 
 use reactive_core::{
     boxed_component,
-    core_component::{CaseBuilder, ShowBuilder, SwitchBuilder},
-    Component, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal, SignalGetter,
+    core_component::{CaseBuilder, ProviderBuilder, ShowBuilder, SwitchBuilder},
+    Component, ContextKey, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal,
+    SignalGetter,
 };
 use reactive_macros::jsx;
 use tokio::{task::LocalSet, time::sleep};
+
+static THEME: ContextKey<String> = ContextKey::new();
 
 pub fn app(ctx: &mut SetupContext) -> impl Component {
     let (index, set_index) = ctx.create_signal(1usize);
@@ -41,12 +44,14 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
     });
 
     jsx! {
+        <Provider key=&THEME value=|| String::from("dark")>
             <Show test=move || { index.get() > 2 } >
             {move || {
                 let body = body.clone();
                 move |ctx: &mut SetupContext| content(ctx, body.clone())
             }}
             </Show>
+        </Provider>
     }
 
     // let show = ShowBuilder::default()
@@ -125,6 +130,8 @@ pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
         "Future result"
     });
 
+    let theme = ctx.require_context(&THEME);
+
     ctx.create_effect_simple(move || {
         println!("Future load result: {:?}", state.get());
 
@@ -132,6 +139,10 @@ pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
             println!("Reload result");
             trigger();
         }
+    });
+
+    ctx.create_effect_simple(move || {
+        theme.with(|v| println!("Theme = {v}"));
     });
 
     ctx.on_clean_up(|| {

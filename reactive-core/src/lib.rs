@@ -1,5 +1,6 @@
 mod clean_up;
 mod component;
+mod context;
 pub mod core_component;
 mod effect;
 mod effect_context;
@@ -13,9 +14,9 @@ mod task;
 mod tasks_queue;
 mod tracker;
 mod util;
-mod context;
 
 pub use component::*;
+pub use context::ContextKey;
 pub use effect::*;
 pub use effect_context::EffectContext;
 pub use node::Node;

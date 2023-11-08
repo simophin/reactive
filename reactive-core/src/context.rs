@@ -1,43 +1,102 @@
-use std::{
-    any::Any,
-    marker::PhantomData,
-    rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::{any::Any, cmp, marker::PhantomData, rc::Rc};
 
 use smallvec::SmallVec;
 
-use crate::SignalReader;
-
-pub type ContextID = usize;
+use crate::Signal;
 
 #[derive(Default, Clone)]
-pub struct ContextMap(SmallVec<[(ContextID, Rc<dyn Any>); 3]>);
+pub struct ContextMap(SmallVec<[(&'static ContextKeyInner, ContextSignal); 3]>);
 
 impl ContextMap {
-    pub fn insert<T: 'static>(&mut self, key: ContextKey<T>, value: SignalReader<T>) {
-        match self.0.binary_search_by_key(&key.0, |entry| entry.0) {
-            Ok(index) => self.0[index] = (key.0, Rc::new(value)),
-            Err(index) => self.0.insert(index, (key.0, Rc::new(value))),
+    pub fn insert<T: 'static>(
+        &mut self,
+        key: &'static ContextKey<T>,
+        value: impl Signal<Value = T>,
+    ) {
+        let value = ContextSignal(Rc::new(move |access| {
+            value.with(move |value| (*access)(value as &dyn Any))
+        }));
+
+        match self.0.binary_search_by_key(&&key.0, |entry| entry.0) {
+            Ok(index) => self.0[index] = (&key.0, value),
+            Err(index) => self.0.insert(index, (&key.0, value)),
         }
     }
 
-    pub fn get<T: 'static>(&self, key: ContextKey<T>) -> Option<&SignalReader<T>> {
+    pub fn get<T: 'static>(&self, key: &'static ContextKey<T>) -> Option<impl Signal<Value = T>> {
         self.0
-            .binary_search_by_key(&key.0, |entry| entry.0)
+            .binary_search_by_key(&&key.0, |entry| entry.0)
             .ok()
             .and_then(|index| self.0.get(index))
-            .and_then(|(_, context)| context.downcast_ref())
+            .map(|(_, signal)| signal.clone().to_signal())
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct ContextKey<T>(ContextID, PhantomData<T>);
+struct ContextSignal(Rc<dyn Fn(&mut dyn for<'a> FnMut(&'a dyn Any))>);
 
-impl<T: 'static> ContextKey<T> {
-    pub fn new() -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        Self(id, PhantomData)
+impl Clone for ContextSignal {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+struct ContextAsSignal<T>(ContextSignal, PhantomData<T>);
+
+impl<T> Clone for ContextAsSignal<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+impl ContextSignal {
+    fn to_signal<T: 'static>(self) -> ContextAsSignal<T> {
+        ContextAsSignal(self, PhantomData)
+    }
+}
+
+impl<T: 'static> Signal for ContextAsSignal<T> {
+    type Value = T;
+
+    fn with<R>(&self, access: impl for<'a> FnOnce(&Self::Value) -> R) -> R {
+        let mut result = None;
+        let mut access = Some(access);
+        (self.0 .0)(&mut |value: &dyn Any| {
+            result.replace((access.take().unwrap())(value.downcast_ref::<T>().unwrap()));
+        });
+
+        result.unwrap()
+    }
+}
+
+type ContextKeyInnerRef = &'static ContextKeyInner;
+
+#[derive(Clone, Copy)]
+struct ContextKeyInner;
+
+impl PartialEq<ContextKeyInnerRef> for ContextKeyInnerRef {
+    fn eq(&self, other: &ContextKeyInnerRef) -> bool {
+        *self as *const ContextKeyInner == *other as *const ContextKeyInner
+    }
+}
+
+impl Eq for ContextKeyInnerRef {}
+
+impl PartialOrd<ContextKeyInnerRef> for ContextKeyInnerRef {
+    fn partial_cmp(&self, other: &ContextKeyInnerRef) -> Option<cmp::Ordering> {
+        (*self as *const ContextKeyInner).partial_cmp(&(*other as *const ContextKeyInner))
+    }
+}
+
+impl Ord for ContextKeyInnerRef {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        (*self as *const ContextKeyInner).cmp(&(*other as *const ContextKeyInner))
+    }
+}
+
+pub struct ContextKey<T>(ContextKeyInner, PhantomData<T>);
+
+impl<T: Clone + 'static> ContextKey<T> {
+    pub const fn new() -> Self {
+        Self(ContextKeyInner, PhantomData)
     }
 }

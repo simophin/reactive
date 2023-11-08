@@ -5,7 +5,7 @@ use futures::Future;
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
-    context::ContextMap,
+    context::{ContextKey, ContextMap},
     effect::Effect,
     effect_run::EffectRun,
     node::Node,
@@ -147,6 +147,20 @@ impl SetupContext {
         O: 'static,
     {
         self.create_resource(input_signal, factory)
+    }
+
+    pub fn use_context<T: 'static>(
+        &self,
+        key: &'static ContextKey<T>,
+    ) -> Option<impl Signal<Value = T>> {
+        self.data.context_map.get(key)
+    }
+
+    pub fn require_context<T: 'static>(
+        &self,
+        key: &'static ContextKey<T>,
+    ) -> impl Signal<Value = T> {
+        self.use_context(key).expect("Context not found")
     }
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
