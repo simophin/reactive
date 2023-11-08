@@ -4,41 +4,41 @@ use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
     node::Node,
-    react_context::{NodeID, ReactiveContext},
+    react_context::{new_node_id, ReactiveContext},
     setup_context::SetupContext,
     task::Task,
     tasks_queue::TaskQueueRef,
-    util::signal_broadcast::Sender,
+    SetupContextData,
 };
 
 pub struct EffectContext {
-    node_id: NodeID,
-    signal_sender: Sender,
-    task_queue_handle: TaskQueueRef,
+    setup_data: SetupContextData,
     clean_ups: Vec<BoxedCleanUp>,
 }
 
 impl EffectContext {
-    pub fn new(node_id: NodeID, signal_sender: Sender, task_queue_handle: TaskQueueRef) -> Self {
+    pub(crate) fn new(setup_data: SetupContextData) -> Self {
         Self {
-            node_id,
-            task_queue_handle,
-            signal_sender,
+            setup_data,
             clean_ups: Default::default(),
         }
     }
 
     pub fn queue(&self) -> &TaskQueueRef {
-        &self.task_queue_handle
+        &self.setup_data.queue
     }
 
     pub fn mount_node(&self, component: BoxedComponent) -> Node {
-        SetupContext::new(self.signal_sender.clone(), self.queue().clone()).mount_node(component)
+        SetupContext::new(SetupContextData {
+            node_id: new_node_id(),
+            ..self.setup_data.clone()
+        })
+        .mount_node(component)
     }
 
     pub fn spawn(&mut self, future: impl Future<Output = ()> + 'static) {
         let task = Task::new_future(future);
-        let Ok(clean_up) = self.task_queue_handle.queue_task(task) else {
+        let Ok(clean_up) = self.setup_data.queue.queue_task(task) else {
             log::warn!("Effect task queue is dropped before the effect is run");
             return;
         };
@@ -47,7 +47,7 @@ impl EffectContext {
     }
 
     pub fn with_current_node(&mut self, task: impl FnOnce(&mut Node) + 'static) {
-        let node_id = self.node_id;
+        let node_id = self.setup_data.node_id;
         self.spawn_reactive_task(move |ctx| {
             if let Some(node) = ctx.find_node(node_id) {
                 task(node);
@@ -57,7 +57,7 @@ impl EffectContext {
 
     fn spawn_reactive_task(&mut self, task: impl FnOnce(&mut ReactiveContext) + 'static) {
         let task = Task::new_reactive_context(task);
-        let Ok(clean_up) = self.task_queue_handle.queue_task(task) else {
+        let Ok(clean_up) = self.setup_data.queue.queue_task(task) else {
             log::warn!("Effect task queue is dropped before the effect is run");
             return;
         };

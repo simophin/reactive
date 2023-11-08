@@ -12,6 +12,7 @@ use crate::{
     setup_context::SetupContext,
     tasks_queue::{TaskQueue, TaskQueueRef},
     util::{signal_broadcast::Sender, vec::VecExt},
+    SetupContextData,
 };
 
 pub(crate) type SignalID = usize;
@@ -39,8 +40,13 @@ impl ReactiveContext {
     }
 
     pub fn mount_node(&mut self, component: BoxedComponent) -> Node {
-        SetupContext::new(self.signal_sender.clone(), self.task_queue_handle())
-            .mount_node(component)
+        SetupContext::new(SetupContextData {
+            node_id: new_node_id(),
+            queue: self.task_queue_handle(),
+            signal_sender: self.signal_sender.clone(),
+            context_map: Default::default(),
+        })
+        .mount_node(component)
     }
 
     pub fn find_node(&mut self, id: NodeID) -> Option<&mut Node> {

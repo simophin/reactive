@@ -13,6 +13,7 @@ mod task;
 mod tasks_queue;
 mod tracker;
 mod util;
+mod context;
 
 pub use component::*;
 pub use effect::*;

@@ -1,8 +1,11 @@
+use std::rc::Rc;
+
 use futures::Future;
 
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
+    context::ContextMap,
     effect::Effect,
     effect_run::EffectRun,
     node::Node,
@@ -14,21 +17,25 @@ use crate::{
     EffectContext, Signal, SignalGetter,
 };
 
+#[derive(Clone)]
+pub(crate) struct SetupContextData {
+    pub node_id: NodeID,
+    pub queue: TaskQueueRef,
+    pub signal_sender: Sender,
+    pub context_map: Rc<ContextMap>,
+}
+
 pub struct SetupContext {
-    node_id: NodeID,
-    queue: TaskQueueRef,
-    signal_sender: Sender,
-    pub effects: Vec<EffectRun>,
-    pub clean_ups: Vec<BoxedCleanUp>,
-    pub children: Vec<BoxedComponent>,
+    pub(crate) data: SetupContextData,
+    pub(crate) effects: Vec<EffectRun>,
+    pub(crate) clean_ups: Vec<BoxedCleanUp>,
+    pub(crate) children: Vec<BoxedComponent>,
 }
 
 impl SetupContext {
-    pub fn new(signal_sender: Sender, queue: TaskQueueRef) -> Self {
+    pub(crate) fn new(data: SetupContextData) -> Self {
         Self {
-            signal_sender,
-            queue,
-            node_id: new_node_id(),
+            data,
             effects: Default::default(),
             clean_ups: Default::default(),
             children: Default::default(),
@@ -39,17 +46,23 @@ impl SetupContext {
         let content_type = component.content_type();
         component.setup(&mut self);
 
+        let node_id = self.data.node_id;
+
         // Set up children first
         let children = self
             .children
             .into_iter()
             .map(|c| {
-                SetupContext::new(self.signal_sender.clone(), self.queue.clone()).mount_node(c)
+                SetupContext::new(SetupContextData {
+                    node_id: new_node_id(),
+                    ..self.data.clone()
+                })
+                .mount_node(c)
             })
             .collect();
 
         Node {
-            id: self.node_id,
+            id: node_id,
             effects: self.effects,
             clean_ups: self.clean_ups,
             children,
@@ -60,28 +73,18 @@ impl SetupContext {
 
 impl SetupContext {
     pub fn node_id(&self) -> NodeID {
-        self.node_id
+        self.data.node_id
     }
 
     pub fn create_effect(&mut self, effect: impl Effect) {
-        self.effects.push(EffectRun::new(
-            self.node_id,
-            self.signal_sender.clone(),
-            &self.queue,
-            effect,
-        ));
+        self.effects.push(EffectRun::new(self.data.clone(), effect));
     }
 
     pub fn create_effect_fn<F>(&mut self, effect: F)
     where
         F: for<'a> FnMut(&'a mut EffectContext) -> () + 'static,
     {
-        self.effects.push(EffectRun::new(
-            self.node_id,
-            self.signal_sender.clone(),
-            &self.queue,
-            effect,
-        ));
+        self.effects.push(EffectRun::new(self.data.clone(), effect));
     }
 
     pub fn create_effect_simple<F>(&mut self, mut effect: F)
@@ -98,7 +101,7 @@ impl SetupContext {
         let id = new_signal_id();
         signal(
             initial_value,
-            SignalNotifier::new(id, self.signal_sender.clone()),
+            SignalNotifier::new(id, self.data.signal_sender.clone()),
         )
     }
 
