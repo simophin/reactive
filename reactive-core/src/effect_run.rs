@@ -3,8 +3,6 @@ use crate::{
 };
 
 pub(crate) fn new_effect_run(ctx: &mut SetupContext, mut effect: impl Effect) {
-    let task_queue_handle = ctx.data.queue.clone();
-
     let task = {
         let data = ctx.data.clone();
         Task::new_future(async move {
@@ -21,18 +19,14 @@ pub(crate) fn new_effect_run(ctx: &mut SetupContext, mut effect: impl Effect) {
                 signal_receiver.set_subscribing(tracker.iter());
 
                 // Wait for signal changes
-                loop {
-                    if signal_receiver.next().await.is_some() {
-                        break;
-                    } else {
-                        return;
-                    }
+                if signal_receiver.next().await.is_none() {
+                    return;
                 }
             }
         })
     };
 
-    let Ok(clean_up) = task_queue_handle.queue_task(task) else {
+    let Ok(clean_up) = ctx.data.queue.queue_task(task) else {
         log::warn!("Effect task queue is dropped before the effect is run");
         return;
     };
