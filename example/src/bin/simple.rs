@@ -6,7 +6,7 @@ use reactive_core::{
     Component, ContextKey, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal,
     SignalGetter,
 };
-use reactive_macros::jsx;
+use reactive_macros::{component, jsx};
 use tokio::{task::LocalSet, time::sleep};
 
 static THEME: &ContextKey<String> = &ContextKey::new();
@@ -54,7 +54,7 @@ pub fn app(ctx: &mut SetupContext) -> impl Component {
 
     jsx! {
         <Provider key=THEME value=|| String::from("dark")>
-            { move |ctx: &mut SetupContext| header(ctx, index.clone()) }
+            <Content body=body />
         </Provider>
     }
 
@@ -137,6 +137,7 @@ pub fn header(ctx: &mut SetupContext, index: impl Signal<Value = usize>) -> impl
     };
 }
 
+#[component]
 pub fn content(ctx: &mut SetupContext, body: impl Signal<Value = String>) {
     let ResourceResult {
         mut trigger,
