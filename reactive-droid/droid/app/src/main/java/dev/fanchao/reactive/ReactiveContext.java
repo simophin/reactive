@@ -6,7 +6,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.util.Log;
 
 import java.lang.reflect.Proxy;
 
@@ -18,7 +17,9 @@ public class ReactiveContext {
         public void handleMessage(Message msg) {
             if (msg.what == MSG_FRAME) {
                 removeMessages(msg.what);
-                handleFrame(nativeInstance);
+                if (handleFrame(nativeInstance)) {
+                    sendEmptyMessage(MSG_FRAME);
+                }
             } else {
                 super.handleMessage(msg);
             }
@@ -37,6 +38,9 @@ public class ReactiveContext {
             public void onActivityStarted(Activity activity) {
                 if (activity == ReactiveContext.this.activity) {
                     onStart(nativeInstance);
+                    if (handleFrame(nativeInstance)) {
+                        requestFrame();
+                    }
                 }
             }
 
@@ -58,6 +62,7 @@ public class ReactiveContext {
             public void onActivityStopped(Activity activity) {
                 if (activity == ReactiveContext.this.activity) {
                     onStop(nativeInstance);
+                    clearFrameRequests();
                 }
             }
 
@@ -97,7 +102,7 @@ public class ReactiveContext {
 
     native void onDestroy(long nativeInstance);
 
-    native void handleFrame(long nativeInstance);
+    native boolean handleFrame(long nativeInstance);
 
     static final int MSG_FRAME = 1;
 
@@ -105,9 +110,6 @@ public class ReactiveContext {
         handler.sendEmptyMessage(MSG_FRAME);
     }
 
-    void requestDelayedFrame(long delayMillis) {
-        handler.sendEmptyMessageDelayed(MSG_FRAME, delayMillis);
-    }
 
     void clearFrameRequests() {
         handler.removeMessages(MSG_FRAME);
@@ -127,14 +129,6 @@ public class ReactiveContext {
             String methodName,
             Object[] args
     );
-
-    static boolean shouldLog(int level) {
-        return Log.isLoggable("reactive", level);
-    }
-
-    static void log(int level, String message) {
-        Log.println(level, "reactive", message);
-    }
 
     static {
         System.loadLibrary("reactive_droid");

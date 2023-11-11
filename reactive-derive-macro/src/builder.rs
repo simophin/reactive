@@ -203,10 +203,8 @@ impl GenericsExt for Generics {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
 
     use syn::parse_file;
-    use tempfile::NamedTempFile;
 
     use super::*;
 

@@ -11,5 +11,5 @@ dotenvy = "0.15.7"
 env_logger = "0.10.0"
 log = "0.4.20"
 reactive-core = { path = "../reactive-core" }
-reactive-macros = { path = "../reactive-macros" }
+reactive-derive = { path = "../reactive-derive" }
 tokio = { version = "1.13.0", features = ["full"] }

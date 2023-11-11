@@ -7,9 +7,8 @@ use std::{
 };
 
 use jni::{
-    objects::{JMethodID, JStaticMethodID, WeakRef},
-    signature::ReturnType,
-    sys::{jobject, JNIEnv},
+    objects::{JMethodID, WeakRef},
+    signature::{Primitive, ReturnType},
     JavaVM,
 };
 
@@ -25,55 +24,87 @@ pub enum WakerState {
     },
 }
 
-fn waker_clone(data: *const ()) -> RawWaker {
-    let data = unsafe { Weak::from_raw(data as *const RwLock<WakerState>) };
-    let waker = data.clone();
-    let _ = Weak::into_raw(data);
-    RawWaker::new(waker.into_raw() as *const (), &waker_vtable)
-}
-
-fn waker_wake(data: *const ()) {
-    let data = unsafe { Weak::from_raw(data as *const RwLock<WakerState>) };
-    let Some(data) = data.upgrade() else {
-        return;
-    };
-
-    let data = data.read().unwrap();
-    match &*data {
-        WakerState::LocalJavaEnv { wake_requested } => {
-            wake_requested.store(true, Ordering::Relaxed);
-            return;
-        }
-
-        WakerState::DetachedJavaEnv {
-            vm,
-            obj,
-            request_wake,
-        } => {
-            let Ok(mut guard) = vm.attach_current_thread() else {
-                return;
-            };
-
-            let Ok(Some(obj)) = obj.upgrade_local(&guard) else {
-                return;
-            };
-
-            let _ =
-                unsafe { guard.call_method_unchecked(obj, request_wake, ReturnType::Object, &[]) };
+impl Default for WakerState {
+    fn default() -> Self {
+        WakerState::LocalJavaEnv {
+            wake_requested: AtomicBool::new(false),
         }
     }
 }
 
-fn waker_wake_by_ref(data: *const ()) {}
+impl WakerState {
+    pub fn wake(this: &Weak<RwLock<Self>>) {
+        let Some(this) = this.upgrade() else {
+            return;
+        };
 
-fn waker_drop(data: *const ()) {}
+        let this = this.read().unwrap();
+        match &*this {
+            WakerState::LocalJavaEnv { wake_requested } => {
+                wake_requested.store(true, Ordering::Relaxed);
+                return;
+            }
 
-const waker_vtable: RawWakerVTable =
+            WakerState::DetachedJavaEnv {
+                vm,
+                obj,
+                request_wake,
+            } => {
+                let Ok(mut guard) = vm.attach_current_thread() else {
+                    return;
+                };
+
+                let Ok(Some(obj)) = obj.upgrade_local(&guard) else {
+                    return;
+                };
+
+                let _ = unsafe {
+                    guard.call_method_unchecked(
+                        obj,
+                        request_wake,
+                        ReturnType::Primitive(Primitive::Void),
+                        &[],
+                    )
+                };
+
+                let _ = guard.exception_check();
+            }
+        }
+    }
+}
+
+fn waker_from(data: *const ()) -> Weak<RwLock<WakerState>> {
+    unsafe { Weak::from_raw(data as *const RwLock<WakerState>) }
+}
+
+fn waker_clone(data: *const ()) -> RawWaker {
+    let data = waker_from(data);
+    let waker = data.clone();
+    let _ = Weak::into_raw(data);
+    RawWaker::new(waker.into_raw() as *const (), &WAKER_VTABLE)
+}
+
+fn waker_wake(data: *const ()) {
+    let data = waker_from(data);
+    WakerState::wake(&data);
+}
+
+fn waker_wake_by_ref(data: *const ()) {
+    let data = waker_from(data);
+    WakerState::wake(&data);
+    let _ = Weak::into_raw(data);
+}
+
+fn waker_drop(data: *const ()) {
+    let _ = waker_from(data);
+}
+
+const WAKER_VTABLE: RawWakerVTable =
     RawWakerVTable::new(waker_clone, waker_wake, waker_wake_by_ref, waker_drop);
 
 pub fn new_waker(state: &Arc<RwLock<WakerState>>) -> Waker {
     let state = Arc::downgrade(state);
-    unsafe { Waker::from_raw(RawWaker::new(state.into_raw() as *const (), &waker_vtable)) }
+    unsafe { Waker::from_raw(RawWaker::new(state.into_raw() as *const (), &WAKER_VTABLE)) }
 }
 
 #[cfg(test)]

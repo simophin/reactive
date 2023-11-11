@@ -6,7 +6,7 @@ use reactive_core::{
     Component, ContextKey, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal,
     SignalGetter, SingleValue,
 };
-use reactive_macros::{component, jsx};
+use reactive_derive::{component, jsx};
 use tokio::{task::LocalSet, time::sleep};
 
 static THEME: &ContextKey<String> = &ContextKey::new();
