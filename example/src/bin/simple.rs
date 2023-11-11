@@ -4,7 +4,7 @@ use reactive_core::{
     boxed_component,
     core_component::{CaseBuilder, ProviderBuilder, SwitchBuilder},
     Component, ContextKey, LoadState, ReactiveContext, ResourceResult, SetupContext, Signal,
-    SignalGetter,
+    SignalGetter, SingleValue,
 };
 use reactive_macros::{component, jsx};
 use tokio::{task::LocalSet, time::sleep};
@@ -110,13 +110,7 @@ pub fn header(ctx: &mut SetupContext, index: impl Signal<Value = usize>) -> impl
                     None
                 }
             }>
-            {|title| {
-                move |ctx: &mut SetupContext| {
-                    ctx.create_effect_simple(move || {
-                        println!("{title}");
-                    });
-                }
-            }}
+            {|title| jsx! { <Content body=SingleValue(title) /> } }
             </Case>
 
             <Case test=|index| if *index % 4 == 3 {

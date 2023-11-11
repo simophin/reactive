@@ -6,6 +6,17 @@ pub trait Signal: 'static {
     fn with<R>(&self, access: impl for<'a> FnOnce(&Self::Value) -> R) -> R;
 }
 
+pub struct SingleValue<T>(pub T);
+
+impl<T: 'static> Signal for SingleValue<T> {
+    type Value = T;
+
+    #[inline]
+    fn with<R>(&self, access: impl FnOnce(&Self::Value) -> R) -> R {
+        access(&self.0)
+    }
+}
+
 impl<F, T> Signal for F
 where
     F: Fn() -> T + 'static,
