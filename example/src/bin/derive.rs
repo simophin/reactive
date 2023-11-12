@@ -4,6 +4,7 @@ use jni::{objects::JObject, InitArgsBuilder, JavaVM};
 #[java_class]
 trait View {
     fn hash_code(&self) -> i32;
+    fn to_string(&self) -> Option<String>;
 }
 
 struct MyView<'a>(JObject<'a>);
@@ -29,8 +30,11 @@ fn main() {
         .new_object("java/lang/Boolean", "(Z)V", &[true.into()])
         .expect("To create boolean");
 
-    let code = MyView(b).hash_code(&mut guard).expect("To run hashcode");
-    println!("Got hashcode {code}");
+    let v = MyView(b);
+
+    let code = v.hash_code(&mut guard).expect("To run hashcode");
+    let str = v.to_string(&mut guard).expect("To run toString");
+    println!("Got hashcode {code}, str = {str:?}");
 
     // view.set_text(Some(2));
 }

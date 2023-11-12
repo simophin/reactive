@@ -1,6 +1,6 @@
 use jni::{
     objects::JObject,
-    sys::{jboolean, jbyte, jdouble, jfloat, jint, jlong},
+    sys::{jboolean, jbyte, jdouble, jfloat, jint, jlong, jshort},
     JNIEnv,
 };
 
@@ -64,6 +64,8 @@ impl_primitive_to_java!(f32, jfloat, "java/lang/Float", "F");
 impl_primitive_to_java!(f64, jdouble, "java/lang/Double", "D");
 impl_primitive_to_java!(usize, jlong, "java/lang/Long", "J");
 impl_primitive_to_java!(isize, jlong, "java/lang/Long", "J");
+impl_primitive_to_java!(u16, jshort, "java/lang/Short", "S");
+impl_primitive_to_java!(i16, jshort, "java/lang/Short", "S");
 
 impl ToJavaValue for () {
     type JavaType<'a> = ();
