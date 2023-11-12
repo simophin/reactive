@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::ItemTrait;
+use syn::{parse_quote, FnArg, ItemTrait, TraitItem, Type};
 
 pub fn make_jni_bridge(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ItemTrait {
@@ -10,16 +10,77 @@ pub fn make_jni_bridge(_attr: TokenStream, item: TokenStream) -> TokenStream {
         auto_token,
         ident,
         generics,
-        supertraits,
-        items,
+        mut supertraits,
+        mut items,
         ..
     } = syn::parse2(item).unwrap();
 
     let ident = format_ident!("{}JavaObject", ident);
+    let where_clause = &generics.where_clause;
+    for item in &mut items {
+        match item {
+            TraitItem::Fn(f)
+                if f.default.is_none()
+                    && matches!(f.sig.inputs.first(), Some(FnArg::Receiver(_))) =>
+            {
+                // f.sig
+                //     .inputs
+                //     .insert(1, parse_quote! { env: &mut ::jni::JNIEnv<'_> });
+
+                let builder_code: Vec<TokenStream> = f
+                    .sig
+                    .inputs
+                    .iter()
+                    .skip(1)
+                    .map_while(|input| {
+                        let FnArg::Typed(input) = input else {
+                            return None;
+                        };
+
+                        let ty = &input.ty;
+
+                        Some(quote! {
+                            let builder = builder.add_argument::<#ty>();
+                        })
+                    })
+                    .collect();
+
+                let orig_output: Type;
+
+                match &mut f.sig.output {
+                    syn::ReturnType::Default => {
+                        orig_output = parse_quote! { () };
+                        f.sig.output = parse_quote! { -> ::derive_jni::InvocationResult<()> };
+                    }
+
+                    syn::ReturnType::Type(_, ty) => {
+                        orig_output = ty.as_ref().clone();
+                        *ty = parse_quote! { ::derive_jni::InvocationResult<#ty> };
+                    }
+                }
+
+                f.default = Some(parse_quote! {
+                    {
+                        let sig = {
+                            let builder = ::derive_jni::MethodSignatureBuilder::new();
+                            #(#builder_code;)*
+                            builder.build::<#orig_output>()
+                        };
+
+                        println!("sig: {sig}");
+                        todo!()
+                    }
+                });
+            }
+            _ => {}
+        }
+    }
+
+    supertraits.insert(0, parse_quote! { ::derive_jni::WithJavaObject });
 
     quote! {
-        #vis trait #ident : ::derive_jni::AsJavaObject {
-
+        #vis trait #ident #generics : #supertraits #where_clause {
+            #(#items)*
         }
     }
 }
@@ -34,9 +95,10 @@ mod tests {
     #[test]
     fn parsing_works() {
         let input = quote! {
-            trait View {
+            trait View: Clone + 'static {
                 fn set_text(&self, text: String);
                 fn text(&self) -> String;
+                fn set_text_size(&self, size: Option<f32>);
             }
         };
 

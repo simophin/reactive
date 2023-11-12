@@ -1,18 +1,26 @@
+mod invocation_error;
+mod method_sig;
 mod sig;
-mod value;
+pub mod value;
 
-use std::fmt::Display;
+use std::borrow::Cow;
 
 use jni::{objects::JObject, JNIEnv};
 
+pub use invocation_error::InvocationError;
+pub use invocation_error::Result as InvocationResult;
+pub use method_sig::MethodSignatureBuilder;
+
+pub use derive_jni_macro::java_class;
+
 pub trait WithJavaObject {
-    fn get_java_object(&self) -> Result<JObject<'_>, jni::errors::Error>;
+    fn get_java_object(&self) -> Result<&JObject<'_>, jni::errors::Error>;
 }
 
 pub trait ToJavaValue {
     type JavaType<'a>;
-    type ConvertError: Display;
-    type BoxingError: Display;
+    type ConvertError: std::error::Error;
+    type BoxingError: std::error::Error;
 
     fn into_java_value<'s>(
         &self,
@@ -23,4 +31,20 @@ pub trait ToJavaValue {
         &self,
         env: &mut JNIEnv<'s>,
     ) -> Result<JObject<'s>, Self::BoxingError>;
+
+    fn java_signature() -> Cow<'static, str>;
+    fn boxed_java_signature() -> Cow<'static, str>;
+}
+
+pub trait ToRustType<RustType: 'static> {
+    type BoxedRustType: 'static;
+    type Error: std::error::Error;
+    type UnboxingError: std::error::Error;
+
+    fn to_rust_type(&self, env: &mut JNIEnv<'_>) -> Result<RustType, Self::Error>;
+
+    fn boxed_to_rust_type<'a>(
+        env: &mut JNIEnv<'a>,
+        obj: JObject<'a>,
+    ) -> Result<Self::BoxedRustType, Self::UnboxingError>;
 }

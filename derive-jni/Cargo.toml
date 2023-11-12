@@ -1,5 +1,5 @@
 [package]
-name = "derive-jni-utils"
+name = "derive-jni"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 jni = "0.21.1"
+lazy_static = "1.4.0"
 thiserror = "1.0.50"
-
+derive-jni-macro = { path = "../derive-jni-macro" }

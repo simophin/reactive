@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+};
 
 use jni::{
     objects::{JMap, JObject},
@@ -14,8 +17,8 @@ macro_rules! impl_map_like {
             K: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>>,
             V: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>>,
         {
-            type ConvertError = Error<K, V>;
-            type BoxingError = Error<K, V>;
+            type ConvertError = Error<K::BoxingError, V::BoxingError>;
+            type BoxingError = Error<K::BoxingError, V::BoxingError>;
             type JavaType<'a> = JObject<'a>;
 
             fn into_java_value<'s>(
@@ -31,16 +34,24 @@ macro_rules! impl_map_like {
             ) -> Result<JObject<'s>, Self::BoxingError> {
                 self.into_java_value(env)
             }
+
+            fn java_signature() -> std::borrow::Cow<'static, str> {
+                Self::boxed_java_signature()
+            }
+
+            fn boxed_java_signature() -> std::borrow::Cow<'static, str> {
+                std::borrow::Cow::Borrowed("Ljava/util/Map;")
+            }
         }
     };
 }
 
-#[derive(thiserror::Error)]
-pub enum Error<K: ToJavaValue, V: ToJavaValue> {
+#[derive(thiserror::Error, Debug)]
+pub enum Error<KE: std::error::Error, VE: std::error::Error> {
     #[error("Key conversion failed: {0}")]
-    Key(<K as ToJavaValue>::BoxingError),
+    Key(KE),
     #[error("Value conversion failed: {0}")]
-    Value(<V as ToJavaValue>::BoxingError),
+    Value(VE),
     #[error("Error with JNI call: {0}")]
     Java(#[from] jni::errors::Error),
 }
@@ -48,7 +59,7 @@ pub enum Error<K: ToJavaValue, V: ToJavaValue> {
 fn iter_to_java_map<'s, 'i, K, V, I>(
     env: &mut JNIEnv<'s>,
     iter: I,
-) -> Result<JObject<'s>, Error<K, V>>
+) -> Result<JObject<'s>, Error<K::BoxingError, V::BoxingError>>
 where
     K: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>> + 'i,
     V: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>> + 'i,

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Display};
+use std::collections::VecDeque;
 
 use jni::{
     objects::{JList, JObject},
@@ -6,9 +6,10 @@ use jni::{
 };
 
 use crate::ToJavaValue;
+use std::borrow::Cow;
 
-#[derive(thiserror::Error)]
-pub enum Error<E: Display> {
+#[derive(thiserror::Error, Debug)]
+pub enum Error<E: std::error::Error> {
     #[error("Error converting to Java type: {0}")]
     Convert(E),
     #[error("Error with JNI call: {0}")]
@@ -34,6 +35,14 @@ macro_rules! impl_list_like {
                 env: &mut JNIEnv<'s>,
             ) -> Result<JObject<'s>, Self::BoxingError> {
                 self.into_java_value(env)
+            }
+
+            fn java_signature() -> Cow<'static, str> {
+                Cow::Borrowed("Ljava/util/List;")
+            }
+
+            fn boxed_java_signature() -> Cow<'static, str> {
+                Cow::Borrowed("Ljava/util/List;")
             }
         }
     };

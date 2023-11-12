@@ -20,7 +20,8 @@ pub fn resolve_signature(t: &Type) -> Option<Cow<'static, str>> {
                 }
                 (1, Some("f32")) => Some(Cow::Borrowed("F")),
                 (1, Some("double")) => Some(Cow::Borrowed("D")),
-                _ => todo!(),
+                (1, Some("str")) | (1, Some("String")) => Some(Cow::Borrowed("Ljava/lang/String;")),
+                _ => Some(Cow::Borrowed("Ljava/lang/Object;")),
             }
         }
 

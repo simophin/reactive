@@ -1,8 +1,10 @@
+use std::borrow::Cow;
+
 use jni::{objects::JObject, JNIEnv};
 
 use crate::ToJavaValue;
 
-impl<T: ToJavaValue> ToJavaValue for Option<&T> {
+impl<T: ToJavaValue> ToJavaValue for Option<T> {
     type JavaType<'a> = JObject<'a>;
     type ConvertError = T::BoxingError;
     type BoxingError = T::BoxingError;
@@ -12,7 +14,7 @@ impl<T: ToJavaValue> ToJavaValue for Option<&T> {
         env: &mut JNIEnv<'s>,
     ) -> Result<Self::JavaType<'s>, Self::ConvertError> {
         match self {
-            Some(v) => (*v).into_java_value_boxed(env),
+            Some(v) => v.into_java_value_boxed(env),
             None => Ok(JObject::null()),
         }
     }
@@ -22,5 +24,13 @@ impl<T: ToJavaValue> ToJavaValue for Option<&T> {
         env: &mut JNIEnv<'s>,
     ) -> Result<JObject<'s>, Self::BoxingError> {
         self.into_java_value(env)
+    }
+
+    fn java_signature() -> Cow<'static, str> {
+        <T as ToJavaValue>::boxed_java_signature()
+    }
+
+    fn boxed_java_signature() -> Cow<'static, str> {
+        <T as ToJavaValue>::boxed_java_signature()
     }
 }
