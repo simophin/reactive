@@ -18,7 +18,9 @@ pub fn make_jni_bridge(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ident = format_ident!("{}JavaObject", ident);
 
     quote! {
-        #vis trait #ident
+        #vis trait #ident : ::derive_jni::AsJavaObject {
+
+        }
     }
 }
 

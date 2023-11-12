@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 jni = "0.21.1"
+thiserror = "1.0.50"
 
