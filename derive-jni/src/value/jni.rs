@@ -98,9 +98,9 @@ macro_rules! impl_to_rust {
 
 impl_to_rust!(Byte, i8, "byteValue", "()B", b);
 impl_to_rust!(Byte, u8, "byteValue", "()B", b);
-impl_to_rust!(Int, i32, "intValue", "()I", b);
-impl_to_rust!(Int, u32, "intValue", "()I", b);
-impl_to_rust!(Short, i16, "shortValue", "()S", b);
-impl_to_rust!(Short, u16, "shortValue", "()S", b);
-impl_to_rust!(Long, i64, "longValue", "()J", b);
-impl_to_rust!(Long, u64, "longValue", "()J", b);
+impl_to_rust!(Int, i32, "intValue", "()I", i);
+impl_to_rust!(Int, u32, "intValue", "()I", i);
+impl_to_rust!(Short, i16, "shortValue", "()S", s);
+impl_to_rust!(Short, u16, "shortValue", "()S", s);
+impl_to_rust!(Long, i64, "longValue", "()J", j);
+impl_to_rust!(Long, u64, "longValue", "()J", j);

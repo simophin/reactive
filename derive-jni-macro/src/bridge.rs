@@ -1,5 +1,5 @@
 use convert_case::{Case, Casing};
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
 use syn::{parse_quote, punctuated::Punctuated, Expr, FnArg, ItemTrait, Token, TraitItem, Type};
@@ -106,6 +106,11 @@ pub fn make_jni_bridge(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 });
             }
+            
+            TraitItem::Fn(f) if f.default.is_none() && f.sig.ident.to_string() == "new" => {
+                
+            }
+
             _ => {}
         }
     }

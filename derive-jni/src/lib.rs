@@ -15,6 +15,7 @@ pub use derive_jni_macro::java_class;
 
 pub trait WithJavaObject {
     fn get_java_object(&self) -> Result<&JObject<'_>, jni::errors::Error>;
+    fn set_java_object(&mut self, obj: JObject<'_>) -> Result<(), jni::errors::Error>;
 }
 
 pub trait ToJavaValue {
