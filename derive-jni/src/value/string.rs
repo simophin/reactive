@@ -14,6 +14,9 @@ macro_rules! impl_string_like {
             type ConvertError = jni::errors::Error;
             type BoxingError = jni::errors::Error;
 
+            const SIGNATURE: &'static str = "Ljava/lang/String;";
+            const BOXED_SIGNATURE: &'static str = "Ljava/lang/String;";
+
             fn into_java_value<'s>(
                 &self,
                 env: &mut JNIEnv<'s>,
@@ -26,14 +29,6 @@ macro_rules! impl_string_like {
                 env: &mut JNIEnv<'s>,
             ) -> Result<JObject<'s>, Self::BoxingError> {
                 self.into_java_value(env).map(|s| s.into())
-            }
-
-            fn java_signature() -> Cow<'static, str> {
-                Cow::Borrowed("Ljava/lang/String;")
-            }
-
-            fn boxed_java_signature() -> Cow<'static, str> {
-                Self::java_signature()
             }
         }
     };

@@ -10,3 +10,4 @@ jni = "0.21.1"
 lazy_static = "1.4.0"
 thiserror = "1.0.50"
 derive-jni-macro = { path = "../derive-jni-macro" }
+smallvec = { version = "1.11.2", features = ["const_generics"] }

@@ -1,9 +1,6 @@
 mod invocation_error;
 mod method_sig;
-mod sig;
 pub mod value;
-
-use std::borrow::Cow;
 
 use jni::{objects::JObject, JNIEnv};
 
@@ -19,8 +16,12 @@ pub trait WithJavaObject {
 
 pub trait ToJavaValue {
     type JavaType<'a>;
+
     type ConvertError: std::error::Error;
     type BoxingError: std::error::Error;
+
+    const SIGNATURE: &'static str;
+    const BOXED_SIGNATURE: &'static str;
 
     fn into_java_value<'s>(
         &self,
@@ -31,9 +32,6 @@ pub trait ToJavaValue {
         &self,
         env: &mut JNIEnv<'s>,
     ) -> Result<JObject<'s>, Self::BoxingError>;
-
-    fn java_signature() -> Cow<'static, str>;
-    fn boxed_java_signature() -> Cow<'static, str>;
 }
 
 pub trait ToRustType<RustType: 'static> {

@@ -5,7 +5,6 @@ use jni::{
 };
 
 use crate::{ToJavaValue, ToRustType};
-use std::borrow::Cow;
 use std::convert::Infallible;
 
 macro_rules! impl_primitive_to_java {
@@ -14,6 +13,9 @@ macro_rules! impl_primitive_to_java {
             type JavaType<'a> = $j;
             type ConvertError = <$t as TryInto<$j>>::Error;
             type BoxingError = PrimitiveBoxingError<Self::ConvertError>;
+
+            const SIGNATURE: &'static str = $sig;
+            const BOXED_SIGNATURE: &'static str = concat!("L", $jo, ";");
 
             fn into_java_value<'s>(
                 &self,
@@ -31,15 +33,6 @@ macro_rules! impl_primitive_to_java {
                     .map_err(|e| PrimitiveBoxingError::ConvertError(e))?;
 
                 Ok(env.new_object($jo, concat!("(", $sig, ")V"), &[primitive_value.into()])?)
-            }
-
-            fn java_signature() -> Cow<'static, str> {
-                Cow::Borrowed($sig)
-            }
-
-            fn boxed_java_signature() -> Cow<'static, str> {
-                let sig = concat!("L", $jo, ";");
-                sig.replace(".", "/").into()
             }
         }
     };
@@ -72,6 +65,9 @@ impl ToJavaValue for () {
     type ConvertError = Infallible;
     type BoxingError = Infallible;
 
+    const SIGNATURE: &'static str = "()V";
+    const BOXED_SIGNATURE: &'static str = "Ljava/lang/Void;";
+
     fn into_java_value<'s>(
         &self,
         _env: &mut JNIEnv<'s>,
@@ -84,14 +80,6 @@ impl ToJavaValue for () {
         _env: &mut JNIEnv<'s>,
     ) -> Result<JObject<'s>, Self::BoxingError> {
         Ok(JObject::null())
-    }
-
-    fn java_signature() -> Cow<'static, str> {
-        Cow::Borrowed("V")
-    }
-
-    fn boxed_java_signature() -> Cow<'static, str> {
-        Cow::Borrowed("V")
     }
 }
 

@@ -6,7 +6,6 @@ use jni::{
 };
 
 use crate::ToJavaValue;
-use std::borrow::Cow;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error<E: std::error::Error> {
@@ -20,8 +19,11 @@ macro_rules! impl_list_like {
     ($container:ty) => {
         impl<T: ToJavaValue> ToJavaValue for $container {
             type JavaType<'a> = JObject<'a>;
+
             type ConvertError = Error<T::BoxingError>;
             type BoxingError = Error<T::BoxingError>;
+            const SIGNATURE: &'static str = "Ljava/util/List;";
+            const BOXED_SIGNATURE: &'static str = "Ljava/util/List;";
 
             fn into_java_value<'s>(
                 &self,
@@ -35,14 +37,6 @@ macro_rules! impl_list_like {
                 env: &mut JNIEnv<'s>,
             ) -> Result<JObject<'s>, Self::BoxingError> {
                 self.into_java_value(env)
-            }
-
-            fn java_signature() -> Cow<'static, str> {
-                Cow::Borrowed("Ljava/util/List;")
-            }
-
-            fn boxed_java_signature() -> Cow<'static, str> {
-                Cow::Borrowed("Ljava/util/List;")
             }
         }
     };

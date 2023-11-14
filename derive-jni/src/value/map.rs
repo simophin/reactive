@@ -14,12 +14,14 @@ macro_rules! impl_map_like {
     ($map_type:ident) => {
         impl<K, V> ToJavaValue for $map_type<K, V>
         where
-            K: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>>,
-            V: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>>,
+            K: ToJavaValue,
+            V: ToJavaValue,
         {
             type ConvertError = Error<K::BoxingError, V::BoxingError>;
             type BoxingError = Error<K::BoxingError, V::BoxingError>;
             type JavaType<'a> = JObject<'a>;
+            const SIGNATURE: &'static str = "Ljava/util/Map;";
+            const BOXED_SIGNATURE: &'static str = "Ljava/util/Map;";
 
             fn into_java_value<'s>(
                 &self,
@@ -33,14 +35,6 @@ macro_rules! impl_map_like {
                 env: &mut JNIEnv<'s>,
             ) -> Result<JObject<'s>, Self::BoxingError> {
                 self.into_java_value(env)
-            }
-
-            fn java_signature() -> std::borrow::Cow<'static, str> {
-                Self::boxed_java_signature()
-            }
-
-            fn boxed_java_signature() -> std::borrow::Cow<'static, str> {
-                std::borrow::Cow::Borrowed("Ljava/util/Map;")
             }
         }
     };
@@ -61,8 +55,8 @@ fn iter_to_java_map<'s, 'i, K, V, I>(
     iter: I,
 ) -> Result<JObject<'s>, Error<K::BoxingError, V::BoxingError>>
 where
-    K: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>> + 'i,
-    V: for<'a> ToJavaValue<JavaType<'a> = JObject<'a>> + 'i,
+    K: ToJavaValue + 'i,
+    V: ToJavaValue + 'i,
     I: Iterator<Item = (&'i K, &'i V)>,
 {
     let map = env.new_object("java/util/HashMap", "()V", &[])?;

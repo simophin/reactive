@@ -1,26 +1,26 @@
-use std::borrow::Cow;
+use smallvec::SmallVec;
 
 use crate::ToJavaValue;
 
 pub struct MethodSignatureBuilder {
-    arguments: Vec<Cow<'static, str>>,
+    arguments: SmallVec<[&'static str; 4]>,
 }
 
 impl MethodSignatureBuilder {
     pub fn new() -> Self {
         Self {
-            arguments: Vec::new(),
+            arguments: Default::default(),
         }
     }
 
     pub fn add_argument<T: ToJavaValue>(self) -> Self {
         let Self { mut arguments } = self;
-        arguments.push(T::java_signature());
+        arguments.push(T::SIGNATURE);
         Self { arguments }
     }
 
     pub fn build<RetT: ToJavaValue>(self) -> String {
-        let return_type = RetT::java_signature();
+        let return_type = RetT::SIGNATURE;
         format!("({}){}", self.arguments.join(""), return_type)
     }
 }
