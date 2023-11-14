@@ -106,10 +106,8 @@ pub fn make_jni_bridge(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 });
             }
-            
-            TraitItem::Fn(f) if f.default.is_none() && f.sig.ident.to_string() == "new" => {
-                
-            }
+
+            TraitItem::Fn(f) if f.default.is_none() && f.sig.ident.to_string() == "new" => {}
 
             _ => {}
         }
@@ -140,6 +138,8 @@ mod tests {
                 fn set_text_size(&self, size: Option<f32>);
             }
         };
+
+        // println!("{:?}", t);
 
         let output = make_jni_bridge(Default::default(), input);
 
