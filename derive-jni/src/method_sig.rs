@@ -23,4 +23,8 @@ impl MethodSignatureBuilder {
         let return_type = RetT::SIGNATURE;
         format!("({}){}", self.arguments.join(""), return_type)
     }
+
+    pub fn build_with(self, return_type_sig: &str) -> String {
+        format!("({}){}", self.arguments.join(""), return_type_sig)
+    }
 }

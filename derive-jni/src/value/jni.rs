@@ -1,13 +1,15 @@
+use std::convert::Infallible;
+
 use jni::{
     objects::{JObject, JString, JValueGen},
     sys::JNI_TRUE,
 };
 
-use crate::ToRustType;
+use crate::{ToJavaValue, ToRustType};
 
 impl<T> ToRustType<bool> for JValueGen<T> {
-    type Error = jni::errors::Error;
     type BoxedRustType = Option<bool>;
+    type Error = jni::errors::Error;
     type UnboxingError = jni::errors::Error;
 
     fn to_rust_type(&self, _env: &mut jni::JNIEnv<'_>) -> Result<bool, Self::Error> {

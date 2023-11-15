@@ -11,7 +11,7 @@ pub use method_sig::MethodSignatureBuilder;
 pub use derive_jni_macro::java_class;
 
 pub trait WithJavaObject {
-    fn get_java_object(&self) -> Result<&JObject<'_>, jni::errors::Error>;
+    fn get_java_object(&self, env: &mut JNIEnv<'_>) -> Result<&JObject<'_>, jni::errors::Error>;
 }
 
 pub trait ToJavaValue {
