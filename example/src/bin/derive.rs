@@ -31,3 +31,5 @@
 //
 //     // view.set_text(Some(2));
 // }
+
+fn main() {}

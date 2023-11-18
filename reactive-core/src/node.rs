@@ -1,9 +1,11 @@
 use crate::{clean_up::BoxedCleanUp, react_context::NodeID};
+use crate::data::UserDataMap;
 
 pub struct Node {
     pub id: NodeID,
     pub clean_ups: Vec<BoxedCleanUp>,
     pub children: Vec<Node>,
+    pub user_data: UserDataMap,
 }
 
 impl Node {

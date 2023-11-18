@@ -6,6 +6,7 @@ use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
     component::BoxedComponent,
     context::{ContextKey, ContextMap},
+    data::{UserDataKey, UserDataMap},
     effect::Effect,
     effect_run::new_effect_run,
     memory_run::new_memory_run,
@@ -30,6 +31,7 @@ pub struct SetupContext {
     pub(crate) data: SetupContextData,
     pub(crate) clean_ups: Vec<BoxedCleanUp>,
     pub(crate) children: Vec<BoxedComponent>,
+    pub(crate) user_data: UserDataMap,
 }
 
 impl SetupContext {
@@ -38,6 +40,7 @@ impl SetupContext {
             data,
             clean_ups: Default::default(),
             children: Default::default(),
+            user_data: Default::default(),
         }
     }
 
@@ -63,6 +66,7 @@ impl SetupContext {
             id: node_id,
             clean_ups: self.clean_ups,
             children,
+            user_data: self.user_data,
         }
     }
 }
@@ -169,6 +173,10 @@ impl SetupContext {
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
         self.clean_ups.push(Box::new(clean_up));
+    }
+
+    pub fn set_user_data<T>(&mut self, key: &'static UserDataKey<T>, value: T) {
+        self.user_data.put(key, value);
     }
 }
 

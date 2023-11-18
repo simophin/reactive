@@ -1,5 +1,7 @@
 mod example;
 mod waker;
+mod view_component;
+mod core;
 
 use std::{
     future::Future,

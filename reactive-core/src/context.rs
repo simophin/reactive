@@ -100,3 +100,6 @@ impl<T: Clone + 'static> ContextKey<T> {
         Self(ContextKeyInner, PhantomData)
     }
 }
+
+unsafe impl<T> Send for ContextKey<T> {}
+unsafe impl<T> Sync for ContextKey<T> {}
