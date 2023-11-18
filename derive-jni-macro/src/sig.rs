@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use quote::quote;
-use syn::{parse_quote, ExprBlock, FnArg, Type};
+use syn::{ExprBlock, parse_quote, PatType, Type};
 
 pub enum SignatureOutput<'a> {
     Type(&'a Type),
@@ -9,16 +9,12 @@ pub enum SignatureOutput<'a> {
 }
 
 pub fn build_jni_method_signature<'a>(
-    args: impl Iterator<Item = &'a FnArg> + 'a,
+    args: impl Iterator<Item = &'a PatType> + 'a,
     output: SignatureOutput<'a>,
 ) -> ExprBlock {
     let mut tokens = TokenStream::new();
 
     for input in args {
-        let FnArg::Typed(input) = input else {
-            abort!(input, "Expected typed argument");
-        };
-
         let ty = match &*input.ty {
             Type::Path(path) => &path.path,
             Type::Reference(reference) => match &*reference.elem {

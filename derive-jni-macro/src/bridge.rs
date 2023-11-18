@@ -1,147 +1,257 @@
+use std::process::abort;
 use convert_case::{Case, Casing};
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::{Ident, Literal, TokenStream};
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
-use syn::{parse2, parse_quote, FnArg, ItemTrait, ReturnType, TraitItem, Type};
+use syn::{parse2, parse_quote, FnArg, ItemTrait, ReturnType, TraitItem, Type, PatType, Token, TraitItemFn, Signature, TypePath, TypeTuple, Expr, PathSegment};
+use syn::punctuated::Punctuated;
 
 use crate::{
     call::build_jni_call_list,
     sig::{build_jni_method_signature, SignatureOutput},
 };
 
-pub fn make_jni_bridge(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let class_name: Option<Literal> = match parse2(attr) {
-        Ok(v) => v,
-        Err(v) => panic!("Failed to parse attribute"),
-    };
 
-    let ItemTrait {
-        attrs,
-        vis,
-        unsafety,
-        auto_token,
-        ident,
-        generics,
-        mut supertraits,
-        mut items,
-        ..
-    } = syn::parse2(item).unwrap();
+struct JavaConstructor {
+    struct_ident: Ident,
+    ident: Ident,
+    class_name: Literal,
+    args: Vec<PatType>,
+}
 
-    let ident = format_ident!("{}JavaObject", ident);
-    let where_clause = &generics.where_clause;
-    for item in &mut items {
-        match item {
-            TraitItem::Fn(f)
-                if f.default.is_none() && f.sig.ident.to_string().starts_with("new") =>
-            {
-                let ReturnType::Default = f.sig.output else {
-                    abort!(f, "\"new\" method must not have a return type");
-                };
+impl JavaConstructor {
+    fn build_method(&self) -> TokenStream {
+        let Self { ident, class_name, args, struct_ident } = self;
+        let jni_call_list = build_jni_call_list(args.iter());
 
-                let Some(class_name) = class_name.as_ref() else {
-                    abort!(f, "Missing class name on the 'java_class' attribute");
-                };
+        let jni_method_signature = build_jni_method_signature(
+            args.iter(),
+            SignatureOutput::Literal("V"),
+        );
 
-                match f.sig.inputs.first() {
-                    Some(FnArg::Receiver(_)) => {
-                        abort!(f, "\"new\" method must not have a Self parameter");
-                    }
-                    _ => {}
+        quote! {
+            impl<'a> #struct_ident<'a, jni::objects::AutoLocal<'a, ::jni::objects::JObject<'a>>> {
+                pub fn #ident(env: &mut ::jni::JNIEnv<'a>, #(#args,)*)
+                    -> ::derive_jni::InvocationResult<Self> {
+                    let sig = #jni_method_signature;
+                    let call_list = [#jni_call_list];
+                    let r = env.new_object(#class_name, sig, &call_list)?;
+                    let r = jni::objects::AutoLocal::new(r, env);
+                    Ok(Self(r, Default::default()))
                 }
+            }
+        }
+    }
+}
 
-                let return_type: Type = parse_quote! {
-                    ::derive_jni::InvocationResult<::jni::objects::AutoLocal<'local, ::jni::objects::JObject<'local>>>
-                };
+struct JavaStaticMethod {
+    struct_ident: Ident,
+    ident: Ident,
+    class_name: Literal,
+    args: Vec<PatType>,
+    return_type: Type,
+}
 
-                let builder =
-                    build_jni_method_signature(f.sig.inputs.iter(), SignatureOutput::Literal("V"));
+impl JavaStaticMethod {
+    fn build_method(&self) -> TokenStream {
+        let Self { ident, class_name, args, return_type, struct_ident } = self;
+        let jni_call_list = build_jni_call_list(args.iter());
 
-                let call_list = build_jni_call_list(f.sig.inputs.iter());
+        let jni_method_signature = build_jni_method_signature(
+            args.iter(),
+            SignatureOutput::Type(return_type),
+        );
 
-                f.sig.output = ReturnType::Type(Default::default(), Box::new(return_type));
-                f.sig
-                    .inputs
-                    .insert(0, parse_quote! { env: &mut ::jni::JNIEnv<'local> });
-                f.sig.generics.params.insert(0, parse_quote! { 'local });
+        let name = ident.to_string().to_case(Case::Camel);
 
-                f.default = Some(parse_quote!( {
-                     {
-                        let sig = #builder;
-                        let args = [ #call_list ];
+        parse_quote! {
+            impl<T> #struct_ident<'_, T> {
+                pub fn #ident(env: &mut ::jni::JNIEnv<'a>, #(#args,)*) -> ::derive_jni::InvocationResult<#return_type> {
+                    let sig = #jni_method_signature;
+                    let call_list = [#jni_call_list];
+                    let r = env.call_static_method(#class_name, #name, sig, &call_list)?;
 
-                        let ret = env.new_object(
-                            #class_name,
-                            sig.as_str(),
-                            &args
-                        )?;
+                    use ::derive_jni::ToRustType;
+                    r.to_rust_type(env)
+                        .map_err(|e| ::derive_jni::InvocationError::ReturnConvertError(Box::new(e)))
+                }
+            }
+        }
+    }
+}
 
-                        Ok(::jni::objects::AutoLocal::new(ret, env))
-                    }
-                }));
+struct JavaMethod {
+    struct_ident: Ident,
+    ident: Ident,
+    consumes_self: bool,
+    args: Vec<PatType>,
+    return_type: Type,
+}
+
+impl JavaMethod {
+    fn build_method(&self) -> TokenStream {
+        let Self { ident, consumes_self, args, return_type, struct_ident } = self;
+        let jni_call_list = build_jni_call_list(args.iter());
+
+        let jni_method_signature = build_jni_method_signature(
+            args.iter(),
+            SignatureOutput::Type(return_type),
+        );
+
+        let name = ident.to_string().to_case(Case::Camel);
+        let self_binding = if *consumes_self {
+            quote! { self }
+        } else {
+            quote! { &'a self }
+        };
+
+        parse_quote! {
+            impl<'a, T : AsRef<::jni::objects::JObject<'a>>> #struct_ident<'a, T> {
+                pub fn #ident(#self_binding, env: &mut ::jni::JNIEnv<'a>, #(#args,)*) -> ::derive_jni::InvocationResult<#return_type> {
+                    let sig = #jni_method_signature;
+                    let call_list = [#jni_call_list];
+
+                    let r = env.call_method(self.0.as_ref(), #name, sig, &call_list)?;
+                    use ::derive_jni::ToRustType;
+                    r.to_rust_type(env)
+                        .map_err(|e| ::derive_jni::InvocationError::ReturnConvertError(Box::new(e)))
+                }
+            }
+        }
+    }
+}
+
+enum JavaMethodType {
+    Constructor(JavaConstructor),
+    StaticMethod(JavaStaticMethod),
+    Method(JavaMethod),
+}
+
+impl JavaMethodType {
+    fn new(item: TraitItemFn, class_name: Option<&Literal>, struct_ident: Ident) -> Result<Self, &'static str> {
+        let ident = item.sig.ident.clone();
+        let output_is_self: bool;
+        let return_or_unit: Type;
+
+        match &item.sig.output {
+            ReturnType::Default => {
+                output_is_self = false;
+                return_or_unit = Type::Tuple(parse_quote! { () });
             }
 
-            TraitItem::Fn(f)
-                if f.default.is_none()
-                    && matches!(f.sig.inputs.first(), Some(FnArg::Receiver(_))) =>
-            {
-                f.sig
-                    .inputs
-                    .insert(1, parse_quote! { env: &mut ::jni::JNIEnv<'_> });
+            ReturnType::Type(_, t) => {
+                output_is_self = type_is_self(t.as_ref());
+                return_or_unit = t.as_ref().clone();
+            }
+        };
 
-                let java_method_name = f.sig.ident.to_string().to_case(Case::Camel);
-                let orig_output: Type;
-
-                match &mut f.sig.output {
-                    ReturnType::Default => {
-                        orig_output = parse_quote! { () };
-                        f.sig.output = parse_quote! { -> ::derive_jni::InvocationResult<()> };
-                    }
-
-                    ReturnType::Type(_, ty) => {
-                        orig_output = ty.as_ref().clone();
-                        *ty = parse_quote! { ::derive_jni::InvocationResult<#ty> };
-                    }
-                }
-
-                let builder = build_jni_method_signature(
-                    f.sig.inputs.iter().skip(2),
-                    SignatureOutput::Type(&orig_output),
-                );
-                let call_list = build_jni_call_list(f.sig.inputs.iter().skip(2));
-
-                f.default = Some(parse_quote! {
-                    {
-                        let sig = #builder;
-                        let obj = self.get_java_object(env)?;
-                        let args = [ #call_list ];
-
-                        let ret = env.call_method(
-                            obj,
-                            #java_method_name,
-                            sig.as_str(),
-                            &args
-                        )?;
-
-                        use ::derive_jni::ToRustType;
-
-                        match ret.to_rust_type(env) {
-                            Ok(v) => Ok(v),
-                            Err(e) => Err(::derive_jni::InvocationError::ReturnConvertError(Box::new(e))),
-                        }
-                    }
-                });
+        match &item.sig.inputs.first() {
+            Some(FnArg::Receiver(r)) => {
+                Ok(JavaMethodType::Method(JavaMethod {
+                    struct_ident,
+                    ident,
+                    consumes_self: r.reference.is_none(),
+                    args: input_as_pat_types(item.sig.inputs.into_iter().skip(1)).collect(),
+                    return_type: return_or_unit,
+                }))
             }
 
-            _ => {}
+            _ if ident.to_string().starts_with("new") && output_is_self => {
+                let class_name = match class_name {
+                    Some(n) => n.clone(),
+                    None => abort!(item, "To use constructors, you must specify the class name in the java_class attribute"),
+                };
+
+                Ok(JavaMethodType::Constructor(JavaConstructor {
+                    struct_ident,
+                    ident,
+                    args: input_as_pat_types(item.sig.inputs.into_iter()).collect(),
+                    class_name,
+                }))
+            }
+
+            _ => {
+                let class_name = match class_name {
+                    Some(n) => n.clone(),
+                    None => abort!(item, "To use static methods, you must specify the class name in the java_class attribute"),
+                };
+
+                Ok(JavaMethodType::StaticMethod(JavaStaticMethod {
+                    struct_ident,
+                    ident,
+                    args: input_as_pat_types(item.sig.inputs.into_iter()).collect(),
+                    return_type: return_or_unit,
+                    class_name,
+                }))
+            }
         }
     }
 
-    supertraits.insert(0, parse_quote! { ::derive_jni::WithJavaObject });
+    fn build_rust_method(&self) -> TokenStream {
+        match self {
+            JavaMethodType::Constructor(c) => c.build_method(),
+            JavaMethodType::StaticMethod(m) => m.build_method(),
+            JavaMethodType::Method(m) => m.build_method(),
+        }
+    }
+}
+
+fn type_is_self(t: &Type) -> bool {
+    matches!(t, Type::Path(TypePath { path, .. }) if path.is_ident("Self"))
+}
+
+fn input_as_pat_types(iter: impl Iterator<Item=FnArg>) -> impl Iterator<Item=PatType> {
+    iter.map(|arg| match arg {
+        FnArg::Typed(t) => t,
+        FnArg::Receiver(_) => abort!(arg, "Receiver is not supported at this position"),
+    })
+}
+
+pub fn make_jni_bridge(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let class_name: Option<Literal> = match parse2(attr.clone()) {
+        Ok(v) => v,
+        Err(_) => panic!("Failed to parse attribute"),
+    };
+
+    let ItemTrait {
+        vis,
+        ident,
+        generics,
+        supertraits,
+        items,
+        ..
+    } = parse2(item).unwrap();
+
+    if !generics.params.is_empty() {
+        abort!(generics.params, "Generic traits are not supported");
+    }
+
+    if generics.where_clause.is_some() {
+        abort!(generics.where_clause, "Where clauses are not supported");
+    }
+
+    if !supertraits.is_empty() {
+        abort!(supertraits, "Supertraits are not supported");
+    }
+
+    let struct_name = format_ident!("{}JavaObject", ident);
+
+    let methods = items.into_iter().map(|item| {
+        match item {
+            TraitItem::Fn(f) => {
+                match JavaMethodType::new(f.clone(), class_name.as_ref(), struct_name.clone()) {
+                    Ok(v) => v.build_rust_method(),
+                    Err(e) => abort!(f, format!("Unsupported trait method: {e}")),
+                }
+            }
+            f => abort!(f, "Unsupported trait item"),
+        }
+    });
 
     quote! {
-        #vis trait #ident #generics : #supertraits #where_clause {
-            #(#items)*
-        }
+        #vis struct #struct_name<'a, T>(pub T, pub std::marker::PhantomData<&'a ()>);
+
+        #(#methods)*
     }
 }
 
@@ -154,11 +264,12 @@ mod tests {
     #[test]
     fn parsing_works() {
         let input = quote! {
-            trait View: Clone + 'static {
-                fn new();
-                fn set_text(&self, text: String);
-                fn text(&self) -> String;
-                fn set_text_size(&self, size: Option<f32>);
+            trait View {
+                fn new_with_mills(mills: i64) -> Self;
+                fn new() -> Self;
+                fn get_month(&self) -> i32;
+                fn hash_code(&self) -> i32;
+                fn to_string(&self) -> Option<String>;
             }
         };
 

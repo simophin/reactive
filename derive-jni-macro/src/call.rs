@@ -1,17 +1,13 @@
 use proc_macro_error::abort;
 use quote::quote;
-use syn::{parse_quote, punctuated::Punctuated, Expr, FnArg, Token, Type};
+use syn::{parse_quote, punctuated::Punctuated, Expr, FnArg, Token, Type, PatType};
 
 pub fn build_jni_call_list<'a>(
-    args: impl Iterator<Item = &'a FnArg> + 'a,
+    args: impl Iterator<Item = &'a PatType> + 'a,
 ) -> Punctuated<Expr, Token![,]> {
     let mut call_list: Punctuated<_, _> = Default::default();
 
     for input in args {
-        let FnArg::Typed(input) = input else {
-            abort!(input, "Expected typed argument");
-        };
-
         let (is_ref, ty) = match &*input.ty {
             Type::Path(path) => (false, &path.path),
             Type::Reference(reference) => match &*reference.elem {
@@ -33,7 +29,12 @@ pub fn build_jni_call_list<'a>(
         };
 
         call_list.push(parse_quote! {
-            <#ty as ::derive_jni::ToJavaValue>::into_java_value(#ident, env).unwrap().into()
+            <#ty as ::derive_jni::ToJavaValue>::into_java_value(#ident, env)
+                .map_err(|e| ::derive_jni::InvocationError::ParameterConvertError {
+                    name: stringify!(#ident),
+                    err: Box::new(e),
+                })?
+                .into()
         });
     }
 
