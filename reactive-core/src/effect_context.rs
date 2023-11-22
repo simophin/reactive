@@ -1,4 +1,5 @@
 use futures::Future;
+use smallvec::SmallVec;
 
 use crate::{
     clean_up::{BoxedCleanUp, CleanUp},
@@ -13,7 +14,7 @@ use crate::{
 
 pub struct EffectContext {
     setup_data: SetupContextData,
-    clean_ups: Vec<BoxedCleanUp>,
+    clean_ups: SmallVec<[BoxedCleanUp; 3]>,
 }
 
 impl EffectContext {

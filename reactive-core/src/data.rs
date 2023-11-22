@@ -1,16 +1,16 @@
 use std::any::Any;
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicUsize;
 
 use smallvec::SmallVec;
 
 #[derive(Default)]
-pub struct UserDataMap(SmallVec<[(&'static UserDataInner, Box<dyn Any>); 3]>);
+pub struct UserDataMap(SmallVec<[(*const KeyInner, Box<dyn Any>); 3]>);
 
 impl UserDataMap {
     pub fn get<T>(&self, key: &'static UserDataKey<T>) -> Option<&T> {
+        let inner = &key.inner as *const KeyInner;
         self.0
-            .binary_search_by_key(&key.id, |(id, _)| *id)
+            .binary_search_by_key(&inner, |(id, _)| *id)
             .ok()
             .map(|index| {
                 let (_, value) = &self.0[index];
@@ -19,33 +19,33 @@ impl UserDataMap {
     }
 
     pub fn put<T>(&mut self, key: &'static UserDataKey<T>, value: T) -> Option<T> {
-        match self.0.binary_search_by_key(&key.id, |(id, _)| *id) {
+        let inner = &key.inner as *const KeyInner;
+        match self.0.binary_search_by_key(&inner, |(id, _)| *id) {
             Ok(index) => {
-                let value: Box<dyn Any> = Box::new(value);
-                let mut value = (key.id, value);
-                std::mem::swap(&mut self.0[index], &mut value);
-                Some(*value.1.downcast().unwrap())
+                let mut value: Box<dyn Any> = Box::new(value);
+                std::mem::swap(&mut self.0[index].1, &mut value);
+                Some(*value.downcast().unwrap())
             }
 
             Err(index) => {
-                self.0.insert(index, (key.id, Box::new(value)));
+                self.0.insert(index, (&key.inner, Box::new(value)));
                 None
             }
         }
     }
 }
 
+struct KeyInner;
+
 pub struct UserDataKey<T> {
-    id: ID,
+    inner: KeyInner,
     _marker: PhantomData<T>,
 }
 
 impl<T> UserDataKey<T> {
-    pub fn new() -> Self {
-        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
+    pub const fn new() -> Self {
         Self {
-            id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            inner: KeyInner,
             _marker: PhantomData,
         }
     }

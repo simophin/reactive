@@ -1,15 +1,18 @@
-mod example;
-mod waker;
-mod view_component;
 mod core;
+mod env;
+mod example;
+mod view_component;
+mod waker;
 
 use std::{
     future::Future,
     pin::Pin,
+    ptr::null_mut,
     sync::{atomic::Ordering, Arc, RwLock},
     task::Context,
 };
 
+use env::set_current_jni_env;
 use jni::{
     objects::{JMethodID, JObject, WeakRef},
     sys::{jboolean, jint, jlong, JNI_VERSION_1_6},
@@ -131,13 +134,15 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
 #[warn(non_snake_case)]
 #[no_mangle]
 pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>(
-    _env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _obj: JObject<'local>,
     instance: jlong,
 ) {
     let context = JavaReactiveContext::from(instance);
-    let node = context.context.mount_node(Box::new(example::app));
-    context.context.set_root(Some(node));
+    set_current_jni_env(&env, || {
+        let node = context.context.mount_node(Box::new(example::app));
+        context.context.set_root(Some(node));
+    });
 }
 
 #[warn(non_snake_case)]
@@ -199,7 +204,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_handleFrame<'lo
     instance: jlong,
 ) -> jboolean {
     let context = unsafe { &mut *(instance as *mut JavaReactiveContext) };
-    context.poll(&mut env) as jboolean
+    set_current_jni_env(&env, || context.poll(&mut env) as jboolean)
 }
 
 #[warn(non_snake_case)]
