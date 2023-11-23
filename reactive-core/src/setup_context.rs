@@ -30,7 +30,7 @@ pub(crate) struct SetupContextData {
 pub struct SetupContext {
     pub(crate) data: SetupContextData,
     pub(crate) clean_ups: Vec<BoxedCleanUp>,
-    pub(crate) children: Vec<BoxedComponent>,
+    pub children: Vec<BoxedComponent>,
     pub(crate) user_data: UserDataMap,
 }
 

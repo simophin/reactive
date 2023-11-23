@@ -12,7 +12,7 @@ use std::{
     task::Context,
 };
 
-use env::set_current_jni_env;
+use env::set_current_java_env;
 use jni::{
     objects::{JMethodID, JObject, WeakRef},
     sys::{jboolean, jint, jlong, JNI_VERSION_1_6},
@@ -139,7 +139,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>
     instance: jlong,
 ) {
     let context = JavaReactiveContext::from(instance);
-    set_current_jni_env(&env, || {
+    set_current_java_env(&env, || {
         let node = context.context.mount_node(Box::new(example::app));
         context.context.set_root(Some(node));
     });
@@ -204,7 +204,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_handleFrame<'lo
     instance: jlong,
 ) -> jboolean {
     let context = unsafe { &mut *(instance as *mut JavaReactiveContext) };
-    set_current_jni_env(&env, || context.poll(&mut env) as jboolean)
+    set_current_java_env(&env, || context.poll(&mut env) as jboolean)
 }
 
 #[warn(non_snake_case)]

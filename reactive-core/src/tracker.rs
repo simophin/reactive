@@ -11,7 +11,7 @@ thread_local! {
 pub struct Tracker(SignalSet);
 
 impl Tracker {
-    pub fn with_current<T>(self, f: impl FnOnce() -> T) -> (Self, T) {
+    pub(crate) fn with_current<T>(self, f: impl FnOnce() -> T) -> (Self, T) {
         CURRENT_TRACKER.with(|cell| {
             cell.borrow_mut().replace(self);
             let r = f();
@@ -19,12 +19,19 @@ impl Tracker {
         })
     }
 
-    pub fn track_signal(signal_id: SignalID) {
+    pub(crate) fn track_signal(signal_id: SignalID) {
         CURRENT_TRACKER.with(|cell| match cell.borrow_mut().as_mut() {
             Some(tracker) => tracker.insert(signal_id),
             None => {
                 log::warn!("No current tracker, signal will be ignored");
             }
         });
+    }
+
+    pub fn untrack<T>(run: impl FnOnce() -> T) -> T {
+        let tracker = CURRENT_TRACKER.take();
+        let r = run();
+        CURRENT_TRACKER.replace(tracker);
+        r
     }
 }

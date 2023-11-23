@@ -2,7 +2,7 @@ use jni::objects::{GlobalRef, JObject};
 use jni::JNIEnv;
 use reactive_core::{Component, SetupContext, UserDataKey};
 
-use crate::env::with_current_jni_env;
+use crate::env::with_current_java_env;
 
 pub trait ViewComponent {
     fn setup<'a>(
@@ -30,7 +30,7 @@ pub(crate) static ANDROID_VIEW_DATA_KEY: UserDataKey<GlobalRef> = UserDataKey::n
 
 pub fn android_view(vc: impl ViewComponent + 'static) -> impl Component {
     move |ctx: &mut SetupContext| {
-        let view = match with_current_jni_env(|mut env| {
+        let view = match with_current_java_env(|mut env| {
             vc.setup(ctx, &mut env)
                 .and_then(|obj| env.new_global_ref(obj))
         }) {
