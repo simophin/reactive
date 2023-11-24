@@ -84,11 +84,11 @@ public class ReactiveContext {
             }
         };
         activity.getApplication().registerActivityLifecycleCallbacks(callbacks);
-        nativeInstance = onCreate(state);
+        nativeInstance = onCreate(state, activity);
     }
 
 
-    native long onCreate(Bundle state);
+    native long onCreate(Bundle state, Activity activity);
 
     native void onSaveInstance(long nativeInstance, Bundle state);
 

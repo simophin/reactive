@@ -1,20 +1,18 @@
 mod core;
 mod env;
 mod example;
-mod view_component;
 mod waker;
 
 use std::{
     future::Future,
     pin::Pin,
-    ptr::null_mut,
     sync::{atomic::Ordering, Arc, RwLock},
     task::Context,
 };
 
-use env::set_current_java_env;
+use env::{set_current_android_runtime, AndroidRuntime};
 use jni::{
-    objects::{JMethodID, JObject, WeakRef},
+    objects::{GlobalRef, JMethodID, JObject, WeakRef},
     sys::{jboolean, jint, jlong, JNI_VERSION_1_6},
     JNIEnv, JavaVM,
 };
@@ -31,6 +29,7 @@ struct JavaReactiveContext {
     tokio_rt: Runtime,
 
     java_instance: WeakRef,
+    activity: GlobalRef,
     request_frame: JMethodID,
 }
 
@@ -74,6 +73,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
     mut env: JNIEnv<'local>,
     obj: JObject<'local>,
     _state: JObject<'local>,
+    activity: JObject<'local>,
 ) -> jlong {
     let request_wake = match env
         .get_object_class(&obj)
@@ -109,6 +109,17 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
         }
     };
 
+    let activity = match env.new_global_ref(activity) {
+        Ok(activity) => activity,
+        Err(e) => {
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("Failed to create global reference to Java object: {e:?}"),
+            );
+            return 0;
+        }
+    };
+
     let tokio_rt = match RuntimeBuilder::new_multi_thread().enable_all().build() {
         Ok(rt) => rt,
         Err(e) => {
@@ -126,6 +137,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
         tokio_rt,
         request_frame: request_wake,
         java_instance,
+        activity,
     });
 
     Box::into_raw(context) as jlong
@@ -139,7 +151,7 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>
     instance: jlong,
 ) {
     let context = JavaReactiveContext::from(instance);
-    set_current_java_env(&env, || {
+    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
         let node = context.context.mount_node(Box::new(example::app));
         context.context.set_root(Some(node));
     });
@@ -148,12 +160,14 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>
 #[warn(non_snake_case)]
 #[no_mangle]
 pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStop<'local>(
-    _env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _obj: JObject<'local>,
     instance: jlong,
 ) {
     let context = JavaReactiveContext::from(instance);
-    context.context.set_root(None);
+    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
+        context.context.set_root(None);
+    });
 }
 
 #[warn(non_snake_case)]
@@ -203,8 +217,10 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_handleFrame<'lo
     _obj: JObject<'local>,
     instance: jlong,
 ) -> jboolean {
-    let context = unsafe { &mut *(instance as *mut JavaReactiveContext) };
-    set_current_java_env(&env, || context.poll(&mut env) as jboolean)
+    let context = JavaReactiveContext::from(instance);
+    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
+        context.poll(&mut env) as jboolean
+    })
 }
 
 #[warn(non_snake_case)]

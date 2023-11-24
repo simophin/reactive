@@ -1,19 +1,17 @@
 use std::borrow::Cow;
 
+use crate::env::with_current_android_runtime;
 use derive_builder::Builder;
 use derive_jni::ToJavaValue;
+use jni::objects::GlobalRef;
 use jni::{
     objects::{JObject, JValueGen},
     JNIEnv,
 };
-use jni::objects::GlobalRef;
-use jni::sys::jobject;
-use reactive_core::{Component, ContextKey, EffectContext, SetupContext, Signal};
-use reactive_core::core_component::{Provider, ProviderBuilder};
-use crate::env::with_current_java_env;
+use reactive_core::core_component::ProviderBuilder;
+use reactive_core::{Component, ContextKey, EffectContext, SetupContext, Signal, SingleValue};
 
-pub static ANDROID_CONTEXT_KEY: ContextKey<jobject> = ContextKey::new();
-pub static ANDROID_VIEW_KEY: ContextKey<GlobalRef> = ContextKey::new();
+pub static ANDROID_VIEW_KEY: ContextKey<Option<GlobalRef>> = ContextKey::new();
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -21,35 +19,90 @@ pub struct AndroidView {
     class_name: Cow<'static, str>,
     #[builder(setter(custom, strip_option))]
     property_runs:
-    Vec<Box<dyn for<'a> Fn(&'a mut EffectContext, &'a mut JNIEnv<'_>, &'a JObject<'_>)>>,
+        Vec<Box<dyn for<'a> Fn(&'a mut EffectContext, &'a mut JNIEnv<'_>, &'a JObject<'_>)>>,
     children: Vec<Box<dyn Component>>,
+    auto_adopt_child: bool,
 }
 
 impl Component for AndroidView {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let obj = with_current_java_env(|mut env| {
+        let Self {
+            class_name,
+            property_runs,
+            children,
+            auto_adopt_child,
+        } = *self;
 
-            env.new_object(self.class_name, "(Landroid/content/Context;)V", &[])
-                .and_then(|o| env.new_global_ref(o))
+        let obj = with_current_android_runtime(move |rt| {
+            let mut env = rt.env();
+            env.new_object(
+                class_name,
+                "(Landroid/content/Context;)V",
+                &[(&rt.activity()).into()],
+            )
+            .and_then(|o| env.new_global_ref(o))
         });
 
         let obj = match obj {
             Some(Ok(v)) => v,
-            Some(Err(e)) => log::error!("Failed to create AndroidView: {}", e),
-            None => log::error!("Failed to create AndroidView: No JNIEnv"),
+            Some(Err(e)) => {
+                log::error!("Failed to create AndroidView: {}", e);
+                return;
+            }
+            None => {
+                log::error!("Failed to create AndroidView: No JNIEnv");
+                return;
+            }
         };
 
         let parent = ctx.use_context(&ANDROID_VIEW_KEY);
 
-        ProviderBuilder::default().key(&ANDROID_VIEW_KEY).value(obj).child(self.children).build()
-            .unwrap()
-            .setup(ctx);
+        let provider_value = if auto_adopt_child
+            && matches!(
+                with_current_android_runtime(|rt| {
+                    rt.env().is_instance_of(&obj, "android.view.ViewGroup")
+                }),
+                Some(Ok(true))
+            ) {
+            Some(obj.clone())
+        } else {
+            None
+        };
 
-        for run in self.property_runs {
+        Box::new(
+            ProviderBuilder::default()
+                .key(&ANDROID_VIEW_KEY)
+                .value(SingleValue(provider_value))
+                .child(children)
+                .build()
+                .unwrap(),
+        )
+        .setup(ctx);
+
+        if let Some(parent) = parent {
+            with_current_android_runtime(|rt| {
+                parent.with(|p| {
+                    let Some(p) = p else {
+                        return;
+                    };
+
+                    if let Err(e) = rt.env().call_method(
+                        p,
+                        "addView",
+                        "(Landroid/view/View;)V",
+                        &[(&obj).into()],
+                    ) {
+                        log::error!("Failed to add view to parent: {}", e);
+                    }
+                })
+            });
+        }
+
+        for run in property_runs {
             let obj = obj.clone();
-            ctx.create_effect(move |ctx, env| {
-                with_current_java_env(|mut env| {
-                    run(ctx, &mut env, obj.as_obj());
+            ctx.create_effect_fn(move |ctx| {
+                with_current_android_runtime(|rt| {
+                    run(ctx, &mut rt.env(), &obj);
                 });
             });
         }
@@ -63,25 +116,36 @@ impl AndroidViewBuilder {
         java_signature: impl AsRef<str> + 'static,
         value: S,
     ) -> Self
-        where
-            S: Signal,
-            S::Value: ToJavaValue,
-            for<'a> <S::Value as ToJavaValue>::JavaType<'a>: Into<JValueGen<&'a JObject<'a>>>,
+    where
+        S: Signal,
+        S::Value: ToJavaValue,
+        for<'a> <S::Value as ToJavaValue>::JavaType<'a>: Into<JValueGen<&'a JObject<'a>>>,
     {
-        self.property_runs.push(Box::new(move |ctx, env, obj| {
+        let mut property_runs = self.property_runs.unwrap_or_default();
+
+        property_runs.push(Box::new(move |_ctx, env, obj| {
             value.with(|value| {
                 let value = value
                     .into_java_value(env)
                     .expect("To convert value to Java value");
 
-                env.call_method(
+                if let Err(e) = env.call_method(
                     obj,
                     java_method_name.as_ref(),
                     java_signature.as_ref(),
                     &[value.into()],
-                );
+                ) {
+                    log::error!(
+                        "Failed to set property {}: {e:?}",
+                        java_method_name.as_ref(),
+                    );
+                }
             });
         }));
-        self
+
+        Self {
+            property_runs: Some(property_runs),
+            ..self
+        }
     }
 }

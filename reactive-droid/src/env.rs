@@ -1,27 +1,42 @@
 use std::{cell::RefCell, ptr::null_mut};
 
-use jni::JNIEnv;
 use jni::objects::JObject;
+use jni::JNIEnv;
 
 thread_local! {
-    static CURRENT_ENV: RefCell<*mut JavaRuntimeEnv> = RefCell::new(null_mut());
+    static CURRENT_ENV: RefCell<Option<AndroidRuntime>> = Default::default();
 }
 
-struct JavaRuntimeEnv<'a> {
-    pub env: JNIEnv<'a>,
-    pub activity: JObject<'a>,
+pub struct AndroidRuntime {
+    env: *mut jni::sys::JNIEnv,
+    activity: jni::sys::jobject,
 }
 
-pub fn with_current_java_env<'local, T>(cb: impl FnOnce(JNIEnv<'local>) -> T) -> Option<T> {
-    CURRENT_ENV.with(|env| {
-        let env = unsafe { JNIEnv::from_raw(*env.borrow()) }.ok()?;
-        Some(cb(env))
-    })
+impl AndroidRuntime {
+    pub fn new(env: &JNIEnv<'_>, activity: &JObject<'_>) -> Self {
+        assert_ne!(env.get_native_interface(), null_mut());
+        Self {
+            env: env.get_native_interface(),
+            activity: activity.as_raw(),
+        }
+    }
+
+    pub fn activity(&self) -> JObject<'_> {
+        unsafe { JObject::from_raw(self.activity) }
+    }
+
+    pub fn env(&self) -> JNIEnv<'_> {
+        unsafe { JNIEnv::from_raw(self.env).unwrap() }
+    }
 }
 
-pub fn set_current_java_env<T>(env: &JNIEnv<'_>, f: impl FnOnce() -> T) -> T {
-    CURRENT_ENV.replace(env.get_native_interface());
-    let result = f();
-    CURRENT_ENV.replace(null_mut());
-    result
+pub fn with_current_android_runtime<'local, T>(cb: impl FnOnce(&AndroidRuntime) -> T) -> Option<T> {
+    CURRENT_ENV.with(|env| env.borrow().as_ref().map(|runtime| cb(runtime)))
+}
+
+pub fn set_current_android_runtime<T>(runtime: AndroidRuntime, cb: impl FnOnce() -> T) -> T {
+    CURRENT_ENV.replace(Some(runtime));
+    let r = cb();
+    CURRENT_ENV.replace(None);
+    r
 }
