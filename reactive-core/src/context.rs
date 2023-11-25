@@ -95,7 +95,7 @@ impl Ord for ContextKeyInnerRef {
 
 pub struct ContextKey<T>(ContextKeyInner, PhantomData<T>);
 
-impl<T: Clone + 'static> ContextKey<T> {
+impl<T: 'static> ContextKey<T> {
     pub const fn new() -> Self {
         Self(ContextKeyInner, PhantomData)
     }

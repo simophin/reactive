@@ -1,6 +1,7 @@
 mod core;
 mod env;
 mod example;
+mod value;
 mod waker;
 
 use std::{
@@ -17,6 +18,7 @@ use jni::{
     JNIEnv, JavaVM,
 };
 use reactive_core::ReactiveContext;
+use reactive_derive::jsx;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use waker::WakerState;
 
@@ -152,7 +154,10 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>
 ) {
     let context = JavaReactiveContext::from(instance);
     set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
-        let node = context.context.mount_node(Box::new(example::app));
+        use example::*;
+        let node = context.context.mount_node(Box::new(jsx! {
+            <App activity=context.activity.clone() />
+        }));
         context.context.set_root(Some(node));
     });
 }

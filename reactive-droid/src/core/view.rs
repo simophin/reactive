@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use crate::env::with_current_android_runtime;
+use crate::value::IntoJValue;
 use derive_builder::Builder;
-use derive_jni::ToJavaValue;
 use jni::objects::GlobalRef;
 use jni::{
     objects::{JObject, JValueGen},
@@ -11,11 +11,18 @@ use jni::{
 use reactive_core::core_component::ProviderBuilder;
 use reactive_core::{Component, ContextKey, EffectContext, SetupContext, Signal, SingleValue};
 
-pub static ANDROID_VIEW_KEY: ContextKey<Option<GlobalRef>> = ContextKey::new();
+pub static ANDROID_VIEW_CONTAINER_KEY: ContextKey<AndroidViewContainer> = ContextKey::new();
+
+pub enum AndroidViewContainer {
+    ViewParent(GlobalRef),
+    Activity(GlobalRef),
+    Empty,
+}
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct AndroidView {
+    #[builder(setter(into))]
     class_name: Cow<'static, str>,
     #[builder(setter(custom, strip_option))]
     property_runs:
@@ -55,45 +62,53 @@ impl Component for AndroidView {
             }
         };
 
-        let parent = ctx.use_context(&ANDROID_VIEW_KEY);
+        let parent = ctx.use_context(&ANDROID_VIEW_CONTAINER_KEY);
 
         let provider_value = if auto_adopt_child
             && matches!(
                 with_current_android_runtime(|rt| {
-                    rt.env().is_instance_of(&obj, "android.view.ViewGroup")
+                    rt.env().is_instance_of(&obj, "android.view.ViewParent")
                 }),
                 Some(Ok(true))
             ) {
-            Some(obj.clone())
+            AndroidViewContainer::ViewParent(obj.clone())
         } else {
-            None
+            AndroidViewContainer::Empty
         };
 
-        Box::new(
+        ctx.children.push(Box::new(
             ProviderBuilder::default()
-                .key(&ANDROID_VIEW_KEY)
+                .key(&ANDROID_VIEW_CONTAINER_KEY)
                 .value(SingleValue(provider_value))
                 .child(children)
                 .build()
                 .unwrap(),
-        )
-        .setup(ctx);
+        ));
 
         if let Some(parent) = parent {
             with_current_android_runtime(|rt| {
-                parent.with(|p| {
-                    let Some(p) = p else {
-                        return;
-                    };
-
-                    if let Err(e) = rt.env().call_method(
-                        p,
-                        "addView",
-                        "(Landroid/view/View;)V",
-                        &[(&obj).into()],
-                    ) {
-                        log::error!("Failed to add view to parent: {}", e);
+                parent.with(|p| match p {
+                    AndroidViewContainer::ViewParent(p) => {
+                        if let Err(e) = rt.env().call_method(
+                            p,
+                            "addView",
+                            "(Landroid/view/View;)V",
+                            &[(&obj).into()],
+                        ) {
+                            log::error!("Failed to add view to parent: {}", e);
+                        }
                     }
+                    AndroidViewContainer::Activity(p) => {
+                        if let Err(e) = rt.env().call_method(
+                            p,
+                            "setContentView",
+                            "(Landroid/view/View;)V",
+                            &[(&obj).into()],
+                        ) {
+                            log::error!("Failed to add view to parent: {}", e);
+                        }
+                    }
+                    AndroidViewContainer::Empty => {}
                 })
             });
         }
@@ -110,30 +125,41 @@ impl Component for AndroidView {
 }
 
 impl AndroidViewBuilder {
-    pub fn property<S>(
+    pub fn property<V>(
         self,
         java_method_name: impl AsRef<str> + 'static,
         java_signature: impl AsRef<str> + 'static,
-        value: S,
+        value: impl Signal<Value = V>,
     ) -> Self
     where
-        S: Signal,
-        S::Value: ToJavaValue,
-        for<'a> <S::Value as ToJavaValue>::JavaType<'a>: Into<JValueGen<&'a JObject<'a>>>,
+        V: IntoJValue,
     {
         let mut property_runs = self.property_runs.unwrap_or_default();
 
         property_runs.push(Box::new(move |_ctx, env, obj| {
             value.with(|value| {
                 let value = value
-                    .into_java_value(env)
+                    .into_jvalue(env)
                     .expect("To convert value to Java value");
+
+                let value = match &value {
+                    JValueGen::Object(v) => JValueGen::Object(v.as_ref()),
+                    JValueGen::Bool(v) => JValueGen::Bool(*v),
+                    JValueGen::Byte(v) => JValueGen::Byte(*v),
+                    JValueGen::Char(v) => JValueGen::Char(*v),
+                    JValueGen::Short(v) => JValueGen::Short(*v),
+                    JValueGen::Int(v) => JValueGen::Int(*v),
+                    JValueGen::Long(v) => JValueGen::Long(*v),
+                    JValueGen::Float(v) => JValueGen::Float(*v),
+                    JValueGen::Double(v) => JValueGen::Double(*v),
+                    JValueGen::Void => JValueGen::Void,
+                };
 
                 if let Err(e) = env.call_method(
                     obj,
                     java_method_name.as_ref(),
                     java_signature.as_ref(),
-                    &[value.into()],
+                    &[value],
                 ) {
                     log::error!(
                         "Failed to set property {}: {e:?}",

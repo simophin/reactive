@@ -1,2 +1,2 @@
-mod text;
-mod view;
+pub mod text;
+pub mod view;

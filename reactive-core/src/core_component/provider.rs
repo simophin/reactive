@@ -8,7 +8,7 @@ use crate::{context::ContextKey, Component, SetupContext, Signal};
 #[builder(pattern = "owned")]
 pub struct Provider<V, C, T>
 where
-    T: Clone + 'static,
+    T: 'static,
     V: Signal,
     C: Component,
 {
@@ -22,7 +22,7 @@ where
 
 impl<V, C, T> Component for Provider<V, C, T>
 where
-    T: Clone + 'static,
+    T: 'static,
     V: Signal<Value = T>,
     C: Component,
 {
