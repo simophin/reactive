@@ -1,9 +1,9 @@
 mod core;
 mod env;
 mod example;
+mod proxy;
 mod value;
 mod waker;
-mod proxy;
 
 use std::{
     future::Future,
@@ -134,13 +134,21 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
         }
     };
 
-    let context = Box::new(JavaReactiveContext {
+    let mut context = Box::new(JavaReactiveContext {
         context: ReactiveContext::default(),
         waker_state: Default::default(),
         tokio_rt,
         request_frame: request_wake,
         java_instance,
         activity,
+    });
+
+    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
+        use example::*;
+        let node = context.context.mount_node(Box::new(jsx! {
+            <App activity=context.activity.clone() />
+        }));
+        context.context.set_root(Some(node));
     });
 
     Box::into_raw(context) as jlong
@@ -153,14 +161,6 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>
     _obj: JObject<'local>,
     instance: jlong,
 ) {
-    let context = JavaReactiveContext::from(instance);
-    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
-        use example::*;
-        let node = context.context.mount_node(Box::new(jsx! {
-            <App activity=context.activity.clone() />
-        }));
-        context.context.set_root(Some(node));
-    });
 }
 
 #[warn(non_snake_case)]
@@ -170,10 +170,6 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStop<'local>(
     _obj: JObject<'local>,
     instance: jlong,
 ) {
-    let context = JavaReactiveContext::from(instance);
-    set_current_android_runtime(AndroidRuntime::new(&env, &context.activity), || {
-        context.context.set_root(None);
-    });
 }
 
 #[warn(non_snake_case)]
