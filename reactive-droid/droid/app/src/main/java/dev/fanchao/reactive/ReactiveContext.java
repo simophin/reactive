@@ -13,13 +13,14 @@ import java.lang.reflect.Proxy;
 
 public class ReactiveContext {
     private final Activity activity;
+    private boolean isActivityStarted = false;
     long nativeInstance;
     private final Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
             if (msg.what == MSG_FRAME) {
                 removeMessages(msg.what);
-                if (handleFrame(nativeInstance)) {
+                if (isActivityStarted && handleFrame(nativeInstance)) {
                     sendEmptyMessage(MSG_FRAME);
                 }
             } else {
@@ -40,6 +41,7 @@ public class ReactiveContext {
             public void onActivityStarted(Activity activity) {
                 if (activity == ReactiveContext.this.activity) {
                     onStart(nativeInstance);
+                    isActivityStarted = true;
                     if (handleFrame(nativeInstance)) {
                         requestFrame();
                     }
@@ -65,6 +67,7 @@ public class ReactiveContext {
                 if (activity == ReactiveContext.this.activity) {
                     onStop(nativeInstance);
                     clearFrameRequests();
+                    isActivityStarted = false;
                 }
             }
 
