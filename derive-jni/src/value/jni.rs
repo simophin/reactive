@@ -1,11 +1,9 @@
-use std::convert::Infallible;
-
 use jni::{
     objects::{JObject, JString, JValueGen},
     sys::JNI_TRUE,
 };
 
-use crate::{ToJavaValue, ToRustType};
+use crate::ToRustType;
 
 impl<T> ToRustType<bool> for JValueGen<T> {
     type BoxedRustType = Option<bool>;

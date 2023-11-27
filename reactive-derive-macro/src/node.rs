@@ -2,7 +2,6 @@ use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use quote::{format_ident, quote, ToTokens};
 use rstml::node::{Node, NodeBlock, NodeElement, NodeFragment};
-use syn::spanned::Spanned;
 
 use crate::{attr::ComponentAttribute, children::ComponentChildren};
 

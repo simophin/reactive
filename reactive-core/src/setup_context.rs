@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{any::Any, rc::Rc};
 
 use futures::Future;
 
@@ -173,6 +173,11 @@ impl SetupContext {
 
     pub fn on_clean_up(&mut self, clean_up: impl CleanUp) {
         self.clean_ups.push(Box::new(clean_up));
+    }
+
+    pub fn scoped_object<T: 'static>(&mut self, obj: T) {
+        let obj: Box<dyn Any> = Box::new(obj);
+        self.on_clean_up(obj);
     }
 
     pub fn set_user_data<T>(&mut self, key: &'static UserDataKey<T>, value: T) {

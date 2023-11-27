@@ -1,16 +1,16 @@
-use std::process::abort;
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Literal, TokenStream};
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
-use syn::{parse2, parse_quote, FnArg, ItemTrait, ReturnType, TraitItem, Type, PatType, Token, TraitItemFn, Signature, TypePath, TypeTuple, Expr, PathSegment};
-use syn::punctuated::Punctuated;
+use syn::{
+    parse2, parse_quote, FnArg, ItemTrait, PatType, ReturnType, TraitItem, TraitItemFn, Type,
+    TypePath,
+};
 
 use crate::{
     call::build_jni_call_list,
     sig::{build_jni_method_signature, SignatureOutput},
 };
-
 
 struct JavaConstructor {
     struct_ident: Ident,
@@ -21,13 +21,16 @@ struct JavaConstructor {
 
 impl JavaConstructor {
     fn build_method(&self) -> TokenStream {
-        let Self { ident, class_name, args, struct_ident } = self;
+        let Self {
+            ident,
+            class_name,
+            args,
+            struct_ident,
+        } = self;
         let jni_call_list = build_jni_call_list(args.iter());
 
-        let jni_method_signature = build_jni_method_signature(
-            args.iter(),
-            SignatureOutput::Literal("V"),
-        );
+        let jni_method_signature =
+            build_jni_method_signature(args.iter(), SignatureOutput::Literal("V"));
 
         quote! {
             impl<'a> #struct_ident<'a, jni::objects::AutoLocal<'a, ::jni::objects::JObject<'a>>> {
@@ -54,13 +57,17 @@ struct JavaStaticMethod {
 
 impl JavaStaticMethod {
     fn build_method(&self) -> TokenStream {
-        let Self { ident, class_name, args, return_type, struct_ident } = self;
+        let Self {
+            ident,
+            class_name,
+            args,
+            return_type,
+            struct_ident,
+        } = self;
         let jni_call_list = build_jni_call_list(args.iter());
 
-        let jni_method_signature = build_jni_method_signature(
-            args.iter(),
-            SignatureOutput::Type(return_type),
-        );
+        let jni_method_signature =
+            build_jni_method_signature(args.iter(), SignatureOutput::Type(return_type));
 
         let name = ident.to_string().to_case(Case::Camel);
 
@@ -90,13 +97,17 @@ struct JavaMethod {
 
 impl JavaMethod {
     fn build_method(&self) -> TokenStream {
-        let Self { ident, consumes_self, args, return_type, struct_ident } = self;
+        let Self {
+            ident,
+            consumes_self,
+            args,
+            return_type,
+            struct_ident,
+        } = self;
         let jni_call_list = build_jni_call_list(args.iter());
 
-        let jni_method_signature = build_jni_method_signature(
-            args.iter(),
-            SignatureOutput::Type(return_type),
-        );
+        let jni_method_signature =
+            build_jni_method_signature(args.iter(), SignatureOutput::Type(return_type));
 
         let name = ident.to_string().to_case(Case::Camel);
         let self_binding = if *consumes_self {
@@ -128,7 +139,11 @@ enum JavaMethodType {
 }
 
 impl JavaMethodType {
-    fn new(item: TraitItemFn, class_name: Option<&Literal>, struct_ident: Ident) -> Result<Self, &'static str> {
+    fn new(
+        item: TraitItemFn,
+        class_name: Option<&Literal>,
+        struct_ident: Ident,
+    ) -> Result<Self, &'static str> {
         let ident = item.sig.ident.clone();
         let output_is_self: bool;
         let return_or_unit: Type;
@@ -146,15 +161,13 @@ impl JavaMethodType {
         };
 
         match &item.sig.inputs.first() {
-            Some(FnArg::Receiver(r)) => {
-                Ok(JavaMethodType::Method(JavaMethod {
-                    struct_ident,
-                    ident,
-                    consumes_self: r.reference.is_none(),
-                    args: input_as_pat_types(item.sig.inputs.into_iter().skip(1)).collect(),
-                    return_type: return_or_unit,
-                }))
-            }
+            Some(FnArg::Receiver(r)) => Ok(JavaMethodType::Method(JavaMethod {
+                struct_ident,
+                ident,
+                consumes_self: r.reference.is_none(),
+                args: input_as_pat_types(item.sig.inputs.into_iter().skip(1)).collect(),
+                return_type: return_or_unit,
+            })),
 
             _ if ident.to_string().starts_with("new") && output_is_self => {
                 let class_name = match class_name {
@@ -200,7 +213,7 @@ fn type_is_self(t: &Type) -> bool {
     matches!(t, Type::Path(TypePath { path, .. }) if path.is_ident("Self"))
 }
 
-fn input_as_pat_types(iter: impl Iterator<Item=FnArg>) -> impl Iterator<Item=PatType> {
+fn input_as_pat_types(iter: impl Iterator<Item = FnArg>) -> impl Iterator<Item = PatType> {
     iter.map(|arg| match arg {
         FnArg::Typed(t) => t,
         FnArg::Receiver(_) => abort!(arg, "Receiver is not supported at this position"),
@@ -236,16 +249,14 @@ pub fn make_jni_bridge(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let struct_name = format_ident!("{}JavaObject", ident);
 
-    let methods = items.into_iter().map(|item| {
-        match item {
-            TraitItem::Fn(f) => {
-                match JavaMethodType::new(f.clone(), class_name.as_ref(), struct_name.clone()) {
-                    Ok(v) => v.build_rust_method(),
-                    Err(e) => abort!(f, format!("Unsupported trait method: {e}")),
-                }
+    let methods = items.into_iter().map(|item| match item {
+        TraitItem::Fn(f) => {
+            match JavaMethodType::new(f.clone(), class_name.as_ref(), struct_name.clone()) {
+                Ok(v) => v.build_rust_method(),
+                Err(e) => abort!(f, format!("Unsupported trait method: {e}")),
             }
-            f => abort!(f, "Unsupported trait item"),
         }
+        f => abort!(f, "Unsupported trait item"),
     });
 
     quote! {
@@ -257,7 +268,7 @@ pub fn make_jni_bridge(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[cfg(test)]
 mod tests {
-    use syn::{parse2, parse_file, parse_quote};
+    use syn::{parse_file, parse_quote};
 
     use super::*;
 

@@ -1,3 +1,4 @@
+pub mod ext;
 mod primitive;
 mod strings;
 

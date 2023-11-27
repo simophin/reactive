@@ -11,6 +11,8 @@ use jni::{
 use reactive_core::core_component::ProviderBuilder;
 use reactive_core::{Component, ContextKey, EffectContext, SetupContext, Signal, SingleValue};
 
+use super::click::OnClickHandler;
+
 pub static ANDROID_VIEW_CONTAINER_KEY: ContextKey<AndroidViewContainer> = ContextKey::new();
 
 pub enum AndroidViewContainer {
@@ -27,8 +29,11 @@ pub struct AndroidView {
     #[builder(setter(custom, strip_option))]
     property_runs:
         Vec<Box<dyn for<'a> Fn(&'a mut EffectContext, &'a mut JNIEnv<'_>, &'a JObject<'_>)>>,
+    #[builder(default)]
     children: Vec<Box<dyn Component>>,
     auto_adopt_child: bool,
+
+    on_click: Option<OnClickHandler>,
 }
 
 impl Component for AndroidView {
@@ -38,12 +43,13 @@ impl Component for AndroidView {
             property_runs,
             children,
             auto_adopt_child,
+            on_click: on_click_handler,
         } = *self;
 
-        let obj = with_current_android_runtime(move |rt| {
+        let obj = with_current_android_runtime(|rt| {
             let mut env = rt.env();
             env.new_object(
-                class_name,
+                class_name.as_ref(),
                 "(Landroid/content/Context;)V",
                 &[(&rt.activity()).into()],
             )
@@ -62,12 +68,35 @@ impl Component for AndroidView {
             }
         };
 
+        if let Some(on_click_handler) = on_click_handler {
+            let obj = obj.as_obj();
+            let handle = with_current_android_runtime(move |rt| {
+                let mut env = rt.env();
+                let (on_click_handler, handle) = on_click_handler.to_java_proxy(&mut env)?;
+                env.call_method(
+                    obj,
+                    "setOnClickListener",
+                    "(Landroid/view/View$OnClickListener;)V",
+                    &[on_click_handler.as_ref().into()],
+                )?;
+
+                jni::errors::Result::Ok(handle)
+            });
+
+            if let Some(Ok(handle)) = handle {
+                log::info!("Set onClick listener on {class_name}");
+                ctx.scoped_object(handle);
+            }
+        }
+
+        log::info!("Created an instance of {class_name}");
+
         let parent = ctx.use_context(&ANDROID_VIEW_CONTAINER_KEY);
 
         let provider_value = if auto_adopt_child
             && matches!(
                 with_current_android_runtime(|rt| {
-                    rt.env().is_instance_of(&obj, "android.view.ViewParent")
+                    rt.env().is_instance_of(&obj, "android/view/ViewParent")
                 }),
                 Some(Ok(true))
             ) {
@@ -89,6 +118,7 @@ impl Component for AndroidView {
             with_current_android_runtime(|rt| {
                 parent.with(|p| match p {
                     AndroidViewContainer::ViewParent(p) => {
+                        log::info!("Adding {class_name} to parent");
                         if let Err(e) = rt.env().call_method(
                             p,
                             "addView",
@@ -99,6 +129,7 @@ impl Component for AndroidView {
                         }
                     }
                     AndroidViewContainer::Activity(p) => {
+                        log::info!("Adding {class_name} to activity");
                         if let Err(e) = rt.env().call_method(
                             p,
                             "setContentView",
@@ -108,7 +139,9 @@ impl Component for AndroidView {
                             log::error!("Failed to add view to parent: {}", e);
                         }
                     }
-                    AndroidViewContainer::Empty => {}
+                    AndroidViewContainer::Empty => {
+                        log::warn!("{class_name} has no parent nor activity to attach to");
+                    }
                 })
             });
         }
@@ -138,9 +171,16 @@ impl AndroidViewBuilder {
 
         property_runs.push(Box::new(move |_ctx, env, obj| {
             value.with(|value| {
-                let value = value
-                    .into_jvalue(env)
-                    .expect("To convert value to Java value");
+                let value = match value.into_jvalue(env) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        log::error!(
+                            "Failed to set property {}: {err:?}",
+                            java_method_name.as_ref(),
+                        );
+                        return;
+                    }
+                };
 
                 let value = match &value {
                     JValueGen::Object(v) => JValueGen::Object(v.as_ref()),

@@ -27,6 +27,14 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+
+        debug {
+            packaging {
+                jniLibs {
+                    keepDebugSymbols += "**/*.so"
+                }
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -48,6 +56,7 @@ cargo {
     pythonCommand = "python3" // Optional, defaults to "python"
     targetIncludes = arrayOf("libreactive_droid.so")
     targetDirectory = "../../../target"
+    profile = "debug"
 }
 
 tasks.whenTaskAdded {

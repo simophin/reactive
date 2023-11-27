@@ -3,6 +3,7 @@ mod env;
 mod example;
 mod value;
 mod waker;
+mod proxy;
 
 use std::{
     future::Future,
@@ -237,6 +238,10 @@ pub extern "system" fn JNI_OnLoad(_vm: JavaVM) -> jint {
             .with_max_level(log::LevelFilter::Debug)
             .with_tag("reactive"),
     );
+
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("Panic: {:?}", info);
+    }));
 
     JNI_VERSION_1_6
 }

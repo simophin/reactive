@@ -7,6 +7,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 
 public class ReactiveContext {
@@ -115,11 +117,36 @@ public class ReactiveContext {
         handler.removeMessages(MSG_FRAME);
     }
 
-    static Object requestProxy(String interfaceName, long nativeData) throws ClassNotFoundException {
+    static Object requestProxy(String interfaceName, final long nativeData) throws ClassNotFoundException {
         Class<?> i = Class.forName(interfaceName);
         return Proxy.newProxyInstance(i.getClassLoader(),
                 new Class<?>[]{i},
-                (proxy, method, args) -> onProxyCalled(nativeData, proxy, method.getName(), args)
+                new InvocationHandler() {
+                    @Override
+                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                        final String methodName = method.getName();
+
+                        if (methodName.equals("hashCode") && (args == null || args.length == 0)) {
+                            return System.identityHashCode(proxy);
+                        }
+
+                        if (methodName.equals("equals") && (args != null && args.length == 1 && args[0].getClass() == Object.class)) {
+                            return proxy == args[0];
+                        }
+
+                        if (methodName.equals("toString") && (args == null || args.length == 0)) {
+                            return proxy.getClass().getName() + '@' + Integer.toHexString(System.identityHashCode(proxy));
+                        }
+
+                        return onProxyCalled(nativeData, proxy, methodName, args);
+                    }
+
+                    @Override
+                    protected void finalize() throws Throwable {
+                        super.finalize();
+                        onProxyDestroyed(nativeData);
+                    }
+                }
         );
     }
 
@@ -129,6 +156,8 @@ public class ReactiveContext {
             String methodName,
             Object[] args
     );
+
+    static native void onProxyDestroyed(long nativeData);
 
     static {
         System.loadLibrary("reactive_droid");

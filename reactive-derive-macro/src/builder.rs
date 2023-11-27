@@ -1,19 +1,15 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use proc_macro_error::abort;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{
     parse2, parse_quote, punctuated::Punctuated, FnArg, Generics, ItemFn, Lifetime, Pat, PatType,
     Path, Token, Type, TypeParamBound, TypePath,
 };
 
 pub fn component(_attr: TokenStream, mut item: TokenStream) -> TokenStream {
-    let ItemFn {
-        attrs,
-        vis,
-        sig,
-        block,
-    } = parse2::<ItemFn>(item.clone()).expect("Expect a function as component");
+    let ItemFn { vis, sig, .. } =
+        parse2::<ItemFn>(item.clone()).expect("Expect a function as component");
 
     let component_name = Ident::new(
         &sig.ident

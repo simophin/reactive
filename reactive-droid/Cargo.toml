@@ -13,6 +13,7 @@ reactive-derive = { path = "../reactive-derive" }
 derive_builder = "0"
 derive-jni = { path = "../derive-jni" }
 tokio = { version = "1.34.0", features = ["rt", "time"] }
+derive_more = "0.99.17"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0"

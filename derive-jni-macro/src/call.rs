@@ -1,6 +1,6 @@
 use proc_macro_error::abort;
 use quote::quote;
-use syn::{parse_quote, punctuated::Punctuated, Expr, FnArg, Token, Type, PatType};
+use syn::{parse_quote, punctuated::Punctuated, Expr, PatType, Token, Type};
 
 pub fn build_jni_call_list<'a>(
     args: impl Iterator<Item = &'a PatType> + 'a,
