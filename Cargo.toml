@@ -8,4 +8,5 @@ members = [
     "reactive-droid",
     "derive-jni",
     "derive-jni-macro",
+    "jranerator",
 ]

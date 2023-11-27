@@ -1,0 +1,23 @@
+[package]
+name = "jranerator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+classy = "0.3.0"
+convert_case = "0.6.0"
+jni = "0.21.1"
+proc-macro-error = "1.0.4"
+proc-macro2 = "1.0.69"
+quote = "1.0.33"
+syn = { version = "2", features = ["full"] }
+
+# [dev-dependencies]
+prettyplease = "0.2"
+combine = "4.6.6"
+
+
+# [lib]
+# proc-macro = true
