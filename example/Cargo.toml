@@ -15,3 +15,6 @@ reactive-derive = { path = "../reactive-derive" }
 derive-jni = { path = "../derive-jni" }
 tokio = { version = "1.13.0", features = ["full"] }
 jni = { version = "0.21.1", features = ["invocation"] }
+
+[build-dependencies]
+jranerator = { path = "../jranerator" }
