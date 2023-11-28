@@ -59,15 +59,12 @@ impl ClassLike for ClassFile {
     }
 
     fn get_class_signature(&self) -> String {
-        self.constant_pool
-            .iter()
-            .find_map(|c| match c {
-                classy::Constant::ClassInfo { name_index } => {
-                    self.get_constant_utf8(*name_index).ok()
-                }
-                _ => None,
-            })
-            .expect("a class signature")
-            .to_owned()
+        match &self.constant_pool[self.this_class as usize - 1] {
+            classy::Constant::ClassInfo { name_index, .. } => self
+                .get_constant_utf8(*name_index)
+                .expect("a class signature")
+                .to_owned(),
+            v => panic!("Unexpected class info class signature: {v:?}"),
+        }
     }
 }

@@ -161,7 +161,11 @@ pub fn convert_class(
             vis: Visibility::Inherited,
             ident: Some(m.rust_method_id_cache_field.clone()),
             colon_token: Default::default(),
-            ty: parse_quote! { std::cell::OnceCell<::jni::errors::Result<::jni::sys::jmethodID>> },
+            ty: if m.is_static {
+                parse_quote! { std::cell::OnceCell<::jni::errors::Result<::jni::objects::JStaticMethodID>> }
+            } else {
+                parse_quote! { std::cell::OnceCell<::jni::errors::Result<::jni::objects::JMethodID>> }
+            },
             attrs: Default::default(),
             mutability: syn::FieldMutability::None,
         })
@@ -179,10 +183,10 @@ pub fn convert_class(
 
         impl #struct_name {
             pub fn new<'local>(env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<Self> {
-                let java_class = env.new_global_ref(env.find_class(#class_signature)?);
+                let java_class = env.new_global_ref(env.find_class(#class_signature)?)?;
                 Ok(Self {
                     java_class,
-                    #(#method_id_field_names: Default::defult()),*
+                    #(#method_id_field_names: Default::default()),*
                 })
             }
 
@@ -215,22 +219,49 @@ fn generate_method_impl(m: &JavaMethod) -> ItemFn {
         is_static,
     } = m;
 
-    parse_quote! {
-        pub fn #rust_method_name<'local>(
-            &self,
-            env: &mut ::jni::JNIEnv<'local>,
-            obj: &::jni::objects::JObject<'_>,
-            #(#rust_method_args),*
-        ) -> ::jni::errors::Result<#rust_method_ret> {
-            let method_id = self.#rust_method_id_cache_field.get_or_init(|| {
-                env.get_method_id(
-                    obj,
-                    #java_method_name,
-                    #java_signature,
-                )
-            })?.clone();
+    if *is_static {
+        parse_quote! {
+            pub fn #rust_method_name<'local>(
+                &self,
+                env: &mut ::jni::JNIEnv<'local>,
+                obj: &::jni::objects::JObject<'_>,
+                #(#rust_method_args),*
+            ) -> ::jni::errors::Result<#rust_method_ret> {
+                let method_id = match self.#rust_method_id_cache_field.get_or_init(|| {
+                    env.get_static_method_id(
+                        self.java_class.as_ref(),
+                        #java_method_name,
+                        #java_signature,
+                    )
+                }) {
+                    Ok(v) => *v,
+                    Err(e) => return Err(e.clone()),
+                };
 
-            todo!()
+                todo!()
+            }
+        }
+    } else {
+        parse_quote! {
+            pub fn #rust_method_name<'local>(
+                &self,
+                env: &mut ::jni::JNIEnv<'local>,
+                obj: &::jni::objects::JObject<'_>,
+                #(#rust_method_args),*
+            ) -> ::jni::errors::Result<#rust_method_ret> {
+                let method_id = match self.#rust_method_id_cache_field.get_or_init(|| {
+                    env.get_method_id(
+                        self.java_class.as_ref(),
+                        #java_method_name,
+                        #java_signature,
+                    )
+                }) {
+                    Ok(v) => *v,
+                    Err(e) => return Err(e.clone()),
+                };
+
+                todo!()
+            }
         }
     }
 }

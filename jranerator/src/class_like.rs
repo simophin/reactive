@@ -16,4 +16,12 @@ pub trait ClassLike {
     fn get_class_signature(&self) -> String;
     fn get_public_methods(&self) -> Vec<MethodDescription>;
     fn get_public_fields(&self) -> Vec<FieldDescription>;
+
+    fn get_simplified_class_name(&self) -> String {
+        self.get_class_signature()
+            .split('/')
+            .last()
+            .expect("a class name")
+            .to_owned()
+    }
 }
