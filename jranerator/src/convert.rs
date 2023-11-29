@@ -196,8 +196,9 @@ pub fn convert_class(
 
     class_signature
         .split('/')
-        .map(|s| s.to_case(Case::Snake))
         .rev()
+        .skip(1)
+        .map(|s| s.to_case(Case::Snake))
         .fold(content, |acc, mod_name| {
             let mod_name = format_ident!("{}", mod_name);
             parse_quote! {
