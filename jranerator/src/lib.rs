@@ -1,13 +1,13 @@
 use std::{
     io::{Read, Seek},
-    iter::once,
-    path::PathBuf,
+    path::Path,
 };
 
 use class_like::ClassLike;
 use quote::format_ident;
 use syn::{parse_file, token::Pub};
 use zip::ZipArchive;
+use thiserror::Error;
 
 mod class_like;
 mod classy_impl;
@@ -17,8 +17,17 @@ mod method;
 mod sig;
 mod utils;
 
-pub fn generate(class_file: impl Read, name: Option<&str>) -> String {
-    let class_file = classy::read_class(class_file).expect("To read class file");
+#[derive(Debug, Error)]
+pub enum GenerateError {
+    #[error("Error reading java class file: {0}")]
+    InvalidClassFile(#[from] std::io::Error),
+
+    #[error("Invalid jar file: {0}")]
+    InvalidJarFile(#[from] zip::result::ZipError),
+}
+
+pub fn generate(class_file: impl Read, name: Option<&str>) -> Result<String, GenerateError> {
+    let class_file = classy::read_class(class_file)?;
 
     let output = convert::convert_class(
         syn::Visibility::Public(Pub::default()),
@@ -29,17 +38,18 @@ pub fn generate(class_file: impl Read, name: Option<&str>) -> String {
         ),
         &class_file,
     );
-    prettyplease::unparse(&parse_file(&output.to_string()).unwrap())
+
+    Ok(prettyplease::unparse(&parse_file(&output.to_string()).unwrap()))
 }
 
-pub fn generate_jar<'a>(
-    archive: &'a mut ZipArchive<impl Read + Seek + 'static>,
-) -> impl Iterator<Item = (PathBuf, String)> + 'a {
-    (0..archive.len())
-        .into_iter()
-        .map(move |index| archive.by_index(index).expect("To read file in JAR"))
-        .filter(|f| f.is_file() && f.name().ends_with(".class"))
-        .map(|file| {
+pub fn generate_jar(
+    archive: impl Read + Seek,
+    mut for_each: impl FnMut(&Path, String) -> (),
+) -> Result<(), GenerateError> {
+    let mut archive = ZipArchive::new(archive)?;
+    for i in 0..archive.len() {
+        let file = archive.by_index(i).expect("To read file in JAR");
+        if file.is_file() && file.name().ends_with(".class") {
             let path = file
                 .enclosed_name()
                 .expect("To get file name")
@@ -51,9 +61,12 @@ pub fn generate_jar<'a>(
                 &class_file,
             );
 
-            (
-                path,
+            for_each(
+                path.as_path(),
                 prettyplease::unparse(&parse_file(&output.to_string()).unwrap()),
-            )
-        })
+            );
+        }
+    }
+
+    Ok(())
 }

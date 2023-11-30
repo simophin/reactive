@@ -13,11 +13,10 @@ proc-macro-error = "1.0.4"
 proc-macro2 = "1.0.69"
 quote = "1.0.33"
 syn = { version = "2", features = ["full"] }
-
-# [dev-dependencies]
 prettyplease = "0.2"
 combine = "4.6.6"
 zip = "0.6.6"
+thiserror = "1.0.50"
 
 
 # [lib]
