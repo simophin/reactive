@@ -1,4 +1,5 @@
 mod invocation_error;
+mod java_value;
 mod method_sig;
 pub mod value;
 
@@ -9,6 +10,8 @@ pub use invocation_error::Result as InvocationResult;
 pub use method_sig::MethodSignatureBuilder;
 
 pub use derive_jni_macro::java_class;
+
+pub use java_value::IntoJValue;
 
 pub trait WithJavaObject {
     fn get_java_object(&self, env: &mut JNIEnv<'_>) -> Result<&JObject<'_>, jni::errors::Error>;

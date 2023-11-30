@@ -17,6 +17,7 @@ syn = { version = "2", features = ["full"] }
 # [dev-dependencies]
 prettyplease = "0.2"
 combine = "4.6.6"
+zip = "0.6.6"
 
 
 # [lib]

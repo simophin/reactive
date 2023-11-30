@@ -10,6 +10,15 @@ pub enum JavaTypeDescription {
     Array(Box<JavaTypeDescription>),
 }
 
+impl FromStr for JavaTypeDescription {
+    type Err = <&'static str as StreamOnce>::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (r, _) = parse_java_type().parse(s)?;
+        Ok(r)
+    }
+}
+
 pub struct JavaMethodDescription {
     pub arguments: Vec<JavaTypeDescription>,
     pub return_type: JavaTypeDescription,
