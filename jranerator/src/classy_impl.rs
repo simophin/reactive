@@ -1,4 +1,4 @@
-use classy::{Attribute, ClassFile, ACC_FINAL, ACC_PUBLIC, ACC_STATIC};
+use classy::{Attribute, ClassFile, ACC_FINAL, ACC_PUBLIC, ACC_STATIC, ACC_SYNTHETIC};
 
 use crate::class_like::{ClassLike, FieldDescription, MethodDescription};
 
@@ -6,7 +6,7 @@ impl ClassLike for ClassFile {
     fn get_public_methods(&self) -> Vec<MethodDescription> {
         self.method_info
             .iter()
-            .filter(|&m| m.access_flags & ACC_PUBLIC != 0)
+            .filter(|&m| m.access_flags & ACC_PUBLIC != 0 && m.access_flags & ACC_SYNTHETIC == 0)
             .map(|m| MethodDescription {
                 name: self
                     .get_constant_utf8(m.name_index)

@@ -1,20 +1,11 @@
 use convert_case::{Case, Casing};
-use jni::signature::Primitive;
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_quote, Expr, Field, ItemFn, PathSegment, Type, TypePath, Visibility};
+use syn::{Field, ItemFn};
 
-use crate::{
-    class_like::{ClassLike, MethodDescription},
-    method::JavaMethod,
-    sig::{JavaMethodDescription, JavaTypeDescription},
-};
+use crate::{class_like::ClassLike, method::JavaMethod};
 
-pub fn convert_class(
-    visibility: Visibility,
-    struct_name: Ident,
-    java_class: &impl ClassLike,
-) -> TokenStream {
+pub fn generate_binding(java_class: &impl ClassLike) -> (Vec<String>, TokenStream) {
     let methods = JavaMethod::from(java_class);
     let method_id_fields: Vec<Field> = methods
         .iter()
@@ -24,8 +15,16 @@ pub fn convert_class(
     let method_impl: Vec<ItemFn> = methods.iter().map(JavaMethod::write_rust_fn).collect();
     let class_signature = java_class.get_class_signature();
 
+    let modules = class_signature
+        .split('/')
+        .map(|s| s.to_case(Case::Snake))
+        .collect::<Vec<_>>();
+
+    let class_name = modules.last().expect("To have a class_name");
+    let struct_name = format_ident!("{}", class_name);
+
     let content = quote! {
-        #visibility struct #struct_name {
+        pub struct #struct_name {
             java_class: ::jni::objects::GlobalRef,
             #(#method_id_fields),*
         }
@@ -49,17 +48,5 @@ pub fn convert_class(
         }
     };
 
-    class_signature
-        .split('/')
-        .rev()
-        .skip(1)
-        .map(|s| s.to_case(Case::Snake))
-        .fold(content, |acc, mod_name| {
-            let mod_name = format_ident!("{}", mod_name);
-            parse_quote! {
-                #visibility mod #mod_name {
-                    #acc
-                }
-            }
-        })
+    (modules, content)
 }
