@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use convert_case::{Case, Casing};
 use jni::signature::Primitive;
 use quote::{format_ident, quote};
-use syn::{parse_quote, Expr, Field, Ident, ItemFn, PathSegment, Type, TypePath, Visibility};
+use syn::{parse_quote, Expr, Field, Ident, ItemFn, PathSegment, Type, Visibility};
 
 use crate::{
     class_like::{ClassLike, MethodDescription},
@@ -208,7 +208,13 @@ impl JavaMethod {
                     if *is_java_primitive {
                         parse_quote! { ::jni::objects::JValueGen::<::jni::objects::JObject<'_>>::from(#name).as_jni() }
                     } else {
-                        parse_quote! { ::jni::objects::JValueGen::Object(#name).as_jni() }
+                        parse_quote! { 
+                            {
+                                let obj: &::jni::objects::JObject<'_> = #name.as_ref();
+                                ::jni::objects::JValueGen::Object(obj).as_jni() 
+                            }
+                            
+                        }
                     }
                 },
             )
@@ -220,6 +226,17 @@ impl JavaMethod {
                 quote! { #name: #ty }
             })
             .collect::<Vec<_>>();
+
+        let return_value_conversion: Expr = match &java_method_desc.return_type {
+            JavaTypeDescription::Object(_) | JavaTypeDescription::Primitive(_) => {
+                parse_quote! { ret.try_into() }
+            }
+            JavaTypeDescription::Array(_) | JavaTypeDescription::String => {
+                parse_quote! {
+                    Ok(::jni::objects::JObject::<'_>::try_from(ret)?.into())
+                }
+            }
+        };
 
         if *is_static {
             parse_quote! {
@@ -244,11 +261,13 @@ impl JavaMethod {
                         },
                     };
 
-                    unsafe {
+                    let ret = unsafe {
                         env.call_static_method_unchecked(
                             self.get_java_class(), method_id, #jni_return_type, &[#(#method_call_assignments),*]
                         )
-                    }?.try_into()
+                    }?;
+
+                    #return_value_conversion
                 }
             }
         } else {
@@ -273,11 +292,13 @@ impl JavaMethod {
                         }),
                     };
 
-                    unsafe {
+                    let ret = unsafe {
                         env.call_method_unchecked(
                             obj, method_id, #jni_return_type, &[#(#method_call_assignments),*]
                         )
-                    }?.try_into()
+                    }?;
+
+                    #return_value_conversion
                 }
             }
         }

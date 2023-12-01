@@ -1,33 +1,44 @@
 use std::{
+    cell::RefCell,
     fs::File,
     io::{Read, Seek},
     path::Path,
+    rc::Rc,
 };
 
 use classy::{read_class, ACC_PUBLIC, ACC_SYNTHETIC};
-use convert_case::Casing;
-use proc_macro2::TokenStream;
-use syn::parse_file;
 use zip::ZipArchive;
 
-use crate::{class_like::ClassLike, GenerateError};
+use crate::{
+    class_like::ClassLike, generate::generate_binding, utils::java_name_to_rust_name, GenerateError,
+};
 
-#[derive(Debug)]
+pub trait ZipRead: Read + Seek + 'static {}
+
+impl<T: Read + Seek + 'static> ZipRead for T {}
+
+struct Binding {
+    name: String,
+    archive: Rc<RefCell<ZipArchive<Box<dyn ZipRead>>>>,
+    index: usize,
+}
+
 pub struct Module {
     pub name: String,
-    bindings: Vec<(String, TokenStream)>,
+    bindings: Vec<Binding>,
     children: Vec<Module>,
 }
 
 pub fn generate_from_jar(
-    jar_path: impl Read + Seek,
+    jar: Box<dyn ZipRead>,
     root_module: &mut Module,
 ) -> Result<(), GenerateError> {
-    let mut archive = ZipArchive::new(jar_path)?;
-    let len = archive.len();
+    let archive = Rc::new(RefCell::new(ZipArchive::new(jar)?));
+    let len = archive.borrow().len();
 
     for i in 0..len {
-        let file = archive.by_index(i)?;
+        let mut borrowed_archive = archive.borrow_mut();
+        let file = borrowed_archive.by_index(i)?;
         let path = file.enclosed_name().unwrap().to_owned();
         match path.extension() {
             Some(ext) if ext.eq("class") => {}
@@ -52,14 +63,22 @@ pub fn generate_from_jar(
             continue;
         }
 
-        if java_class.get_class_signature().contains("$") {
-            eprintln!("Skipping class with $ sign {}", path.display());
-            continue;
-        }
+        let (package, name) = java_class.get_package_and_name();
+        let name = java_name_to_rust_name(&name);
 
-        let (mut modules, contents) = super::generate::generate_binding(&java_class);
-        let struct_name = modules.pop().expect("To have a struct name");
-        root_module.add_contents(&modules, struct_name, contents);
+        let modules = package
+            .into_iter()
+            .map(|n| java_name_to_rust_name(&n))
+            .collect::<Vec<_>>();
+
+        root_module.add_contents(
+            &modules,
+            Binding {
+                name,
+                archive: archive.clone(),
+                index: i,
+            },
+        );
     }
 
     Ok(())
@@ -74,22 +93,13 @@ impl Module {
         }
     }
 
-    fn add_contents(
-        &mut self,
-        ascendant_modules: &[String],
-        struct_name: String,
-        contents: TokenStream,
-    ) {
+    fn add_contents(&mut self, ascendant_modules: &[String], binding: Binding) {
         match ascendant_modules.get(0) {
-            None => self.bindings.push((struct_name, contents)),
+            None => self.bindings.push(binding),
 
             Some(module) => match self.children.binary_search_by_key(&module, |m| &m.name) {
                 Ok(index) => {
-                    self.children[index].add_contents(
-                        &ascendant_modules[1..],
-                        struct_name,
-                        contents,
-                    );
+                    self.children[index].add_contents(&ascendant_modules[1..], binding);
                 }
 
                 Err(index) => {
@@ -99,7 +109,7 @@ impl Module {
                         children: Vec::new(),
                     };
 
-                    new_module.add_contents(&ascendant_modules[1..], struct_name, contents);
+                    new_module.add_contents(&ascendant_modules[1..], binding);
                     self.children.insert(index, new_module);
                 }
             },
@@ -114,17 +124,26 @@ impl Module {
         let mut mod_file =
             File::create(dst.join("mod.rs")).map_err(|err| GenerateError::DestinationError(err))?;
 
-        for (name, binding) in &self.bindings {
-            let file_name = format!("{}.rs", name.to_case(convert_case::Case::Snake));
+        for Binding {
+            name,
+            archive,
+            index,
+        } in &self.bindings
+        {
+            let file_name = format!("{name}.rs");
             let mut file = File::create(dst.join(&file_name))
                 .map_err(|err| GenerateError::DestinationError(err))?;
 
-            file.write_all(
-                prettyplease::unparse(&parse_file(&binding.to_string()).unwrap()).as_bytes(),
-            )
-            .map_err(|err| GenerateError::DestinationError(err))?;
+            let contents = generate_binding(
+                &read_class(archive.borrow_mut().by_index(*index)?)
+                    .map_err(|e| GenerateError::InvalidClassFile(e))?,
+                None,
+            );
 
-            write!(mod_file, "mod {file_name};\npub use {file_name}::*\n")
+            file.write_all(contents.as_bytes())
+                .map_err(|err| GenerateError::DestinationError(err))?;
+
+            write!(mod_file, "mod {name};\npub use {name}::*;\n")
                 .map_err(|err| GenerateError::DestinationError(err))?;
         }
 

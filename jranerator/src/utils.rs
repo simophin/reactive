@@ -1,3 +1,4 @@
+use convert_case::{Case, Casing};
 use jni::signature::Primitive;
 use syn::{parse_quote, TypePath};
 
@@ -31,4 +32,8 @@ pub fn java_primitive_array_to_rust(primitive: &Primitive) -> TypePath {
     };
 
     parse_quote! { ::jni::objects::#path }
+}
+
+pub fn java_name_to_rust_name(simple_name: &str) -> String {
+    simple_name.to_case(Case::Snake).replace('$', "_")
 }

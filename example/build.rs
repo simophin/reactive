@@ -9,7 +9,7 @@ fn main() {
     let mut root_module = Module::new("binding".to_string());
 
     generate_from_maven(
-        "https://repo1.maven.org/maven2",
+        "https://repo1.maven.org",
         "com.google.code.gson",
         "gson",
         "2.10.1",
@@ -18,7 +18,7 @@ fn main() {
     )
     .expect("To generate module");
 
-    let output = PathBuf::from(&root_module.name);
+    let output = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src").join(&root_module.name);
     let _ = remove_dir_all(&output);
     create_dir_all(&output).expect("To create output directory");
 

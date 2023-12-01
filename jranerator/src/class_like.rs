@@ -17,11 +17,15 @@ pub trait ClassLike {
     fn get_public_methods(&self) -> Vec<MethodDescription>;
     fn get_public_fields(&self) -> Vec<FieldDescription>;
 
-    fn get_simplified_class_name(&self) -> String {
-        self.get_class_signature()
+    fn get_package_and_name(&self) -> (Vec<String>, String) {
+        let mut package = self
+            .get_class_signature()
             .split('/')
-            .last()
-            .expect("a class name")
-            .to_owned()
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+
+        let name = package.pop().expect("a class name");
+
+        (package, name)
     }
 }

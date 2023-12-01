@@ -12,7 +12,7 @@ pub fn generate_from_maven(
 ) -> Result<(), GenerateError> {
     let jar_contents = download_jar(repo, group_id, artifact_id, version, package_type_suffix)?;
 
-    generate_from_jar(Cursor::new(jar_contents), root_module)
+    generate_from_jar(Box::new(Cursor::new(jar_contents)), root_module)
 }
 
 fn download_jar(
@@ -24,7 +24,7 @@ fn download_jar(
 ) -> Result<Vec<u8>, GenerateError> {
     let group_id = group_id.replace(".", "/");
     let url = format!(
-        "{repo}/{group_id}/{artifact_id}/{version}/{artifact_id}-{version}.{package_type_suffix}"
+        "{repo}/maven2/{group_id}/{artifact_id}/{version}/{artifact_id}-{version}.{package_type_suffix}"
     );
 
     let mut response = reqwest::blocking::get(&url)?.error_for_status()?;

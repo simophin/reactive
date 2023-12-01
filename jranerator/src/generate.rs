@@ -1,11 +1,9 @@
-use convert_case::{Case, Casing};
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Field, ItemFn};
+use quote::format_ident;
+use syn::{parse_quote, Field, File, ItemFn};
 
 use crate::{class_like::ClassLike, method::JavaMethod};
 
-pub fn generate_binding(java_class: &impl ClassLike) -> (Vec<String>, TokenStream) {
+pub fn generate_binding(java_class: &impl ClassLike, name_override: Option<&str>) -> String {
     let methods = JavaMethod::from(java_class);
     let method_id_fields: Vec<Field> = methods
         .iter()
@@ -15,15 +13,12 @@ pub fn generate_binding(java_class: &impl ClassLike) -> (Vec<String>, TokenStrea
     let method_impl: Vec<ItemFn> = methods.iter().map(JavaMethod::write_rust_fn).collect();
     let class_signature = java_class.get_class_signature();
 
-    let modules = class_signature
-        .split('/')
-        .map(|s| s.to_case(Case::Snake))
-        .collect::<Vec<_>>();
+    let struct_name = match name_override {
+        Some(name) => format_ident!("{}", name),
+        None => format_ident!("{}", java_class.get_package_and_name().1.replace('$', "_")),
+    };
 
-    let class_name = modules.last().expect("To have a class_name");
-    let struct_name = format_ident!("{}", class_name);
-
-    let content = quote! {
+    let content: File = parse_quote! {
         pub struct #struct_name {
             java_class: ::jni::objects::GlobalRef,
             #(#method_id_fields),*
@@ -48,5 +43,5 @@ pub fn generate_binding(java_class: &impl ClassLike) -> (Vec<String>, TokenStrea
         }
     };
 
-    (modules, content)
+    prettyplease::unparse(&content)
 }

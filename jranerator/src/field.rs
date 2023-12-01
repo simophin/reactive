@@ -1,6 +1,6 @@
 use proc_macro2::Ident;
 
-use crate::{class_like::ClassLike, sig::JavaTypeDescription};
+use crate::sig::JavaTypeDescription;
 
 pub struct JavaField {
     pub desc: JavaTypeDescription,
