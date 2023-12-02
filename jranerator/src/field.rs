@@ -71,10 +71,18 @@ impl JavaField {
 
         let mut methods = Vec::new();
         let rust_type = desc.write_jni_type();
+        let java_type = desc.write_jni_java_type();
+        let getter_name = format_ident!("get_field_{}", rust_method_name);
+        let setter_name = format_ident!("set_field_{}", rust_method_name);
+        let return_value_conversion = desc.write_value_conversion(&format_ident!("ret"));
+        let rust_setter_arg = match desc {
+            JavaTypeDescription::Primitive(_) => rust_type.clone(),
+            _ => parse_quote! { &#rust_type },
+        };
 
         if *is_static {
             methods.push(parse_quote! {
-                pub fn #rust_field_id_cache_access_func<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<::jni::objects::JStaticFieldID> {
+                fn #rust_field_id_cache_access_func<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<::jni::objects::JStaticFieldID> {
                     let field_id = self.#rust_field_id_cache.get_or_init(|| {
                         env.get_static_field_id(self.get_java_class(), #java_name, #sig)
                             .map_err(|e| std::borrow::Cow::Owned(format!("Unable to find field '{}': {}", #java_name, e)))
@@ -93,14 +101,71 @@ impl JavaField {
             });
 
             methods.push(parse_quote! {
-                pub fn #rust_method_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<#rust_type> {
+                pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<#rust_type> {
                     let field_id = self.#rust_field_id_cache_access_func(env)?;
                     let ret = unsafe {
-                        env.get_static_field_unchecked(self.get_java_class(), field_id, self.get_java_class())
-                    };
-                    Ok(ret)
+                        env.get_static_field_unchecked(self.get_java_class(), field_id, #java_type)
+                    }?;
+
+                    #return_value_conversion
                 }
             });
+
+            if *is_final {
+                methods.push(parse_quote! {
+                    pub fn #setter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, value: #rust_setter_arg) -> ::jni::errors::Result<()> {
+                        let field_id = self.#rust_field_id_cache_access_func(env)?;
+                        env.set_static_field(
+                            self.get_java_class(), 
+                            field_id,
+                            value.into()
+                        )
+                    }
+                });
+            }
+        } else {
+            methods.push(parse_quote! {
+                fn #rust_field_id_cache_access_func<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<::jni::objects::JFieldID> {
+                    let field_id = self.#rust_field_id_cache.get_or_init(|| {
+                        env.get_field_id(self.get_java_class(), #java_name, #sig)
+                            .map_err(|e| std::borrow::Cow::Owned(format!("Unable to find field '{}': {}", #java_name, e)))
+                    });
+
+                    match field_id {
+                        Ok(id) => Ok(*id),
+                        Err(_) => {
+                            Err(::jni::errors::Error::FieldNotFound {
+                                name: #java_name.to_string(),
+                                sig: #sig.to_string(),
+                            })
+                        }
+                    }
+                }
+            });
+
+            methods.push(parse_quote! {
+                pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, obj: &::jni::objects::JObject<'local>) -> ::jni::errors::Result<#rust_type> {
+                    let field_id = self.#rust_field_id_cache_access_func(env)?;
+                    let ret = unsafe {
+                        env.get_field_unchecked(obj, field_id, #java_type)
+                    }?;
+
+                    #return_value_conversion
+                }
+            });
+
+            if *is_final {
+                methods.push(parse_quote! {
+                    pub fn #setter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, obj: &::jni::objects::JObject<'local>, value: #rust_setter_arg) -> ::jni::errors::Result<()> {
+                        let field_id = self.#rust_field_id_cache_access_func(env)?;
+                        env.set_field(
+                            obj, 
+                            field_id,
+                            value.into()
+                        )
+                    }
+                });
+            }
         }
 
         methods

@@ -183,16 +183,7 @@ impl JavaMethod {
             })
             .collect::<Vec<_>>();
 
-        let return_value_conversion: Expr = match &java_method_desc.return_type {
-            JavaTypeDescription::Object(_) | JavaTypeDescription::Primitive(_) => {
-                parse_quote! { ret.try_into() }
-            }
-            JavaTypeDescription::Array(_) | JavaTypeDescription::String => {
-                parse_quote! {
-                    Ok(::jni::objects::JObject::<'_>::try_from(ret)?.into())
-                }
-            }
-        };
+        let return_value_conversion = java_method_desc.return_type.write_value_conversion(&format_ident!("ret"));
 
         if *is_static {
             parse_quote! {

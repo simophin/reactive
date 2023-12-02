@@ -1,4 +1,5 @@
 use jni::signature::Primitive;
+use proc_macro2::Ident;
 use syn::{parse_quote, Expr, PathSegment, Type};
 
 use crate::{
@@ -7,24 +8,28 @@ use crate::{
 };
 
 impl JavaTypeDescription {
+    fn write_primitive_type(p: &Primitive) -> Expr {
+        let path: PathSegment = match p {
+            Primitive::Boolean => parse_quote! { Boolean },
+            Primitive::Byte => parse_quote! { Byte },
+            Primitive::Char => parse_quote! { Char },
+            Primitive::Double => parse_quote! { Double },
+            Primitive::Float => parse_quote! { Float },
+            Primitive::Int => parse_quote! { Int },
+            Primitive::Long => parse_quote! { Long },
+            Primitive::Short => parse_quote! { Short },
+            Primitive::Void => parse_quote! { Void },
+        };
+
+        parse_quote! { ::jni::signature::Primitive::#path }
+    }
+
     pub fn write_jni_return_type(&self) -> Expr {
         match self {
             JavaTypeDescription::Primitive(p) => {
-                let path: PathSegment = match p {
-                    Primitive::Boolean => parse_quote! { Boolean },
-                    Primitive::Byte => parse_quote! { Byte },
-                    Primitive::Char => parse_quote! { Char },
-                    Primitive::Double => parse_quote! { Double },
-                    Primitive::Float => parse_quote! { Float },
-                    Primitive::Int => parse_quote! { Int },
-                    Primitive::Long => parse_quote! { Long },
-                    Primitive::Short => parse_quote! { Short },
-                    Primitive::Void => parse_quote! { Void },
-                };
-
-                parse_quote! { ::jni::signature::ReturnType::Primitive(::jni::signature::Primitive::#path) }
+                let p = Self::write_primitive_type(p);
+                parse_quote! { ::jni::signature::ReturnType::Primitive(#p) }
             }
-
             JavaTypeDescription::Array(_) => parse_quote! { ::jni::signature::ReturnType::Array },
             _ => parse_quote! { ::jni::signature::ReturnType::Object },
         }
@@ -58,7 +63,50 @@ impl JavaTypeDescription {
         }
     }
 
-    pub fn write_jni_java_type(&self) -> Type {
-        todo!()
+    pub fn write_jni_java_type(&self) -> Expr {
+        match self {
+            JavaTypeDescription::Primitive(p) => {
+                let p = Self::write_primitive_type(p);
+                parse_quote! {
+                   ::jni::signature::JavaType::Primitive(#p)
+                }
+            }
+
+            JavaTypeDescription::String => parse_quote! {
+                ::jni::signature::JavaType::Object(String::from("java/lang/String"))
+            },
+
+            JavaTypeDescription::Object(name) => parse_quote! {
+                ::jni::signature::JavaType::Object(String::from(#name))
+            },
+
+            JavaTypeDescription::Array(t) => match t.as_ref() {
+                JavaTypeDescription::Primitive(p) => {
+                    let p = Self::write_primitive_type(p);
+                    parse_quote! {
+                        ::jni::signature::JavaType::Array(Box::new(::jni::signature::JavaType::Primitive(#p)))
+                    }
+                }
+
+                JavaTypeDescription::Array(_)
+                | JavaTypeDescription::Object(_)
+                | JavaTypeDescription::String => parse_quote! {
+                    ::jni::signature::JavaType::Array(Box::new(::jni::signature::JavaType::Object(String::from("java/lang/Object"))))
+                },
+            },
+        }
+    }
+
+    pub fn write_value_conversion(&self, token: &Ident) -> Expr {
+        match self {
+            JavaTypeDescription::Object(_) | JavaTypeDescription::Primitive(_) => {
+                parse_quote! { #token.try_into() }
+            }
+            JavaTypeDescription::Array(_) | JavaTypeDescription::String => {
+                parse_quote! {
+                    Ok(::jni::objects::JObject::<'_>::try_from(#token)?.into())
+                }
+            }
+        }
     }
 }
