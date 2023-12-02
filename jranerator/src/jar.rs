@@ -124,6 +124,13 @@ impl Module {
         let mut mod_file =
             File::create(dst.join("mod.rs")).map_err(|err| GenerateError::DestinationError(err))?;
 
+        writeln!(
+            mod_file,
+            r"#![allow(dead_code)]
+        #![allow(unused_variables)]"
+        )
+        .map_err(|err| GenerateError::DestinationError(err))?;
+
         for Binding {
             name,
             archive,

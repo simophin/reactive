@@ -103,10 +103,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<#rust_type> {
                     let field_id = self.#rust_field_id_cache_access_func(env)?;
-                    let ret = unsafe {
-                        env.get_static_field_unchecked(self.get_java_class(), field_id, #java_type)
-                    }?;
-
+                    let ret = env.get_static_field_unchecked(self.get_java_class(), field_id, #java_type)?;
                     #return_value_conversion
                 }
             });
@@ -146,10 +143,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, obj: &::jni::objects::JObject<'local>) -> ::jni::errors::Result<#rust_type> {
                     let field_id = self.#rust_field_id_cache_access_func(env)?;
-                    let ret = unsafe {
-                        env.get_field_unchecked(obj, field_id, #java_type)
-                    }?;
-
+                    let ret = env.get_field_unchecked(obj, field_id, #java_type)?;
                     #return_value_conversion
                 }
             });
