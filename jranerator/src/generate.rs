@@ -1,7 +1,7 @@
 use quote::format_ident;
 use syn::{parse_quote, Field, File, ItemFn};
 
-use crate::{class_like::ClassLike, method::JavaMethod};
+use crate::{class_like::ClassLike, field::JavaField, method::JavaMethod};
 
 pub fn generate_binding(java_class: &impl ClassLike, name_override: Option<&str>) -> String {
     let methods = JavaMethod::from(java_class);
@@ -18,10 +18,18 @@ pub fn generate_binding(java_class: &impl ClassLike, name_override: Option<&str>
         None => format_ident!("{}", java_class.get_package_and_name().1.replace('$', "_")),
     };
 
+    let fields = JavaField::from(java_class);
+
+    let field_id_fields = fields.iter().map(|f| f.write_rust_field());
+    let field_id_field_names = fields.iter().map(|f| f.write_rust_field().ident.unwrap());
+    let field_impl = fields.iter().flat_map(|f| f.write_rust_methods());
+
     let content: File = parse_quote! {
+        #[derive(Clone)]
         pub struct #struct_name {
             java_class: ::jni::objects::GlobalRef,
-            #(#method_id_fields),*
+            #(#method_id_fields,)*
+            #(#field_id_fields,)*
         }
 
         impl #struct_name {
@@ -30,7 +38,8 @@ pub fn generate_binding(java_class: &impl ClassLike, name_override: Option<&str>
                 let java_class = env.new_global_ref(java_class)?;
                 Ok(Self {
                     java_class,
-                    #(#method_id_field_names: Default::default()),*
+                    #(#method_id_field_names: Default::default(),)*
+                    #(#field_id_field_names: Default::default(),)*
                 })
             }
 
@@ -40,6 +49,8 @@ pub fn generate_binding(java_class: &impl ClassLike, name_override: Option<&str>
             }
 
             #(#method_impl)*
+
+            #(#field_impl)*
         }
     };
 

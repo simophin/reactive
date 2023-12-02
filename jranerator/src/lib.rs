@@ -6,8 +6,9 @@ mod generate;
 mod jar;
 mod maven;
 mod method;
-mod sig;
+mod desc;
 mod utils;
+mod desc_utils;
 
 pub use errors::*;
 pub use jar::*;

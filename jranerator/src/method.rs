@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 
 use convert_case::{Case, Casing};
-use jni::signature::Primitive;
 use quote::{format_ident, quote};
-use syn::{parse_quote, Expr, Field, Ident, ItemFn, PathSegment, Type, Visibility};
+use syn::{parse_quote, Expr, Field, Ident, ItemFn, Type, Visibility};
 
 use crate::{
     class_like::{ClassLike, MethodDescription},
-    sig::{JavaMethodDescription, JavaTypeDescription},
+    desc::{JavaMethodDescription, JavaTypeDescription},
     utils::{java_primitive_array_to_rust, java_primitive_to_rust},
 };
 
@@ -106,31 +105,7 @@ impl JavaMethod {
                         })
                         .collect();
 
-                    let rust_method_ret = match &java_method_desc.return_type {
-                        JavaTypeDescription::Primitive(p) => match p {
-                            Primitive::Void => parse_quote! { () },
-                            p => Type::Path(java_primitive_to_rust(&p)),
-                        },
-
-                        JavaTypeDescription::String => {
-                            parse_quote! { ::jni::objects::JString<'local> }
-                        }
-                        JavaTypeDescription::Object(_) => {
-                            parse_quote! { ::jni::objects::JObject<'local> }
-                        }
-                        JavaTypeDescription::Array(p) => match p.as_ref() {
-                            JavaTypeDescription::Primitive(t) => {
-                                let t = java_primitive_array_to_rust(t);
-                                parse_quote! { #t }
-                            }
-
-                            JavaTypeDescription::Array(_)
-                            | JavaTypeDescription::Object(_)
-                            | JavaTypeDescription::String => {
-                                parse_quote! { ::jni::objects::JObjectArray<'local> }
-                            }
-                        },
-                    };
+                    let rust_method_ret = java_method_desc.return_type.write_jni_type();
 
                     JavaMethod {
                         java_method_name,
@@ -138,7 +113,7 @@ impl JavaMethod {
                         rust_method_id_cache_field: format_ident!(
                             "r#{rust_name_candidate}_method_id_cache"
                         ),
-                        rust_method_name: format_ident!("r#{rust_name_candidate}"),
+                        rust_method_name: format_ident!("r#invoke_{rust_name_candidate}"),
                         rust_method_args,
                         rust_method_return_type: rust_method_ret,
                         java_method_desc,
@@ -176,26 +151,7 @@ impl JavaMethod {
             is_static,
         } = self;
 
-        let jni_return_type: Expr = match &java_method_desc.return_type {
-            JavaTypeDescription::Primitive(p) => {
-                let path: PathSegment = match p {
-                    Primitive::Boolean => parse_quote! { Boolean },
-                    Primitive::Byte => parse_quote! { Byte },
-                    Primitive::Char => parse_quote! { Char },
-                    Primitive::Double => parse_quote! { Double },
-                    Primitive::Float => parse_quote! { Float },
-                    Primitive::Int => parse_quote! { Int },
-                    Primitive::Long => parse_quote! { Long },
-                    Primitive::Short => parse_quote! { Short },
-                    Primitive::Void => parse_quote! { Void },
-                };
-
-                parse_quote! { ::jni::signature::ReturnType::Primitive(::jni::signature::Primitive::#path) }
-            }
-
-            JavaTypeDescription::Array(_) => parse_quote! { ::jni::signature::ReturnType::Array },
-            _ => parse_quote! { ::jni::signature::ReturnType::Object },
-        };
+        let jni_return_type = java_method_desc.return_type.write_jni_return_type();
 
         let method_call_assignments: Vec<Expr> = rust_method_args
             .iter()
