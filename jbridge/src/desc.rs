@@ -2,6 +2,8 @@ use std::{borrow::Cow, fmt::Display};
 
 use jni::signature::Primitive;
 
+use crate::parse::{parse_java_method, parse_java_type};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JavaTypeDescription<'a> {
     Primitive(Primitive),
@@ -64,6 +66,15 @@ impl<'a> JavaArrayElementDescription<'a> {
     }
 }
 
+impl<'a> TryFrom<&'a str> for JavaTypeDescription<'a> {
+    type Error = nom::Err<nom::error::Error<&'a str>>;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        let (_, value) = parse_java_type(value)?;
+        Ok(value)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JavaMethodDescription<'a> {
     pub arguments: Vec<JavaTypeDescription<'a>>,
@@ -78,5 +89,14 @@ impl<'a> Display for JavaMethodDescription<'a> {
         }
         f.write_str(")")?;
         self.return_type.fmt(f)
+    }
+}
+
+impl<'a> TryFrom<&'a str> for JavaMethodDescription<'a> {
+    type Error = nom::Err<nom::error::Error<&'a str>>;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        let (_, value) = parse_java_method(value)?;
+        Ok(value)
     }
 }
