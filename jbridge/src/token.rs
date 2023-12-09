@@ -40,7 +40,7 @@ impl<'a> ToTokens for JavaTypeDescription<'a> {
             }
         };
 
-        tokens.append(new_tokens);
+        tokens.extend(new_tokens);
     }
 }
 
