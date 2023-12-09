@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
 use convert_case::{Case, Casing};
+use jbridge::JavaMethodDescription;
 use quote::{format_ident, quote};
 use syn::{parse_quote, Expr, Field, Ident, ItemFn, Type, Visibility};
 
 use crate::{
     class_like::{ClassLike, MethodDescription},
-    desc::{JavaMethodDescription, JavaTypeDescription},
-    utils::{java_primitive_array_to_rust, java_primitive_to_rust},
+    utils::{java_primitive_array_to_rust, java_primitive_to_rust}, type_token::JavaTypeDescriptionExt,
 };
 
 pub struct ArgInfo {
@@ -19,7 +19,7 @@ pub struct ArgInfo {
 pub struct JavaMethod {
     pub java_method_name: String,
     pub java_signature: String,
-    pub java_method_desc: JavaMethodDescription,
+    pub java_method_desc: JavaMethodDescription<'static>,
     pub rust_method_id_cache_field: Ident,
     pub rust_method_name: Ident,
     pub rust_method_args: Vec<ArgInfo>,

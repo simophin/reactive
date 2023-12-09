@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
 use jni::signature::Primitive;
 
@@ -38,14 +38,28 @@ impl<'a> JavaTypeDescription<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JavaArrayElementDescription<'a> {
-    Primitive(Primitive),
+    Boolean,
+    Byte,
+    Char,
+    Double,
+    Float,
+    Int,
+    Long,
+    Short,
     ObjectLike { signature: Cow<'a, str> },
 }
 
 impl<'a> Display for JavaArrayElementDescription<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JavaArrayElementDescription::Primitive(p) => p.fmt(f),
+            JavaArrayElementDescription::Boolean => write!(f, "Z"),
+            JavaArrayElementDescription::Byte => write!(f, "B"),
+            JavaArrayElementDescription::Char => write!(f, "C"),
+            JavaArrayElementDescription::Double => write!(f, "D"),
+            JavaArrayElementDescription::Float => write!(f, "F"),
+            JavaArrayElementDescription::Int => write!(f, "I"),
+            JavaArrayElementDescription::Long => write!(f, "J"),
+            JavaArrayElementDescription::Short => write!(f, "S"),
             JavaArrayElementDescription::ObjectLike { signature } => {
                 f.write_str(signature.as_ref())
             }
@@ -56,7 +70,14 @@ impl<'a> Display for JavaArrayElementDescription<'a> {
 impl<'a> JavaArrayElementDescription<'a> {
     pub fn into_owned(self) -> JavaArrayElementDescription<'static> {
         match self {
-            JavaArrayElementDescription::Primitive(p) => JavaArrayElementDescription::Primitive(p),
+            JavaArrayElementDescription::Boolean => JavaArrayElementDescription::Boolean,
+            JavaArrayElementDescription::Byte => JavaArrayElementDescription::Byte,
+            JavaArrayElementDescription::Char => JavaArrayElementDescription::Char,
+            JavaArrayElementDescription::Double => JavaArrayElementDescription::Double,
+            JavaArrayElementDescription::Float => JavaArrayElementDescription::Float,
+            JavaArrayElementDescription::Int => JavaArrayElementDescription::Int,
+            JavaArrayElementDescription::Long => JavaArrayElementDescription::Long,
+            JavaArrayElementDescription::Short => JavaArrayElementDescription::Short,
             JavaArrayElementDescription::ObjectLike { signature } => {
                 JavaArrayElementDescription::ObjectLike {
                     signature: Cow::Owned(signature.into_owned()),
@@ -72,6 +93,15 @@ impl<'a> TryFrom<&'a str> for JavaTypeDescription<'a> {
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         let (_, value) = parse_java_type(value)?;
         Ok(value)
+    }
+}
+
+impl FromStr for JavaTypeDescription<'static> {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (_, value) = parse_java_type(s).map_err(|_| "Invalid signature")?;
+        Ok(value.into_owned())
     }
 }
 
@@ -92,11 +122,33 @@ impl<'a> Display for JavaMethodDescription<'a> {
     }
 }
 
+impl<'a> JavaMethodDescription<'a> {
+    pub fn into_owned(self) -> JavaMethodDescription<'static> {
+        JavaMethodDescription {
+            arguments: self
+                .arguments
+                .into_iter()
+                .map(JavaTypeDescription::into_owned)
+                .collect(),
+            return_type: self.return_type.into_owned(),
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a str> for JavaMethodDescription<'a> {
     type Error = nom::Err<nom::error::Error<&'a str>>;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         let (_, value) = parse_java_method(value)?;
         Ok(value)
+    }
+}
+
+impl FromStr for JavaMethodDescription<'static> {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (_, value) = parse_java_method(s).map_err(|_| "Invalid signature")?;
+        Ok(value.into_owned())
     }
 }

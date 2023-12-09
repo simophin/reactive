@@ -1,8 +1,8 @@
-mod desc;
-mod parse;
-mod token;
-mod env;
 mod cache;
-mod jni_token;
+mod desc;
+mod env;
+mod jni_field;
+mod parse;
 
 pub use desc::*;
+pub use jni_field::*;

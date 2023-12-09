@@ -22,11 +22,25 @@ pub fn parse_primitive(s: &str) -> IResult<&str, Primitive> {
         map(tag("J"), |_| Long),
         map(tag("F"), |_| Float),
         map(tag("D"), |_| Double),
+        map(tag("V"), |_| Void),
     ))(s)
 }
 
 pub fn parse_object(s: &str) -> IResult<&str, &str> {
     delimited(char('L'), take_until(";"), tag(";"))(s)
+}
+
+fn parse_array_element_primitive(s: &str) -> IResult<&str, JavaArrayElementDescription> {
+    alt((
+        map(tag("Z"), |_| JavaArrayElementDescription::Boolean),
+        map(tag("B"), |_| JavaArrayElementDescription::Byte),
+        map(tag("C"), |_| JavaArrayElementDescription::Char),
+        map(tag("S"), |_| JavaArrayElementDescription::Short),
+        map(tag("I"), |_| JavaArrayElementDescription::Int),
+        map(tag("J"), |_| JavaArrayElementDescription::Long),
+        map(tag("F"), |_| JavaArrayElementDescription::Float),
+        map(tag("D"), |_| JavaArrayElementDescription::Double),
+    ))(s)
 }
 
 pub fn parse_array_element(s: &str) -> IResult<&str, JavaArrayElementDescription> {
@@ -39,9 +53,9 @@ pub fn parse_array_element(s: &str) -> IResult<&str, JavaArrayElementDescription
             )))?;
 
     alt((
-        map(parse_primitive, move |p| {
+        map(parse_array_element_primitive, move |p| {
             if first_alpha_index == 0 {
-                JavaArrayElementDescription::Primitive(p)
+                p
             } else {
                 JavaArrayElementDescription::ObjectLike {
                     signature: Cow::Borrowed(&s[..(first_alpha_index + 1)]),
@@ -125,7 +139,7 @@ mod tests {
 
         assert_eq!(
             parse_array_element("I"),
-            Ok(("", JavaArrayElementDescription::Primitive(Int)))
+            Ok(("", JavaArrayElementDescription::Int))
         );
 
         assert_eq!(
@@ -170,7 +184,7 @@ mod tests {
             parse_java_type("[ZD"),
             Ok((
                 "D",
-                JavaTypeDescription::Array(JavaArrayElementDescription::Primitive(Boolean))
+                JavaTypeDescription::Array(JavaArrayElementDescription::Boolean)
             ))
         );
 

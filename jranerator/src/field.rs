@@ -1,11 +1,12 @@
+use jbridge::JavaTypeDescription;
 use proc_macro2::Ident;
 use quote::format_ident;
 use syn::{parse_quote, Field, ItemFn};
 
-use crate::{class_like::ClassLike, desc::JavaTypeDescription, utils::java_name_to_rust_name};
+use crate::{class_like::ClassLike, utils::java_name_to_rust_name};
 
 pub struct JavaField {
-    desc: JavaTypeDescription,
+    desc: JavaTypeDescription<'static>,
     sig: String,
     is_static: bool,
     is_final: bool,
