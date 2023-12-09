@@ -44,7 +44,7 @@ impl<'a> ToTokens for JavaTypeDescription<'a> {
     }
 }
 
-fn primitive_to_tokens(p: &Primitive) -> TokenStream {
+pub fn primitive_to_tokens(p: &Primitive) -> TokenStream {
     match p {
         Primitive::Boolean => quote! { ::jni::signature::Primitive::Boolean },
         Primitive::Byte => quote! { ::jni::signature::Primitive::Byte },
