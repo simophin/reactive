@@ -127,7 +127,8 @@ impl Module {
         writeln!(
             mod_file,
             r"#![allow(dead_code)]
-        #![allow(unused_variables)]"
+#![allow(unused_variables)]
+#![allow(non_camel_case_types)]"
         )
         .map_err(|err| GenerateError::DestinationError(err))?;
 

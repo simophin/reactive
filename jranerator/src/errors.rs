@@ -16,4 +16,10 @@ pub enum GenerateError {
 
     #[error("Error accessing maven: {0}")]
     MavenAccessError(#[from] reqwest::Error),
+
+    #[error("Error parsing POM: {0}")]
+    POMParseError(#[from] xmltree::ParseError),
+
+    #[error("Invalid POM packaging: {0}. Expecting aar/jar")]
+    InvalidPOMPackaging(String),
 }
