@@ -1,124 +1,82 @@
-use std::{borrow::Cow, str::FromStr};
+use std::{borrow::Cow, fmt::Display};
 
-use combine::{Parser, Stream, StreamOnce};
 use jni::signature::Primitive;
 
-#[derive(Clone, Debug)]
-pub enum JavaTypeDescription {
-    Single(JavaSingularTypeDescription<Cow<'static, str>>),
-    Array(JavaSingularTypeDescription<()>),
-}
-
-#[derive(Clone, Debug)]
-pub enum JavaSingularTypeDescription<O> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JavaTypeDescription<'a> {
     Primitive(Primitive),
     String,
-    Object(O),
+    Object { class_name: Cow<'a, str> },
+    Array(JavaArrayElementDescription<'a>),
 }
 
-impl FromStr for JavaTypeDescription {
-    type Err = <&'static str as StreamOnce>::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (r, _) = parse_java_type().parse(s)?;
-        Ok(r)
+impl<'a> Display for JavaTypeDescription<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JavaTypeDescription::Primitive(p) => p.fmt(f),
+            JavaTypeDescription::String => write!(f, "Ljava/lang/String;"),
+            JavaTypeDescription::Object { class_name } => write!(f, "L{class_name};"),
+            JavaTypeDescription::Array(element) => write!(f, "[{}", element),
+        }
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct JavaMethodDescription {
-    pub arguments: Vec<JavaTypeDescription>,
-    pub return_type: JavaTypeDescription,
-}
-
-impl FromStr for JavaMethodDescription {
-    type Err = <&'static str as StreamOnce>::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (arguments, s) = parse_args().parse(s)?;
-        let (return_type, _) = parse_java_type().parse(s)?;
-
-        Ok(JavaMethodDescription {
-            arguments,
-            return_type,
-        })
+impl<'a> JavaTypeDescription<'a> {
+    pub fn into_owned(self) -> JavaTypeDescription<'static> {
+        match self {
+            JavaTypeDescription::Primitive(p) => JavaTypeDescription::Primitive(p),
+            JavaTypeDescription::String => JavaTypeDescription::String,
+            JavaTypeDescription::Object { class_name } => JavaTypeDescription::Object {
+                class_name: Cow::Owned(class_name.into_owned()),
+            },
+            JavaTypeDescription::Array(element) => JavaTypeDescription::Array(element.into_owned()),
+        }
     }
 }
 
-fn parse_java_type<Input>() -> impl Parser<Input, Output = JavaTypeDescription>
-where
-    Input: Stream<Token = char>,
-{
-    use combine::many1;
-    use combine::parser::char::char;
-
-    many1::<Vec<_>, _, _>(char('['))
-        .with(parse_singular_type())
-        .map(|t| JavaTypeDescription::Array(t))
-        .or(parse_singular_type().map(|t| JavaTypeDescription::Single(t)))
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JavaArrayElementDescription<'a> {
+    Primitive(Primitive),
+    ObjectLike { signature: Cow<'a, str> },
 }
 
-fn parse_primitive<Input>() -> impl Parser<Input, Output = Primitive>
-where
-    Input: Stream<Token = char>,
-{
-    use combine::choice;
-    use combine::parser::char::char;
-
-    choice((
-        char('B').map(|_| Primitive::Byte),
-        char('C').map(|_| Primitive::Char),
-        char('D').map(|_| Primitive::Double),
-        char('F').map(|_| Primitive::Float),
-        char('I').map(|_| Primitive::Int),
-        char('J').map(|_| Primitive::Long),
-        char('S').map(|_| Primitive::Short),
-        char('Z').map(|_| Primitive::Boolean),
-        char('V').map(|_| Primitive::Void),
-    ))
+impl<'a> Display for JavaArrayElementDescription<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JavaArrayElementDescription::Primitive(p) => p.fmt(f),
+            JavaArrayElementDescription::ObjectLike { signature } => {
+                f.write_str(signature.as_ref())
+            }
+        }
+    }
 }
 
-fn parse_singular_type<Input>(
-) -> impl Parser<Input, Output = JavaSingularTypeDescription<Cow<'static, str>>>
-where
-    Input: Stream<Token = char>,
-{
-    use combine::parser::char::char;
-    use combine::{between, many1, satisfy};
-
-    parse_primitive()
-        .map(JavaSingularTypeDescription::Primitive)
-        .or(
-            between(char('L'), char(';'), many1(satisfy(|c| c != ';'))).map(|s: String| {
-                if s == "java/lang/String" {
-                    JavaSingularTypeDescription::String
-                } else {
-                    JavaSingularTypeDescription::Object(Cow::Owned(s))
+impl<'a> JavaArrayElementDescription<'a> {
+    pub fn into_owned(self) -> JavaArrayElementDescription<'static> {
+        match self {
+            JavaArrayElementDescription::Primitive(p) => JavaArrayElementDescription::Primitive(p),
+            JavaArrayElementDescription::ObjectLike { signature } => {
+                JavaArrayElementDescription::ObjectLike {
+                    signature: Cow::Owned(signature.into_owned()),
                 }
-            }),
-        )
+            }
+        }
+    }
 }
 
-fn parse_array_element_type<Input>() -> impl Parser<Input, Output = JavaSingularTypeDescription<()>>
-where
-    Input: Stream<Token = char>,
-{
-    use combine::{many1, satisfy};
-
-    parse_primitive()
-        .map(JavaSingularTypeDescription::Primitive)
-        .or(many1(satisfy(|c| c != ';')).map(|_s: String| ()))
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JavaMethodDescription<'a> {
+    pub arguments: Vec<JavaTypeDescription<'a>>,
+    pub return_type: JavaTypeDescription<'a>,
 }
 
-fn parse_args<Input>() -> impl Parser<Input, Output = Vec<JavaTypeDescription>>
-where
-    Input: Stream<Token = char>,
-{
-    use combine::parser::char::char;
-    use combine::parser::repeat::many;
-    use combine::parser::sequence::between;
-
-    let arg = between(char('('), char(')'), many(parse_java_type()));
-
-    arg
+impl<'a> Display for JavaMethodDescription<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("(")?;
+        for arg in &self.arguments {
+            arg.fmt(f)?;
+        }
+        f.write_str(")")?;
+        self.return_type.fmt(f)
+    }
 }

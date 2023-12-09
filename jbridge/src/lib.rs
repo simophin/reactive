@@ -1,4 +1,4 @@
 mod desc;
-mod desc_jni;
+mod parse;
 
 pub use desc::*;
