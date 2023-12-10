@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use convert_case::{Case, Casing};
-use jbridge::JavaMethodDescription;
+use jbridge::{JavaMethodDescription, JavaTypeDescription};
 use quote::{format_ident, quote};
 use syn::{parse_quote, Expr, Field, Ident, ItemFn, Type, Visibility};
 
@@ -70,29 +70,7 @@ impl JavaMethod {
                         .enumerate()
                         .map(|(index, java_type)| {
                             let name = format_ident!("arg{index}");
-                            let ty: Type = match java_type {
-                                JavaTypeDescription::Primitive(t) => {
-                                    Type::Path(java_primitive_to_rust(&t))
-                                }
-                                JavaTypeDescription::String => {
-                                    parse_quote! { &::jni::objects::JString<'_> }
-                                }
-
-                                JavaTypeDescription::Array(p) => match p.as_ref() {
-                                    JavaTypeDescription::Primitive(t) => {
-                                        Type::Path(java_primitive_array_to_rust(t))
-                                    }
-                                    JavaTypeDescription::Array(_)
-                                    | JavaTypeDescription::Object(_)
-                                    | JavaTypeDescription::String => {
-                                        parse_quote! { &::jni::objects::JObjectArray<'_> }
-                                    }
-                                },
-
-                                JavaTypeDescription::Object(_) => {
-                                    parse_quote! { &::jni::objects::JObject<'_> }
-                                }
-                            };
+                            let ty: Type = java_type.write_arg_type();
 
                             let is_java_primitive =
                                 matches!(java_type, JavaTypeDescription::Primitive(_));
@@ -183,7 +161,7 @@ impl JavaMethod {
             })
             .collect::<Vec<_>>();
 
-        let return_value_conversion = java_method_desc.return_type.write_value_conversion(&format_ident!("ret"));
+        let return_value_conversion = java_method_desc.return_type.write_value_conversion_from_jvalue_gen(&format_ident!("ret"));
 
         if *is_static {
             parse_quote! {

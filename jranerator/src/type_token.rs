@@ -1,12 +1,16 @@
 use jbridge::{JavaArrayElementDescription, JavaTypeDescription};
 use jni::signature::Primitive;
-use syn::{parse_quote, Expr, Type};
+use syn::{parse_quote, Expr, Ident, Type};
 
 pub trait JavaTypeDescriptionExt {
     fn to_tokens(&self) -> Expr;
 
+    fn is_primitive(&self) -> bool;
+
     fn write_jni_type(&self) -> Type;
     fn write_jni_return_type(&self) -> Expr;
+    fn write_arg_type(&self) -> Type;
+    fn write_value_conversion_from_jvalue_gen(&self, value: &Ident) -> Expr;
 }
 
 impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
@@ -94,6 +98,10 @@ impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
         }
     }
 
+    fn is_primitive(&self) -> bool {
+        matches!(self, JavaTypeDescription::Primitive(_))
+    }
+
     fn write_jni_type(&self) -> Type {
         match self {
             JavaTypeDescription::Primitive(Primitive::Boolean) => {
@@ -174,6 +182,35 @@ impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
 
             JavaTypeDescription::Array(_) => parse_quote! {
                 ::jni::signature::ReturnType::Array
+            },
+        }
+    }
+
+    fn write_arg_type(&self) -> Type {
+        let concrete = self.write_jni_type();
+
+        if self.is_primitive() {
+            return concrete;
+        } else {
+            parse_quote! {
+                &#concrete
+            }
+        }
+    }
+
+    fn write_value_conversion_from_jvalue_gen(&self, value: &Ident) -> Expr {
+        match self {
+            JavaTypeDescription::Primitive(_) => {
+                parse_quote! {
+                    #value.try_into()
+                }
+            }
+
+            _ => parse_quote! {
+                {
+                    let #value: ::jni::objects::JObject<'_> = #value.try_into()?;
+                    Ok(#value.into())
+                }
             },
         }
     }
