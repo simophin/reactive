@@ -8,14 +8,14 @@ use crate::{
 };
 
 pub struct JavaField {
-    desc: JavaTypeDescription<'static>,
-    sig: String,
-    is_static: bool,
-    is_final: bool,
-    java_name: String,
-    rust_field_id_cache: Ident,
-    rust_field_id_cache_access_func: Ident,
-    rust_method_name: Ident,
+    pub desc: JavaTypeDescription<'static>,
+    pub sig: String,
+    pub is_static: bool,
+    pub is_final: bool,
+    pub java_name: String,
+    pub rust_field_id_cache: Ident,
+    pub rust_field_id_cache_access_func: Ident,
+    pub rust_method_name: Ident,
 }
 
 impl JavaField {
