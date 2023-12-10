@@ -6,8 +6,7 @@ use quote::{format_ident, quote};
 use syn::{parse_quote, Expr, Field, Ident, ItemFn, Type, Visibility};
 
 use crate::{
-    class_like::{ClassLike, MethodDescription},
-    utils::{java_primitive_array_to_rust, java_primitive_to_rust}, type_token::JavaTypeDescriptionExt,
+    class_like::{ClassLike, MethodDescription}, type_token::JavaTypeDescriptionExt,
 };
 
 pub struct ArgInfo {

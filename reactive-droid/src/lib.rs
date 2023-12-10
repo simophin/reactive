@@ -157,18 +157,18 @@ pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onCreate<'local
 #[warn(non_snake_case)]
 #[no_mangle]
 pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStart<'local>(
-    env: JNIEnv<'local>,
+    _env: JNIEnv<'local>,
     _obj: JObject<'local>,
-    instance: jlong,
+    _instance: jlong,
 ) {
 }
 
 #[warn(non_snake_case)]
 #[no_mangle]
 pub extern "system" fn Java_dev_fanchao_reactive_ReactiveContext_onStop<'local>(
-    env: JNIEnv<'local>,
+    _env: JNIEnv<'local>,
     _obj: JObject<'local>,
-    instance: jlong,
+    _instance: jlong,
 ) {
 }
 
