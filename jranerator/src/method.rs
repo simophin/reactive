@@ -70,7 +70,7 @@ impl JavaMethod {
                         .enumerate()
                         .map(|(index, java_type)| {
                             let name = format_ident!("arg{index}");
-                            let ty: Type = java_type.write_arg_type();
+                            let ty: Type = java_type.write_arg_type(&parse_quote! { 'local });
 
                             let is_java_primitive =
                                 matches!(java_type, JavaTypeDescription::Primitive(_));
@@ -83,7 +83,7 @@ impl JavaMethod {
                         })
                         .collect();
 
-                    let rust_method_ret = java_method_desc.return_type.write_jni_type();
+                    let rust_method_ret = java_method_desc.return_type.write_jni_type(&parse_quote! { 'local });
 
                     JavaMethod {
                         java_method_name,

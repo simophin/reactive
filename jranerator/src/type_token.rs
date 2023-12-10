@@ -1,15 +1,15 @@
 use jbridge::{JavaArrayElementDescription, JavaTypeDescription};
 use jni::signature::Primitive;
-use syn::{parse_quote, Expr, Ident, Type};
+use syn::{parse_quote, Expr, Ident, Lifetime, Type};
 
 pub trait JavaTypeDescriptionExt {
     fn to_tokens(&self) -> Expr;
 
     fn is_primitive(&self) -> bool;
 
-    fn write_jni_type(&self) -> Type;
+    fn write_jni_type(&self, lifetime: &Lifetime) -> Type;
     fn write_jni_return_type(&self) -> Expr;
-    fn write_arg_type(&self) -> Type;
+    fn write_arg_type(&self, lifetime: &Lifetime) -> Type;
     fn write_value_conversion_from_jvalue_gen(&self, value: &Ident) -> Expr;
 }
 
@@ -102,7 +102,7 @@ impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
         matches!(self, JavaTypeDescription::Primitive(_))
     }
 
-    fn write_jni_type(&self) -> Type {
+    fn write_jni_type(&self, lifetime: &Lifetime) -> Type {
         match self {
             JavaTypeDescription::Primitive(Primitive::Boolean) => {
                 parse_quote! { ::jni::sys::jboolean }
@@ -132,37 +132,36 @@ impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
                 parse_quote! { () }
             }
 
-            JavaTypeDescription::String => parse_quote! { ::jni::objects::JString<'_> },
-            JavaTypeDescription::Object { .. } => parse_quote! { ::jni::objects::JObject<'_> },
+            JavaTypeDescription::String => parse_quote! { ::jni::objects::JString<#lifetime> },
+            JavaTypeDescription::Object { .. } => {
+                parse_quote! { ::jni::objects::JObject<#lifetime> }
+            }
             JavaTypeDescription::Array(JavaArrayElementDescription::Boolean) => {
-                parse_quote! { ::jni::objects::JBooleanArray<'_> }
+                parse_quote! { ::jni::objects::JBooleanArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Byte) => {
-                parse_quote! { ::jni::objects::JByteArray<'_> }
+                parse_quote! { ::jni::objects::JByteArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Char) => {
-                parse_quote! { ::jni::objects::JCharArray<'_> }
+                parse_quote! { ::jni::objects::JCharArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Short) => {
-                parse_quote! { ::jni::objects::JShortArray<'_> }
+                parse_quote! { ::jni::objects::JShortArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Int) => {
-                parse_quote! { ::jni::objects::JIntArray<'_> }
+                parse_quote! { ::jni::objects::JIntArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Long) => {
-                parse_quote! { ::jni::objects::JLongArray<'_> }
-            }
-            JavaTypeDescription::Array(JavaArrayElementDescription::Short) => {
-                parse_quote! { ::jni::objects::JFloatArray<'_> }
+                parse_quote! { ::jni::objects::JLongArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Double) => {
-                parse_quote! { ::jni::objects::JDoubleArray<'_> }
+                parse_quote! { ::jni::objects::JDoubleArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::Float) => {
-                parse_quote! { ::jni::objects::JFloatArray<'_> }
+                parse_quote! { ::jni::objects::JFloatArray<#lifetime> }
             }
             JavaTypeDescription::Array(JavaArrayElementDescription::ObjectLike { .. }) => {
-                parse_quote! { ::jni::objects::JObjectArray<'_> }
+                parse_quote! { ::jni::objects::JObjectArray<#lifetime> }
             }
         }
     }
@@ -186,8 +185,8 @@ impl<'a> JavaTypeDescriptionExt for JavaTypeDescription<'a> {
         }
     }
 
-    fn write_arg_type(&self) -> Type {
-        let concrete = self.write_jni_type();
+    fn write_arg_type(&self, lifetime: &Lifetime) -> Type {
+        let concrete = self.write_jni_type(lifetime);
 
         if self.is_primitive() {
             return concrete;

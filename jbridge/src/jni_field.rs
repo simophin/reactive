@@ -60,7 +60,7 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    i8,
+    jbyte,
     SetStaticByteField,
     GetStaticByteField,
     SetByteField,
@@ -68,7 +68,7 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    i16,
+    jshort,
     SetStaticShortField,
     GetStaticShortField,
     SetShortField,
@@ -76,7 +76,7 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    i32,
+    jint,
     SetStaticIntField,
     GetStaticIntField,
     SetIntField,
@@ -84,7 +84,7 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    i64,
+    jlong,
     SetStaticLongField,
     GetStaticLongField,
     SetLongField,
@@ -92,7 +92,7 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    f32,
+    jfloat,
     SetStaticFloatField,
     GetStaticFloatField,
     SetFloatField,
@@ -100,11 +100,19 @@ impl_primitive!(
 );
 
 impl_primitive!(
-    f64,
+    jdouble,
     SetStaticDoubleField,
     GetStaticDoubleField,
     SetDoubleField,
     GetDoubleField
+);
+
+impl_primitive!(
+    jchar,
+    SetStaticCharField,
+    GetStaticCharField,
+    SetCharField,
+    GetCharField
 );
 
 trait AsJObject<'a>: AsRef<JObject<'a>> {}

@@ -28,8 +28,16 @@ impl JavaField {
                 JavaField {
                     desc: f.signature.parse().expect("A valid Java field signature"),
                     rust_method_name: format_ident!("r#{}", rust_name),
-                    rust_field_id_cache: format_ident!("r#{}_id_cache", rust_name),
-                    rust_field_id_cache_access_func: format_ident!("r#get_{}_field_id", rust_name),
+                    rust_field_id_cache: if f.is_static {
+                        format_ident!("r#{}_static_field_id_cache", rust_name)
+                    } else {
+                        format_ident!("r#{}_field_id_cache", rust_name)
+                    },
+                    rust_field_id_cache_access_func: if f.is_static {
+                        format_ident!("r#get_{}_static_field_id", rust_name)
+                    } else {
+                        format_ident!("r#get_{}_field_id", rust_name)
+                    },
                     sig: f.signature.clone(),
                     java_name: f.name.clone(),
                     is_static: f.is_static,
@@ -73,7 +81,7 @@ impl JavaField {
         } = self;
 
         let mut methods = Vec::new();
-        let rust_type = desc.write_jni_type();
+        let rust_type = desc.write_jni_type(&parse_quote! { 'local });
 
         let rust_setter_arg = match desc {
             JavaTypeDescription::Primitive(_) => rust_type.clone(),
@@ -87,7 +95,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 fn #rust_field_id_cache_access_func<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<::jni::objects::JStaticFieldID> {
                     let field_id = self.#rust_field_id_cache.get_or_init(|| {
-                        env.get_static_field_id(self.get_java_class(), #java_name, #sig)
+                        env.get_static_field_id(&self.get_java_class(), #java_name, #sig)
                             .map_err(|e| std::borrow::Cow::Owned(format!("Unable to find field '{}': {}", #java_name, e)))
                     });
 
@@ -106,7 +114,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<#rust_type> {
                     let field_id = self.#rust_field_id_cache_access_func(env)?;
-                    Ok(<#rust_type as ::jbridge::GettableFieldValue>::get(env, self.get_java_class(), field_id))
+                    Ok(<#rust_type as ::jbridge::GettableFieldValue<_, _>>::get(env, &self.get_java_class(), field_id))
                 }
             });
 
@@ -115,7 +123,7 @@ impl JavaField {
                     pub fn #setter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, value: #rust_setter_arg) -> ::jni::errors::Result<()> {
                         use ::jbridge::ApplicableFieldValue;
                         let field_id = self.#rust_field_id_cache_access_func(env)?;
-                        value.apply(env, self.get_java_class(), field_id);
+                        value.apply(env, &self.get_java_class(), field_id);
                         Ok(())
                     }
                 });
@@ -127,7 +135,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 fn #rust_field_id_cache_access_func<'local>(&self, env: &mut ::jni::JNIEnv<'local>) -> ::jni::errors::Result<::jni::objects::JFieldID> {
                     let field_id = self.#rust_field_id_cache.get_or_init(|| {
-                        env.get_field_id(self.get_java_class(), #java_name, #sig)
+                        env.get_field_id(&self.get_java_class(), #java_name, #sig)
                             .map_err(|e| std::borrow::Cow::Owned(format!("Unable to find field '{}': {}", #java_name, e)))
                     });
 
@@ -146,7 +154,7 @@ impl JavaField {
             methods.push(parse_quote! {
                 pub fn #getter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, obj: &::jni::objects::JObject<'local>) -> ::jni::errors::Result<#rust_type> {
                     let field_id = self.#rust_field_id_cache_access_func(env)?;
-                    Ok(<#rust_type as ::jbridge::GettableFieldValue>::get(env, self.get_java_class(), field_id))
+                    Ok(<#rust_type as ::jbridge::GettableFieldValue<_, _>>::get(env, obj, field_id))
                 }
             });
 
@@ -155,7 +163,7 @@ impl JavaField {
                     pub fn #setter_name<'local>(&self, env: &mut ::jni::JNIEnv<'local>, obj: &::jni::objects::JObject<'local>, value: #rust_setter_arg) -> ::jni::errors::Result<()> {
                         use ::jbridge::ApplicableFieldValue;
                         let field_id = self.#rust_field_id_cache_access_func(env)?;
-                        value.apply(env, self.get_java_class(), field_id);
+                        value.apply(env, obj, field_id);
                         Ok(())
                     }
                 });

@@ -95,24 +95,38 @@ impl Module {
 
     fn add_contents(&mut self, ascendant_modules: &[String], binding: Binding) {
         match ascendant_modules.get(0) {
-            None => self.bindings.push(binding),
+            None => {
+                match self.bindings.binary_search_by_key(&&binding.name, |b| &b.name) {
+                    Ok(_) => {
+                        eprintln!("Duplicate binding {}", binding.name);
+                    }
 
-            Some(module) => match self.children.binary_search_by_key(&module, |m| &m.name) {
-                Ok(index) => {
-                    self.children[index].add_contents(&ascendant_modules[1..], binding);
-                }
-
-                Err(index) => {
-                    let mut new_module = Module {
-                        name: module.to_string(),
-                        bindings: Vec::new(),
-                        children: Vec::new(),
-                    };
-
-                    new_module.add_contents(&ascendant_modules[1..], binding);
-                    self.children.insert(index, new_module);
+                    Err(index) => {
+                        self.bindings.insert(index, binding);
+                    }
                 }
             },
+
+            Some(module) => {
+                let index = match self.children.binary_search_by_key(&module, |m| &m.name) {
+                    Ok(index) => index,
+
+                    Err(index) => {
+                        self.children.insert(
+                            index,
+                            Module {
+                                name: module.clone(),
+                                bindings: Vec::new(),
+                                children: Vec::new(),
+                            },
+                        );
+
+                        index
+                    }
+                };
+
+                self.children[index].add_contents(&ascendant_modules[1..], binding);
+            }
         }
     }
 
@@ -151,12 +165,12 @@ impl Module {
             file.write_all(contents.as_bytes())
                 .map_err(|err| GenerateError::DestinationError(err))?;
 
-            write!(mod_file, "mod {name};\npub use {name}::*;\n")
+            write!(mod_file, "mod r#{name};\npub use r#{name}::*;\n")
                 .map_err(|err| GenerateError::DestinationError(err))?;
         }
 
         for module in &self.children {
-            write!(mod_file, "pub mod {};\n", module.name)
+            write!(mod_file, "pub mod r#{};\n", module.name)
                 .map_err(|err| GenerateError::DestinationError(err))?;
 
             let module_path = dst.join(&module.name);
