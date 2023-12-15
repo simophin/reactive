@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display, str::FromStr};
 
-use jni::signature::Primitive;
+use jni::signature::{Primitive, ReturnType};
 
 use crate::parse::{parse_java_method, parse_java_type};
 
@@ -19,6 +19,16 @@ impl<'a> Display for JavaTypeDescription<'a> {
             JavaTypeDescription::String => write!(f, "Ljava/lang/String;"),
             JavaTypeDescription::Object { class_name } => write!(f, "L{class_name};"),
             JavaTypeDescription::Array(element) => write!(f, "[{}", element),
+        }
+    }
+}
+
+impl<'a> From<JavaTypeDescription<'a>> for ReturnType {
+    fn from(value: JavaTypeDescription<'a>) -> Self {
+        match value {
+            JavaTypeDescription::Primitive(p) => ReturnType::Primitive(p),
+            JavaTypeDescription::Object { .. } | JavaTypeDescription::String => ReturnType::Object,
+            JavaTypeDescription::Array(element) => ReturnType::Array,
         }
     }
 }
