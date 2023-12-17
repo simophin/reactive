@@ -28,7 +28,7 @@ impl<'a> From<JavaTypeDescription<'a>> for ReturnType {
         match value {
             JavaTypeDescription::Primitive(p) => ReturnType::Primitive(p),
             JavaTypeDescription::Object { .. } | JavaTypeDescription::String => ReturnType::Object,
-            JavaTypeDescription::Array(element) => ReturnType::Array,
+            JavaTypeDescription::Array(_) => ReturnType::Array,
         }
     }
 }
