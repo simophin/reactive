@@ -1,3 +1,4 @@
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MethodDescription {
     pub name: String,
     pub signature: String,
@@ -5,6 +6,7 @@ pub struct MethodDescription {
     pub argument_names: Option<Vec<String>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldDescription {
     pub name: String,
     pub signature: String,

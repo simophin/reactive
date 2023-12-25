@@ -8,6 +8,7 @@ mod maven;
 mod method;
 mod type_token;
 mod utils;
+mod props;
 
 pub use errors::*;
 pub use jar::*;
