@@ -1,6 +1,6 @@
 use classy::{Attribute, ClassFile, ACC_FINAL, ACC_PUBLIC, ACC_STATIC, ACC_SYNTHETIC};
 
-use crate::class_like::{ClassLike, FieldDescription, MethodDescription};
+use crate::class_like::{ClassLike, ClassSignature, FieldDescription, MethodDescription};
 
 impl ClassLike for ClassFile {
     fn get_public_methods(&self) -> Vec<MethodDescription> {
@@ -58,13 +58,31 @@ impl ClassLike for ClassFile {
             .collect()
     }
 
-    fn get_class_signature(&self) -> String {
+    fn get_class_signature(&self) -> ClassSignature {
         match &self.constant_pool[self.this_class as usize - 1] {
-            classy::Constant::ClassInfo { name_index, .. } => self
-                .get_constant_utf8(*name_index)
-                .expect("a class signature")
-                .to_owned(),
+            classy::Constant::ClassInfo { name_index, .. } => ClassSignature(
+                self.get_constant_utf8(*name_index)
+                    .expect("a class signature")
+                    .to_owned(),
+            ),
             v => panic!("Unexpected class info class signature: {v:?}"),
         }
+    }
+
+    fn get_superclass(&self) -> Option<ClassSignature> {
+        self.get_constant_utf8(self.super_class)
+            .map(|s| ClassSignature(s.to_owned()))
+            .ok()
+    }
+
+    fn get_interfaces(&self) -> Vec<ClassSignature> {
+        self.interfaces
+            .iter()
+            .map(|&i| {
+                self.get_constant_utf8(i)
+                    .map(|s| ClassSignature(s.to_owned()))
+                    .expect("an interface signature")
+            })
+            .collect()
     }
 }

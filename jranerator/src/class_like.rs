@@ -14,20 +14,31 @@ pub struct FieldDescription {
     pub is_final: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassSignature(pub String);
+
+impl ClassSignature {
+    pub fn packages(&self) -> Vec<&str> {
+        let mut segments: Vec<_> = self.0.split('/').collect();
+        if segments.len() > 0 {
+            segments.pop();
+        }
+
+        segments
+    }
+
+    pub fn name(&self) -> &str {
+        match self.0.split('/').last() {
+            Some(name) => name,
+            None => &self.0,
+        }
+    }
+}
+
 pub trait ClassLike {
-    fn get_class_signature(&self) -> String;
+    fn get_class_signature(&self) -> ClassSignature;
     fn get_public_methods(&self) -> Vec<MethodDescription>;
     fn get_public_fields(&self) -> Vec<FieldDescription>;
-
-    fn get_package_and_name(&self) -> (Vec<String>, String) {
-        let mut package = self
-            .get_class_signature()
-            .split('/')
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>();
-
-        let name = package.pop().expect("a class name");
-
-        (package, name)
-    }
+    fn get_superclass(&self) -> Option<ClassSignature>;
+    fn get_interfaces(&self) -> Vec<ClassSignature>;
 }
