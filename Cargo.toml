@@ -1,13 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "reactive-core",
-    "reactive-derive",
-    "reactive-derive-macro",
-    "example",
-    "reactive-droid",
-    "derive-jni",
-    "derive-jni-macro",
-    "jranerator",
-    "jbridge",
+    "core",
 ]
