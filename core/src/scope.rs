@@ -9,6 +9,7 @@ struct Effect {
     last_accessed_signals: Vec<SignalID>,
 }
 
+#[derive(Default)]
 pub struct Scope {
     // Effects that must be run in next tick
     pending_effects_run: Vec<Effect>,
@@ -26,14 +27,6 @@ pub struct EffectScope<'a> {
 }
 
 impl Scope {
-    pub fn new() -> Self {
-        Self {
-            pending_effects_run: Vec::new(),
-            idle_effects: Vec::new(),
-            signals: BTreeMap::new(),
-        }
-    }
-
     pub fn create_effect(
         &mut self,
         effect_fn: impl for<'a> FnMut(&'a mut EffectScope<'_>) -> () + 'static,
@@ -158,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_signal_and_effect() {
-        let mut scope = Scope::new();
+        let mut scope = Scope::default();
         let count = scope.create_signal(0);
         let result = Arc::new(Mutex::new(0));
 
