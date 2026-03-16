@@ -101,4 +101,9 @@ impl<'a> SetupContext<'a> {
     pub fn component_id(&self) -> ComponentId {
         self.component_id
     }
+
+    pub fn child(&mut self, component: impl Component + 'static) {
+        let mut child_ctx = self.new_child();
+        Box::new(component).setup(&mut child_ctx);
+    }
 }
