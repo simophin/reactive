@@ -1,10 +1,12 @@
 use crate::component_scope::{
     BoxedEffectFn, ComponentId, ComponentScope, ContextKey, Effect, Resource, ResourceProducerFn,
+    StreamSubscription,
 };
 use crate::signal::{Signal, SignalId};
 use crate::sorted_vec::SortedVec;
 use crate::vec_utils::extract_if;
 use futures::FutureExt;
+use futures::StreamExt;
 use slotmap::SlotMap;
 use std::any::Any;
 use std::pin::Pin;
@@ -271,14 +273,44 @@ impl ReactiveScope {
 }
 
 // ---------------------------------------------------------------------------
+// Stream operations
+// ---------------------------------------------------------------------------
+
+impl ReactiveScope {
+    pub fn create_stream<T: 'static>(
+        &mut self,
+        component_id: ComponentId,
+        initial: T,
+        stream: impl futures::Stream<Item = T> + 'static,
+    ) -> Signal<T> {
+        let signal = self.create_signal(initial);
+
+        let subscription = StreamSubscription {
+            signal_id: signal.id(),
+            stream: Box::pin(stream.map(|item| Box::new(item) as Box<dyn Any>)),
+        };
+
+        if let Some(component) = self.components.get_mut(component_id) {
+            component.streams.push(subscription);
+        }
+
+        signal
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
     pub fn tick(&mut self, future_ctx: &mut Context) -> bool {
+        // Poll async sources first — completed futures/streams mark signals dirty
+        let has_pending_futures = self.poll_pending_futures(future_ctx);
+        let has_pending_streams = self.poll_streams(future_ctx);
+
+        // Now process dirty signals: run effects and re-trigger resources
         let dirty = std::mem::take(&mut self.dirty_signals);
 
-        // For each component, extract dirty effects/resources, run them, then restore
         for comp_id in self.components.keys().collect::<Vec<_>>() {
             let comp = match self.components.get_mut(comp_id) {
                 Some(c) => c,
@@ -324,10 +356,7 @@ impl ReactiveScope {
             }
         }
 
-        // Poll pending futures
-        let has_pending = self.poll_pending_futures(future_ctx);
-
-        has_pending || !self.dirty_signals.is_empty()
+        has_pending_futures || has_pending_streams || !self.dirty_signals.is_empty()
     }
 
     fn poll_pending_futures(&mut self, future_ctx: &mut Context) -> bool {
@@ -366,6 +395,55 @@ impl ReactiveScope {
         }
 
         has_pending
+    }
+
+    fn poll_streams(&mut self, future_ctx: &mut Context) -> bool {
+        let mut has_streams = false;
+
+        for comp_id in self.components.keys().collect::<Vec<_>>() {
+            let comp = match self.components.get_mut(comp_id) {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let mut streams = std::mem::take(&mut comp.streams);
+
+            let mut alive = Vec::with_capacity(streams.len());
+            for sub in &mut streams {
+                match sub.stream.as_mut().poll_next(future_ctx) {
+                    Poll::Ready(Some(item)) => {
+                        if let Some(slot) = self.signals.get_mut(sub.signal_id) {
+                            *slot = item;
+                        }
+                        self.dirty_signals.insert(sub.signal_id);
+                        alive.push(true);
+                    }
+                    Poll::Ready(None) => {
+                        // Stream ended — don't keep it
+                        alive.push(false);
+                    }
+                    Poll::Pending => {
+                        alive.push(true);
+                    }
+                }
+            }
+
+            // Keep only alive streams
+            let mut i = 0;
+            streams.retain(|_| {
+                let keep = alive[i];
+                i += 1;
+                keep
+            });
+
+            has_streams = has_streams || !streams.is_empty();
+
+            if let Some(comp) = self.components.get_mut(comp_id) {
+                comp.streams = streams;
+            }
+        }
+
+        has_streams
     }
 }
 
@@ -538,5 +616,66 @@ mod tests {
         // Root itself still sees "dark"
         let root_theme = scope.use_context::<&str>(root, &THEME).unwrap();
         assert_eq!(scope.read(root_theme), "dark");
+    }
+
+    #[test]
+    fn test_stream() {
+        let mut scope = ReactiveScope::default();
+        let root = scope.create_component(None);
+
+        let stream = futures::stream::iter(vec![1, 2, 3]);
+        let signal = scope.create_stream(root, 0i32, stream);
+        let result = Arc::new(Mutex::new(Vec::<i32>::new()));
+
+        scope.create_effect(root, {
+            let result = Arc::clone(&result);
+            move |ctx, _: Option<&mut ()>| {
+                result.lock().unwrap().push(ctx.read(signal));
+            }
+        });
+
+        // Initial effect run sees 0
+        assert_eq!(*result.lock().unwrap(), vec![0]);
+
+        // Each tick polls one item from the stream
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), vec![0, 1]);
+
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2]);
+
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2, 3]);
+
+        // Stream ended — no more updates
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_stream_dispose() {
+        let mut scope = ReactiveScope::default();
+        let root = scope.create_component(None);
+        let child = scope.create_component(Some(root));
+
+        let stream = futures::stream::iter(vec![1, 2, 3]);
+        let signal = scope.create_stream(child, 0i32, stream);
+        let result = Arc::new(Mutex::new(0i32));
+
+        scope.create_effect(child, {
+            let result = Arc::clone(&result);
+            move |ctx, _: Option<&mut ()>| {
+                *result.lock().unwrap() = ctx.read(signal);
+            }
+        });
+
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), 1);
+
+        // Dispose — stream and effect should stop
+        scope.dispose_component(child);
+
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(*result.lock().unwrap(), 1); // unchanged
     }
 }

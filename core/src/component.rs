@@ -42,6 +42,14 @@ pub struct SetupContext<'a> {
 }
 
 impl<'a> SetupContext<'a> {
+    pub fn new_root(scope: &'a mut ReactiveScope) -> Self {
+        let root = scope.create_component(None);
+        Self {
+            scope,
+            component_id: root,
+        }
+    }
+
     pub fn create_signal<T: 'static>(&mut self, initial: T) -> Signal<T> {
         self.scope.create_signal(initial)
     }
@@ -76,6 +84,15 @@ impl<'a> SetupContext<'a> {
     ) -> Signal<ResourceState<T>> {
         self.scope
             .create_resource(self.component_id, input_fn, resource_fn)
+    }
+
+    pub fn create_stream<T: 'static>(
+        &mut self,
+        initial: T,
+        stream: impl futures::Stream<Item = T> + 'static,
+    ) -> Signal<T> {
+        self.scope
+            .create_stream(self.component_id, initial, stream)
     }
 
     pub fn provide_context<T: 'static>(&mut self, key: &ContextKey<T>, value: T) {

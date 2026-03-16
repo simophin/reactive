@@ -48,11 +48,17 @@ pub(crate) struct Resource {
     pub pending_future: Option<Pin<Box<dyn Future<Output = Box<dyn Any>>>>>,
 }
 
+pub(crate) struct StreamSubscription {
+    pub signal_id: SignalId,
+    pub stream: Pin<Box<dyn futures::Stream<Item = Box<dyn Any>>>>,
+}
+
 pub struct ComponentScope {
     pub(crate) parent: Option<ComponentId>,
     pub(crate) children: Vec<ComponentId>,
     pub(crate) effects: Vec<Effect>,
     pub(crate) resources: Vec<Resource>,
+    pub(crate) streams: Vec<StreamSubscription>,
     pub(crate) cleanup: Vec<Box<dyn FnOnce()>>,
     pub(crate) context: Rc<HashMap<ContextKeyId, SignalId>>,
 }
@@ -64,6 +70,7 @@ impl ComponentScope {
             children: Vec::new(),
             effects: Vec::new(),
             resources: Vec::new(),
+            streams: Vec::new(),
             cleanup: Vec::new(),
             context: Rc::new(HashMap::new()),
         }

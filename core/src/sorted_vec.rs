@@ -37,10 +37,6 @@ impl<T: Ord> SortedVec<T> {
         self.0.clear();
     }
 
-    pub fn contains(&self, item: &T) -> bool {
-        self.0.binary_search(item).is_ok()
-    }
-
     pub fn intersects(&self, other: &Self) -> bool {
         let mut i = 0;
         let mut j = 0;

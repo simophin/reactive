@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "appkit"
+version = "0.1.0"
+dependencies = [
+ "core",
+ "futures",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "core"
 version = "0.1.0"
 dependencies = [
@@ -152,6 +162,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tokio"
+version = "1.50.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
+dependencies = [
+ "pin-project-lite",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32da49809aab5c3bc678af03902d4ccddea2a87d028d86392a4b1560c6906c70"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
