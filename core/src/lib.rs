@@ -1,6 +1,6 @@
 mod component;
-mod scope;
+mod reactive_scope;
 mod signal;
 
 pub use component::*;
-pub use scope::*;
+pub use reactive_scope::*;

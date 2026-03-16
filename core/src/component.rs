@@ -1,5 +1,5 @@
-use crate::Scope;
+use crate::ReactiveScope;
 
 pub trait Component {
-    fn setup(&self, scope: &mut Scope);
+    fn setup(&self, scope: &mut ReactiveScope);
 }
