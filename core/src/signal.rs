@@ -1,9 +1,12 @@
+use slotmap::new_key_type;
 use std::marker::PhantomData;
 
-pub(crate) type SignalID = u64;
+new_key_type! {
+    pub struct SignalId;
+}
 
 pub struct Signal<T: 'static> {
-    id: SignalID,
+    id: SignalId,
     _marker: PhantomData<T>,
 }
 
@@ -19,14 +22,14 @@ impl<T: 'static> Clone for Signal<T> {
 impl<T: 'static> Copy for Signal<T> {}
 
 impl<T: 'static> Signal<T> {
-    pub(crate) fn new(id: SignalID) -> Self {
+    pub(crate) fn new(id: SignalId) -> Self {
         Self {
             id,
             _marker: PhantomData,
         }
     }
 
-    pub fn id(&self) -> SignalID {
+    pub fn id(&self) -> SignalId {
         self.id
     }
 }
