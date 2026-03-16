@@ -141,6 +141,11 @@ impl ReactiveScope {
             self.signals.remove(resource.signal_id);
         }
 
+        // Remove stream signals
+        for stream in &component.streams {
+            self.signals.remove(stream.signal_id);
+        }
+
         // Clean up context signals if this is the last reference
         if Rc::strong_count(&component.context) == 1 {
             for (_, &signal_id) in component.context.iter() {
