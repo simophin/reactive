@@ -1,5 +1,7 @@
 use crate::component_scope::ComponentId;
-use crate::{ContextKey, EffectContext, ReactiveScope, ResourceState, Signal};
+use crate::signal::StoredSignal;
+use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
+use futures::Stream;
 
 pub trait Component {
     fn setup(self: Box<Self>, ctx: &mut SetupContext);
@@ -38,7 +40,7 @@ impl Component for Vec<BoxedComponent> {
 /// so users never interact with these implementation details directly.
 pub struct SetupContext<'a> {
     pub(crate) scope: &'a mut ReactiveScope,
-    pub(crate) component_id: ComponentId,
+    pub component_id: ComponentId,
 }
 
 impl<'a> SetupContext<'a> {
@@ -50,56 +52,61 @@ impl<'a> SetupContext<'a> {
         }
     }
 
-    pub fn create_signal<T: 'static>(&mut self, initial: T) -> Signal<T> {
-        self.scope.create_signal(initial)
-    }
-
-    pub fn read<T: Copy>(&self, signal: Signal<T>) -> T {
-        self.scope.read(signal)
-    }
-
-    pub fn access<T, R>(&self, signal: Signal<T>, accessor: impl FnOnce(&T) -> R) -> R {
-        self.scope.access(signal, accessor)
-    }
-
-    pub fn update<T: 'static>(&mut self, signal: Signal<T>, updater: impl FnOnce(&mut T) -> bool) {
-        self.scope.update(signal, updater);
-    }
-
-    pub fn update_if_changed<T: PartialEq + 'static>(&mut self, signal: Signal<T>, new_value: T) {
-        self.scope.update_if_changed(signal, new_value);
-    }
-
     pub fn create_effect<T: 'static>(
         &mut self,
-        effect_fn: impl for<'b> FnMut(&'b mut EffectContext<'_>, Option<&mut T>) -> T + 'static,
+        effect_fn: impl for<'b> FnMut(&'b mut ReactiveScope, Option<T>) -> T + 'static,
     ) {
         self.scope.create_effect(self.component_id, effect_fn);
     }
 
-    pub fn create_resource<I: 'static, T: 'static, F: Future<Output = T> + 'static>(
+    pub fn create_memo<T: PartialEq + Clone + 'static>(
         &mut self,
-        input_fn: impl for<'b> FnMut(&'b mut EffectContext) -> I + 'static,
+        memo_fn: impl FnMut() -> T + 'static,
+    ) -> impl Signal<Value = T> + Clone + 'static {
+        self.scope.create_memo(self.component_id, memo_fn)
+    }
+
+    pub fn create_resource<I, T, F>(
+        &mut self,
+        input_fn: impl Signal<Value = I> + 'static,
         resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> Signal<ResourceState<T>> {
+    ) -> impl Signal<Value = ResourceState<T>> + Clone + 'static
+    where
+        I: Clone + 'static,
+        T: 'static,
+        F: Future<Output = T> + 'static,
+    {
         self.scope
             .create_resource(self.component_id, input_fn, resource_fn)
     }
 
-    pub fn create_stream<T: 'static>(
+    pub fn create_stream<S, I, T>(
         &mut self,
         initial: T,
-        stream: impl futures::Stream<Item = T> + 'static,
-    ) -> Signal<T> {
+        input_signal: impl Signal<Value = I> + 'static,
+        stream_producer: impl FnMut(I) -> S + 'static,
+    ) -> impl Signal<Value = T> + Clone + 'static
+    where
+        I: Clone + 'static,
+        T: 'static,
+        S: Stream<Item = T> + 'static,
+    {
         self.scope
-            .create_stream(self.component_id, initial, stream)
+            .create_stream(self.component_id, initial, input_signal, stream_producer)
     }
 
-    pub fn provide_context<T: 'static>(&mut self, key: &ContextKey<T>, value: T) {
-        self.scope.provide_context(self.component_id, key, value);
+    pub fn provide_context<T: 'static>(
+        &mut self,
+        key: &ContextKey<T>,
+        value: T,
+    ) -> StoredSignal<T> {
+        self.scope.provide_context(self.component_id, key, value)
     }
 
-    pub fn use_context<T: 'static>(&self, key: &ContextKey<T>) -> Option<Signal<T>> {
+    pub fn use_context<T: 'static>(
+        &self,
+        key: &ContextKey<T>,
+    ) -> Option<impl Signal<Value = T> + Clone + 'static> {
         self.scope.use_context(self.component_id, key)
     }
 

@@ -1,14 +1,13 @@
-use crate::component_scope::{
-    BoxedEffectFn, ComponentId, ComponentScope, ContextKey, Effect, Resource, ResourceProducerFn,
-    StreamSubscription,
-};
-use crate::signal::{Signal, SignalId};
+use crate::component_scope::{ComponentId, ComponentScope, ContextKey, Effect, EffectState};
+use crate::signal::{Signal, SignalId, StoredSignal};
 use crate::sorted_vec::SortedVec;
-use crate::vec_utils::extract_if;
-use futures::FutureExt;
 use futures::StreamExt;
+use futures::{FutureExt, Stream};
 use slotmap::SlotMap;
 use std::any::Any;
+use std::cell::RefCell;
+use std::future::ready;
+use std::ops::Deref;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
@@ -19,27 +18,52 @@ pub enum ResourceState<T> {
     Ready(T),
 }
 
-pub struct ReactiveScope {
-    signals: SlotMap<SignalId, Box<dyn Any>>,
-    components: SlotMap<ComponentId, ComponentScope>,
-    dirty_signals: SortedVec<SignalId>,
-}
+#[derive(Clone, Default)]
+pub(crate) struct DirtySignalSet(Rc<RefCell<SortedVec<SignalId>>>);
 
-impl Default for ReactiveScope {
-    fn default() -> Self {
-        Self {
-            signals: SlotMap::with_key(),
-            components: SlotMap::with_key(),
-            dirty_signals: SortedVec::default(),
-        }
+impl DirtySignalSet {
+    pub fn mark_dirty(&self, signal_id: SignalId) {
+        self.0.borrow_mut().insert(signal_id);
+    }
+
+    pub fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+
+    pub fn borrow(&self) -> impl Deref<Target = SortedVec<SignalId>> {
+        self.0.borrow()
     }
 }
 
-/// Mutable view into the reactive scope, passed to effect closures.
-/// Tracks which signals the effect reads for dependency tracking.
-pub struct EffectContext<'a> {
-    scope: &'a mut ReactiveScope,
-    last_accessed_signals: &'a mut SortedVec<SignalId>,
+#[derive(Clone, Default)]
+pub(crate) struct ActiveSignalTracker {
+    active_tracking: Rc<RefCell<Option<SortedVec<SignalId>>>>,
+}
+
+impl ActiveSignalTracker {
+    pub fn on_accessed(&self, signal_id: SignalId) {
+        if let Some(tracking) = self.active_tracking.borrow_mut().as_mut() {
+            tracking.insert(signal_id);
+        }
+    }
+
+    pub fn run_tracking<T>(&self, f: impl FnOnce() -> T) -> (T, SortedVec<SignalId>) {
+        assert!(
+            self.active_tracking.borrow().is_none(),
+            "Nested active tracking is not supported"
+        );
+        self.active_tracking.replace(Some(Default::default()));
+        let result = f();
+        let accessed = self.active_tracking.borrow_mut().take().unwrap_or_default();
+        (result, accessed)
+    }
+}
+
+#[derive(Default)]
+pub struct ReactiveScope {
+    components: SlotMap<ComponentId, ComponentScope>,
+    dirty_signals: DirtySignalSet,
+    active_signal_tracker: ActiveSignalTracker,
 }
 
 // ---------------------------------------------------------------------------
@@ -47,45 +71,12 @@ pub struct EffectContext<'a> {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    pub fn create_signal<T: 'static>(&mut self, initial: T) -> Signal<T> {
-        let id = self.signals.insert(Box::new(initial));
-        Signal::new(id)
-    }
-
-    pub fn access<T, R>(&self, signal: Signal<T>, accessor: impl FnOnce(&T) -> R) -> R {
-        accessor(
-            self.signals
-                .get(signal.id())
-                .and_then(|v| v.downcast_ref::<T>())
-                .expect("Signal not found or type mismatch"),
+    pub fn create_signal<T: 'static>(&mut self, initial: T) -> StoredSignal<T> {
+        StoredSignal::new(
+            initial,
+            self.dirty_signals.clone(),
+            self.active_signal_tracker.clone(),
         )
-    }
-
-    pub fn read<T: Copy>(&self, signal: Signal<T>) -> T {
-        self.access(signal, |v| *v)
-    }
-
-    pub fn update<T: 'static>(&mut self, signal: Signal<T>, updater: impl FnOnce(&mut T) -> bool) {
-        let value = self
-            .signals
-            .get_mut(signal.id())
-            .and_then(|v| v.downcast_mut::<T>())
-            .expect("Signal not found or type mismatch");
-
-        if updater(value) {
-            self.dirty_signals.insert(signal.id());
-        }
-    }
-
-    pub fn update_if_changed<T: PartialEq + 'static>(&mut self, signal: Signal<T>, new_value: T) {
-        self.update(signal, move |old| {
-            if old != &new_value {
-                *old = new_value;
-                true
-            } else {
-                false
-            }
-        });
     }
 }
 
@@ -135,23 +126,6 @@ impl ReactiveScope {
         for cleanup_fn in component.cleanup {
             cleanup_fn();
         }
-
-        // Remove resource signals
-        for resource in &component.resources {
-            self.signals.remove(resource.signal_id);
-        }
-
-        // Remove stream signals
-        for stream in &component.streams {
-            self.signals.remove(stream.signal_id);
-        }
-
-        // Clean up context signals if this is the last reference
-        if Rc::strong_count(&component.context) == 1 {
-            for (_, &signal_id) in component.context.iter() {
-                self.signals.remove(signal_id);
-            }
-        }
     }
 
     pub fn on_cleanup(&mut self, component_id: ComponentId, cleanup_fn: impl FnOnce() + 'static) {
@@ -170,24 +144,25 @@ impl ReactiveScope {
         &mut self,
         component_id: ComponentId,
         key: &ContextKey<T>,
-        value: T,
-    ) {
-        let signal_id = self.signals.insert(Box::new(value));
-
+        initial_value: T,
+    ) -> StoredSignal<T> {
+        let signal = self.create_signal(initial_value);
         if let Some(component) = self.components.get_mut(component_id) {
-            Rc::make_mut(&mut component.context).insert(key.id(), signal_id);
+            Rc::make_mut(&mut component.context).insert(key.id(), signal.clone().into());
         }
+
+        signal
     }
 
     pub fn use_context<T: 'static>(
         &self,
         component_id: ComponentId,
         key: &ContextKey<T>,
-    ) -> Option<Signal<T>> {
+    ) -> Option<impl Signal<Value = T> + Clone + 'static> {
         self.components
             .get(component_id)
             .and_then(|c| c.context.get(&key.id()))
-            .map(|&id| Signal::new(id))
+            .and_then(|signal| signal.downcast_ref().cloned())
     }
 }
 
@@ -196,43 +171,74 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    fn boxed_effect_fn<T: 'static>(
-        mut effect_fn: impl for<'a> FnMut(&'a mut EffectContext<'_>, Option<&mut T>) -> T + 'static,
-    ) -> BoxedEffectFn {
-        Box::new(move |ctx, value| {
-            Box::new(effect_fn(
-                ctx,
-                value.and_then(|v| v.downcast_mut::<T>()).as_deref_mut(),
-            ))
-        })
-    }
-
     pub fn create_effect<T: 'static>(
         &mut self,
         component_id: ComponentId,
-        effect_fn: impl for<'a> FnMut(&'a mut EffectContext<'_>, Option<&mut T>) -> T + 'static,
+        mut effect_fn: impl for<'a> FnMut(&mut ReactiveScope, Option<T>) -> T + 'static,
     ) {
-        let mut last_accessed_signals = SortedVec::default();
-        let mut effect_fn = Self::boxed_effect_fn(effect_fn);
+        let signal_tracker = self.active_signal_tracker.clone();
 
-        // Run immediately for initial value
-        let last_value = effect_fn(
-            &mut EffectContext {
-                scope: self,
-                last_accessed_signals: &mut last_accessed_signals,
-            },
-            None,
-        );
+        let (initial_value, signal_accessed) =
+            signal_tracker.run_tracking(|| effect_fn(self, None));
+
+        let mut last_value = Some(initial_value);
 
         let effect = Effect {
-            effect_fn,
-            last_value,
-            last_accessed_signals,
+            effect_fn: Box::new(move |scope| {
+                let (value, signal_accessed) = signal_tracker
+                    .run_tracking(|| effect_fn(scope, std::mem::take(&mut last_value)));
+
+                last_value.replace(value);
+                EffectState {
+                    signal_accessed,
+                    pending_future: None,
+                }
+            }),
+            effect_state: EffectState {
+                signal_accessed,
+                pending_future: None,
+            },
         };
 
         if let Some(component) = self.components.get_mut(component_id) {
             component.effects.push(effect);
         }
+    }
+
+    pub fn create_memo<T: PartialEq + Clone + 'static>(
+        &mut self,
+        component_id: ComponentId,
+        mut memo_fn: impl FnMut() -> T + 'static,
+    ) -> impl Signal<Value = T> + Clone + 'static {
+        let (initial_value, signal_accessed) =
+            self.active_signal_tracker.run_tracking(|| memo_fn());
+
+        let signal = self.create_signal(initial_value);
+        let signal_tracker = self.active_signal_tracker.clone();
+
+        let effect = Effect {
+            effect_fn: Box::new({
+                let signal = signal.clone();
+                move |_| {
+                    let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
+                    signal.update_if_changes(value);
+                    EffectState {
+                        signal_accessed,
+                        pending_future: None,
+                    }
+                }
+            }),
+            effect_state: EffectState {
+                signal_accessed,
+                pending_future: None,
+            },
+        };
+
+        if let Some(component) = self.components.get_mut(component_id) {
+            component.effects.push(effect);
+        }
+
+        signal
     }
 }
 
@@ -241,36 +247,58 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    pub fn create_resource<I: 'static, T: 'static, F: Future<Output = T> + 'static>(
+    pub fn create_resource<I, T, F>(
         &mut self,
         component_id: ComponentId,
-        mut input_fn: impl for<'a> FnMut(&'a mut EffectContext) -> I + 'static,
+        input_signal: impl Signal<Value = I> + 'static,
         mut resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> Signal<ResourceState<T>> {
+    ) -> impl Signal<Value = ResourceState<T>> + Clone + 'static
+    where
+        I: Clone + 'static,
+        T: 'static,
+        F: Future<Output = T> + 'static,
+    {
         let signal = self.create_signal(ResourceState::<T>::Loading);
+        let (initial_input, deps) = self
+            .active_signal_tracker
+            .run_tracking(|| input_signal.cloned());
 
-        let mut producer: ResourceProducerFn = Box::new(move |ctx: &mut EffectContext| {
-            Box::pin(
-                resource_fn(input_fn(ctx))
-                    .map(|result| Box::new(ResourceState::Ready(result)) as Box<dyn Any>),
-            ) as Pin<Box<dyn Future<Output = Box<dyn Any>>>>
-        });
+        let mut produce_future = {
+            let signal = signal.clone();
+            move |input: I| {
+                let signal = signal.clone();
+                let future: Pin<Box<dyn Future<Output = ()>>> =
+                    Box::pin(resource_fn(input).map(move |result| {
+                        signal.set_and_notify_changes(ResourceState::Ready(result));
+                        ()
+                    }));
 
-        let mut deps = Default::default();
-        let future = producer(&mut EffectContext {
-            scope: self,
-            last_accessed_signals: &mut deps,
-        });
+                Some(future)
+            }
+        };
 
-        let resource = Resource {
-            signal_id: signal.id(),
-            deps,
-            producer,
-            pending_future: Some(future),
+        let pending_future = produce_future(initial_input);
+
+        let active_signal_tracker = self.active_signal_tracker.clone();
+        let effect = Effect {
+            effect_fn: Box::new(move |_| {
+                let (input, signal_accessed) =
+                    active_signal_tracker.run_tracking(|| input_signal.cloned());
+                let pending_future = produce_future(input);
+
+                EffectState {
+                    signal_accessed,
+                    pending_future,
+                }
+            }),
+            effect_state: EffectState {
+                signal_accessed: deps,
+                pending_future,
+            },
         };
 
         if let Some(component) = self.components.get_mut(component_id) {
-            component.resources.push(resource);
+            component.effects.push(effect);
         }
 
         signal
@@ -282,22 +310,30 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    pub fn create_stream<T: 'static>(
+    pub fn create_stream<S, I, T>(
         &mut self,
         component_id: ComponentId,
         initial: T,
-        stream: impl futures::Stream<Item = T> + 'static,
-    ) -> Signal<T> {
+        input_signal: impl Signal<Value = I> + 'static,
+        mut stream_producer: impl FnMut(I) -> S + 'static,
+    ) -> impl Signal<Value = T> + Clone + 'static
+    where
+        I: Clone + 'static,
+        T: 'static,
+        S: Stream<Item = T> + 'static,
+    {
         let signal = self.create_signal(initial);
 
-        let subscription = StreamSubscription {
-            signal_id: signal.id(),
-            stream: Box::pin(stream.map(|item| Box::new(item) as Box<dyn Any>)),
-        };
-
-        if let Some(component) = self.components.get_mut(component_id) {
-            component.streams.push(subscription);
-        }
+        self.create_resource(component_id, input_signal, {
+            let signal = signal.clone();
+            move |input| {
+                let signal = signal.clone();
+                stream_producer(input).for_each(move |item| {
+                    signal.set_and_notify_changes(item);
+                    ready(())
+                })
+            }
+        });
 
         signal
     }
@@ -309,184 +345,56 @@ impl ReactiveScope {
 
 impl ReactiveScope {
     pub fn tick(&mut self, future_ctx: &mut Context) -> bool {
-        // Poll async sources first — completed futures/streams mark signals dirty
-        let has_pending_futures = self.poll_pending_futures(future_ctx);
-        let has_pending_streams = self.poll_streams(future_ctx);
-
-        // Now process dirty signals: run effects and re-trigger resources
-        let dirty = std::mem::take(&mut self.dirty_signals);
-
-        for comp_id in self.components.keys().collect::<Vec<_>>() {
-            let comp = match self.components.get_mut(comp_id) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            // Extract dirty effects out of the component
-            let mut dirty_effects = extract_if(&mut comp.effects, |e| {
-                e.last_accessed_signals.intersects(&dirty)
-            });
-
-            // Extract dirty resources out of the component
-            let mut dirty_resources =
-                extract_if(&mut comp.resources, |r| r.deps.intersects(&dirty));
-
-            // Run dirty effects
-            for effect in &mut dirty_effects {
-                effect.last_accessed_signals.clear();
-                let new_value = (effect.effect_fn)(
-                    &mut EffectContext {
-                        scope: self,
-                        last_accessed_signals: &mut effect.last_accessed_signals,
-                    },
-                    Some(&mut effect.last_value),
-                );
-                effect.last_value = new_value;
-            }
-
-            // Re-run dirty resources
-            for resource in &mut dirty_resources {
-                resource.deps.clear();
-                let future = (resource.producer)(&mut EffectContext {
-                    scope: self,
-                    last_accessed_signals: &mut resource.deps,
-                });
-                resource.pending_future = Some(future);
-            }
-
-            // Restore — component may have been removed during effect execution
-            if let Some(comp) = self.components.get_mut(comp_id) {
-                comp.effects.extend(dirty_effects);
-                comp.resources.extend(dirty_resources);
-            }
+        struct EffectUpdate {
+            component_id: ComponentId,
+            effect: Effect,
+            dirty: bool,
         }
 
-        has_pending_futures || has_pending_streams || !self.dirty_signals.is_empty()
-    }
-
-    fn poll_pending_futures(&mut self, future_ctx: &mut Context) -> bool {
-        let mut has_pending = false;
-
-        for comp_id in self.components.keys().collect::<Vec<_>>() {
-            let comp = match self.components.get_mut(comp_id) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            // Extract resources with pending futures
-            let mut pending = extract_if(&mut comp.resources, |r| r.pending_future.is_some());
-
-            for resource in &mut pending {
-                if let Some(future) = resource.pending_future.as_mut() {
-                    match future.as_mut().poll(future_ctx) {
-                        Poll::Ready(result) => {
-                            resource.pending_future = None;
-                            if let Some(slot) = self.signals.get_mut(resource.signal_id) {
-                                *slot = result;
-                            }
-                            self.dirty_signals.insert(resource.signal_id);
-                        }
-                        Poll::Pending => {
-                            has_pending = true;
-                        }
-                    }
+        let mut updates = Vec::new();
+        for (component_id, c) in &mut self.components {
+            for effect in std::mem::take(&mut c.effects) {
+                let dirty = effect
+                    .effect_state
+                    .signal_accessed
+                    .intersects(&*self.dirty_signals.borrow());
+                if dirty || effect.effect_state.pending_future.is_some() {
+                    updates.push(EffectUpdate {
+                        component_id,
+                        effect,
+                        dirty,
+                    })
+                } else {
+                    c.effects.push(effect);
                 }
             }
+        }
 
-            // Restore resources
-            if let Some(comp) = self.components.get_mut(comp_id) {
-                comp.resources.extend(pending);
+        let mut has_more_dirty_effects = false;
+
+        for mut update in updates {
+            if update.dirty {
+                update.effect.effect_state = (update.effect.effect_fn)(self);
+            }
+
+            has_more_dirty_effects |= update
+                .effect
+                .effect_state
+                .signal_accessed
+                .intersects(&*self.dirty_signals.borrow());
+
+            if let Some(mut fut) = std::mem::take(&mut update.effect.effect_state.pending_future) {
+                if let Poll::Pending = fut.as_mut().poll(future_ctx) {
+                    update.effect.effect_state.pending_future.replace(fut);
+                };
+            }
+
+            if let Some(c) = self.components.get_mut(update.component_id) {
+                c.effects.push(update.effect);
             }
         }
 
-        has_pending
-    }
-
-    fn poll_streams(&mut self, future_ctx: &mut Context) -> bool {
-        let mut has_streams = false;
-
-        for comp_id in self.components.keys().collect::<Vec<_>>() {
-            let comp = match self.components.get_mut(comp_id) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            let mut streams = std::mem::take(&mut comp.streams);
-
-            let mut alive = Vec::with_capacity(streams.len());
-            for sub in &mut streams {
-                match sub.stream.as_mut().poll_next(future_ctx) {
-                    Poll::Ready(Some(item)) => {
-                        if let Some(slot) = self.signals.get_mut(sub.signal_id) {
-                            *slot = item;
-                        }
-                        self.dirty_signals.insert(sub.signal_id);
-                        alive.push(true);
-                    }
-                    Poll::Ready(None) => {
-                        // Stream ended — don't keep it
-                        alive.push(false);
-                    }
-                    Poll::Pending => {
-                        alive.push(true);
-                    }
-                }
-            }
-
-            // Keep only alive streams
-            let mut i = 0;
-            streams.retain(|_| {
-                let keep = alive[i];
-                i += 1;
-                keep
-            });
-
-            has_streams = has_streams || !streams.is_empty();
-
-            if let Some(comp) = self.components.get_mut(comp_id) {
-                comp.streams = streams;
-            }
-        }
-
-        has_streams
-    }
-}
-
-// ---------------------------------------------------------------------------
-// EffectContext
-// ---------------------------------------------------------------------------
-
-impl<'a> EffectContext<'a> {
-    pub fn access<T, R>(&mut self, signal: Signal<T>, accessor: impl FnOnce(&T) -> R) -> R {
-        let r = self.scope.access(signal, accessor);
-        self.last_accessed_signals.insert(signal.id());
-        r
-    }
-
-    pub fn read<T: Copy>(&mut self, signal: Signal<T>) -> T {
-        let r = self.scope.read(signal);
-        self.last_accessed_signals.insert(signal.id());
-        r
-    }
-
-    pub fn update<T: 'static>(&mut self, signal: Signal<T>, updater: impl FnOnce(&mut T) -> bool) {
-        self.scope.update(signal, updater);
-    }
-
-    pub fn update_if_changed<T: PartialEq + 'static>(&mut self, signal: Signal<T>, new_value: T) {
-        self.scope.update_if_changed(signal, new_value);
-    }
-
-    pub fn dispose_component(&mut self, id: ComponentId) {
-        self.scope.dispose_component(id);
-    }
-
-    pub fn setup_child(&mut self, parent: ComponentId) -> crate::SetupContext<'_> {
-        let child_id = self.scope.create_component(Some(parent));
-        crate::SetupContext {
-            scope: self.scope,
-            component_id: child_id,
-        }
+        has_more_dirty_effects
     }
 }
 
@@ -510,15 +418,16 @@ mod tests {
 
         scope.create_effect(root, {
             let result = Arc::clone(&result);
-            move |ctx, last: Option<&mut i32>| {
-                let count_value = ctx.read(count) + last.cloned().unwrap_or_default();
+            let count = count.clone();
+            move |_, last| {
+                let count_value = count.read() + last.unwrap_or_default();
                 *result.lock().unwrap() = count_value;
                 count_value
             }
         });
 
         assert_eq!(*result.lock().unwrap(), 0);
-        scope.update_if_changed(count, 1);
+        count.update_if_changes(1);
         assert_eq!(*result.lock().unwrap(), 0);
 
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
@@ -527,7 +436,7 @@ mod tests {
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*result.lock().unwrap(), 1);
 
-        scope.update_if_changed(count, 2);
+        count.update_if_changes(2);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*result.lock().unwrap(), 3);
     }
@@ -539,16 +448,13 @@ mod tests {
 
         let input_signal = scope.create_signal(42i32);
 
-        let resource_signal = scope.create_resource(
-            root,
-            move |ctx| ctx.read(input_signal),
-            |input| async move { input * 2 },
-        );
+        let resource_signal =
+            scope.create_resource(root, input_signal.clone(), |input| async move { input * 2 });
 
-        assert_eq!(scope.read(resource_signal), ResourceState::Loading);
+        assert_eq!(resource_signal.read(), ResourceState::Loading);
 
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(scope.read(resource_signal), ResourceState::Ready(84));
+        assert_eq!(resource_signal.read(), ResourceState::Ready(84));
     }
 
     #[test]

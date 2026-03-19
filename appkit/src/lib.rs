@@ -1,3 +1,9 @@
+mod ui;
+
+pub use ui::{Text, Window};
+
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use objc2_foundation::MainThreadMarker;
 use reactive_core::{ReactiveScope, SetupContext};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,11 +38,8 @@ fn main_queue() -> *mut c_void {
 // Shared state between waker and tick callback
 // ---------------------------------------------------------------------------
 
-/// Heap-allocated state shared via raw pointer through GCD contexts and the waker.
-/// Lives for the duration of `run_app`.
 struct AppState {
     scope: ReactiveScope,
-    /// Coalesces tick requests — at most one tick is queued at a time.
     tick_scheduled: AtomicBool,
 }
 
@@ -44,8 +47,6 @@ struct AppState {
 // Tick scheduling
 // ---------------------------------------------------------------------------
 
-/// Schedule a tick on the main dispatch queue. Safe to call from any thread
-/// (dispatch_async_f is thread-safe). The AtomicBool ensures coalescing.
 fn schedule_tick(state: *mut AppState) {
     let tick_scheduled = unsafe { &(*state).tick_scheduled };
     if !tick_scheduled.swap(true, Ordering::SeqCst) {
@@ -69,7 +70,7 @@ unsafe extern "C" fn tick_callback(context: *mut c_void) {
 }
 
 // ---------------------------------------------------------------------------
-// Waker — carries the AppState pointer, dispatches tick to main queue
+// Waker
 // ---------------------------------------------------------------------------
 
 fn make_waker(state: *mut AppState) -> Waker {
@@ -92,9 +93,17 @@ fn make_waker(state: *mut AppState) -> Waker {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Start the app. Runs `setup` to initialize the component tree, then enters
-/// the macOS main run loop. This function blocks until [`stop_app`] is called.
+/// Start the app. Initializes NSApplication, runs `setup` to build the
+/// component tree, then enters the macOS main run loop.
+/// This function blocks until [`stop_app`] is called.
 pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
+    let mtm = MainThreadMarker::new().expect("run_app must be called on the main thread");
+
+    // Initialize NSApplication for UI
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+
+    // Set up reactive scope
     let mut scope = ReactiveScope::default();
     setup(&mut SetupContext::new_root(&mut scope));
 
@@ -103,23 +112,19 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
         tick_scheduled: AtomicBool::new(false),
     }));
 
-    // Kick off the first tick
     schedule_tick(state);
 
-    // Block on the main run loop
-    unsafe {
-        CFRunLoopRun();
-    }
+    // Bring app to front
+    app.activate();
 
-    // Reclaim when the run loop exits
-    unsafe {
-        drop(Box::from_raw(state));
-    }
+    // Block on the run loop (services both UI events and dispatch queue)
+    unsafe { CFRunLoopRun() };
+
+    // Reclaim
+    unsafe { drop(Box::from_raw(state)) };
 }
 
 /// Stop the main run loop, causing [`run_app`] to return.
 pub fn stop_app() {
-    unsafe {
-        CFRunLoopStop(CFRunLoopGetMain());
-    }
+    unsafe { CFRunLoopStop(CFRunLoopGetMain()) };
 }

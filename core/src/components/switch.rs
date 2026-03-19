@@ -25,7 +25,7 @@ impl Switch {
 
     pub fn case(
         mut self,
-        condition: impl FnMut(&mut EffectContext) -> bool + 'static,
+        condition: impl FnMut() -> bool + 'static,
         component: impl FnMut() -> BoxedComponent + 'static,
     ) -> Self {
         self.cases.push(Case {
@@ -54,11 +54,11 @@ impl Component for Switch {
         let component_id = ctx.component_id();
 
         ctx.create_effect(
-            move |ectx, active: Option<&mut (Option<ActiveBranch>, Option<ComponentId>)>| {
+            move |scope, active: Option<(Option<ActiveBranch>, Option<ComponentId>)>| {
                 // Evaluate conditions to find the matching branch
                 let new_branch = cases
                     .iter_mut()
-                    .position(|case| (case.condition)(ectx))
+                    .position(|case| (case.condition)())
                     .map(ActiveBranch::Case)
                     .or_else(|| fallback.as_ref().map(|_| ActiveBranch::Fallback));
 
@@ -72,17 +72,22 @@ impl Component for Switch {
 
                 // Dispose the previous child component
                 if let Some(child_id) = prev_child {
-                    ectx.dispose_component(child_id);
+                    scope.dispose_component(child_id);
                 }
 
                 // Set up the new branch
                 let new_child = new_branch.map(|branch| {
-                    let mut child_ctx = ectx.setup_child(component_id);
-                    let child_id = child_ctx.component_id();
+                    let child_id = scope.create_component(Some(component_id));
+                    let mut child_ctx = SetupContext {
+                        scope,
+                        component_id: child_id,
+                    };
+
                     let component = match branch {
                         ActiveBranch::Case(idx) => (cases[idx].component)(),
                         ActiveBranch::Fallback => (fallback.as_mut().unwrap())(),
                     };
+
                     component.setup(&mut child_ctx);
                     child_id
                 });
