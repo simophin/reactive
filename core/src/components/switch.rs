@@ -78,7 +78,7 @@ impl Component for Switch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ReactiveScope;
+    use crate::{ReactiveScope, Signal};
     use futures::task::noop_waker_ref;
     use std::sync::{Arc, Mutex};
     use std::task::Context;
@@ -92,15 +92,15 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let switch = Box::new(
-            Switch::new()
-                .case(move |ctx| ctx.read(mode) == "a", {
+            Switch::new(|| Box::new(()))
+                .case({ let mode = mode.clone(); move || mode.read() == "a" }, {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
                         let log = Arc::clone(&log);
                         Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
                     }
                 })
-                .case(move |ctx| ctx.read(mode) == "b", {
+                .case(move || mode.read() == "b", {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
                         let log = Arc::clone(&log);
@@ -125,15 +125,15 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let switch = Box::new(
-            Switch::new()
-                .case(move |ctx| ctx.read(mode) == "a", {
+            Switch::new(|| Box::new(()))
+                .case({ let mode = mode.clone(); move || mode.read() == "a" }, {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
                         let log = Arc::clone(&log);
                         Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
                     }
                 })
-                .case(move |ctx| ctx.read(mode) == "b", {
+                .case({ let mode = mode.clone(); move || mode.read() == "b" }, {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
                         let log = Arc::clone(&log);
@@ -148,7 +148,7 @@ mod tests {
         });
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);
 
-        scope.update_if_changed(mode, "b");
+        mode.update_if_changes("b");
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["branch_a", "branch_b"]);
     }
@@ -162,21 +162,20 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let switch = Box::new(
-            Switch::new()
-                .case(move |ctx| ctx.read(mode) == "a", {
+            Switch::new({
+                let log = Arc::clone(&log);
+                move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    move || -> BoxedComponent {
-                        let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
-                    }
-                })
-                .fallback({
+                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("fallback"))
+                }
+            })
+            .case(move || mode.read() == "a", {
+                let log = Arc::clone(&log);
+                move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    move || -> BoxedComponent {
-                        let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("fallback"))
-                    }
-                }),
+                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
+                }
+            }),
         );
 
         switch.setup(&mut SetupContext {
@@ -194,7 +193,7 @@ mod tests {
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
-        let switch = Box::new(Switch::new().case(move |ctx| ctx.read(mode) == "a", {
+        let switch = Box::new(Switch::new(|| Box::new(())).case(move || mode.read() == "a", {
             let log = Arc::clone(&log);
             move || -> BoxedComponent {
                 let log = Arc::clone(&log);
@@ -218,10 +217,13 @@ mod tests {
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
-        let switch = Box::new(Switch::new().case(
-            move |ctx| {
-                let _ = ctx.read(count);
-                ctx.read(mode) == "a"
+        let switch = Box::new(Switch::new(|| Box::new(())).case(
+            {
+                let count = count.clone();
+                move || {
+                    let _ = count.read();
+                    mode.read() == "a"
+                }
             },
             {
                 let log = Arc::clone(&log);
@@ -238,7 +240,7 @@ mod tests {
         });
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);
 
-        scope.update_if_changed(count, 1);
+        count.update_if_changes(1);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);
     }

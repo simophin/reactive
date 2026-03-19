@@ -4,7 +4,7 @@ use objc2_foundation::*;
 use reactive_core::{Component, ContextKey, SetupContext, Signal};
 
 /// Context key for the parent NSView that child components add themselves to.
-static PARENT_VIEW: ContextKey<Retained<NSView>> = ContextKey::new();
+static PARENT_VIEW: ContextKey<Option<Retained<NSView>>> = ContextKey::new();
 
 // ---------------------------------------------------------------------------
 // Window
@@ -38,9 +38,8 @@ impl Component for Window {
         let mtm = MainThreadMarker::new().expect("must be on main thread");
 
         let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(self.width, self.height));
-        let style = NSWindowStyleMask::Titled
-            | NSWindowStyleMask::Closable
-            | NSWindowStyleMask::Resizable;
+        let style =
+            NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Resizable;
 
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -56,9 +55,7 @@ impl Component for Window {
         window.center();
         window.makeKeyAndOrderFront(None);
 
-        if let Some(content_view) = window.contentView() {
-            ctx.provide_context(&PARENT_VIEW, content_view);
-        }
+        ctx.provide_context(&PARENT_VIEW, window.contentView());
 
         ctx.on_cleanup(move || {
             let _ = window;
@@ -75,40 +72,64 @@ impl Component for Window {
 // Text
 // ---------------------------------------------------------------------------
 
-pub struct Text {
-    signal: Signal<String>,
+pub struct Text<T> {
+    text: T,
 }
 
-impl Text {
-    pub fn new(signal: Signal<String>) -> Self {
-        Self { signal }
+impl<T> Text<T> {
+    pub fn new(text: T) -> Self {
+        Self { text }
     }
 }
 
-impl Component for Text {
+impl<T: Signal<Value = String> + 'static> Component for Text<T> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let mtm = MainThreadMarker::new().expect("must be on main thread");
+        let parent_view = ctx.use_context(&PARENT_VIEW);
+        let current_view = ctx.provide_context(&PARENT_VIEW, None);
 
-        let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
-        label.setFont(Some(&NSFont::systemFontOfSize(24.0)));
+        ctx.on_cleanup({
+            let current_view = current_view.clone();
+            move || {
+                let Some(v) = current_view.cloned() else {
+                    return;
+                };
 
-        if let Some(parent_signal) = ctx.use_context(&PARENT_VIEW) {
-            ctx.access(parent_signal, |parent_view: &Retained<NSView>| {
-                let bounds = parent_view.bounds();
-                label.setFrame(bounds);
-                parent_view.addSubview(&label);
-            });
-        }
-
-        let label_cleanup = label.clone();
-        ctx.on_cleanup(move || {
-            label_cleanup.removeFromSuperview();
+                v.removeFromSuperview();
+            }
         });
 
-        let signal = self.signal;
-        ctx.create_effect(move |ectx, _: Option<&mut ()>| {
-            let text = ectx.read(signal);
-            label.setStringValue(&NSString::from_str(&text));
+        let text = self.text;
+        ctx.create_effect(move |_, _| {
+            let value = text.cloned();
+
+            let current_view: Retained<NSTextField> = match current_view.cloned() {
+                Some(v) => v.downcast().ok().unwrap(),
+                None => {
+                    let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+                    label.setFont(Some(&NSFont::systemFontOfSize(24.0)));
+                    current_view.update(|v| {
+                        v.replace(label.clone().into_super().into_super());
+                        false
+                    });
+
+                    label
+                }
+            };
+
+            current_view.setStringValue(&NSString::from_str(&value));
+
+            let parent_view = parent_view.as_ref().map(|s| s.cloned()).flatten();
+            if parent_view.is_some() && !current_view.isDescendantOf(parent_view.as_ref().unwrap())
+            {
+                current_view.removeFromSuperview();
+                let parent_view = parent_view.unwrap();
+                let bounds = parent_view.bounds();
+                current_view.setFrame(bounds);
+                parent_view.addSubview(&current_view);
+            }
+
+            ()
         });
     }
 }

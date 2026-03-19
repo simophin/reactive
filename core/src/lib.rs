@@ -10,4 +10,4 @@ mod vec_utils;
 pub use component::{BoxedComponent, Component, SetupContext};
 pub use component_scope::{ComponentId, ContextKey};
 pub use reactive_scope::{ReactiveScope, ResourceState};
-pub use signal::Signal;
+pub use signal::*;

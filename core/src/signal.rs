@@ -24,14 +24,23 @@ pub trait Signal {
         self.access(|v| *v)
     }
 
-    fn map<F>(&self, map_fn: F) -> SignalMapper<Self, F>
+    fn map<F, T>(&self, map_fn: F) -> SignalMapper<Self, F>
     where
         Self: Clone,
+        F: Fn(&Self::Value) -> T + 'static,
     {
         SignalMapper {
             orig_signal: self.clone(),
             map_fn,
         }
+    }
+}
+
+impl Signal for () {
+    type Value = ();
+
+    fn access<R>(&self, f: impl for<'a> FnOnce(&'a Self::Value) -> R) -> R {
+        f(&())
     }
 }
 

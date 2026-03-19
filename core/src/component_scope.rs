@@ -5,7 +5,6 @@ use slotmap::new_key_type;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::rc::Rc;
 
 new_key_type! {
     pub struct ComponentId;

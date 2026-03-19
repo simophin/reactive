@@ -1,4 +1,3 @@
-use crate::EffectContext;
 use crate::component::{BoxedComponent, Component, SetupContext};
 use crate::components::Switch;
 
@@ -27,7 +26,7 @@ impl Component for Show {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ReactiveScope;
+    use crate::{ReactiveScope, Signal};
     use futures::task::noop_waker_ref;
     use std::sync::{Arc, Mutex};
     use std::task::Context;
@@ -40,7 +39,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let show = Box::new(Show::new(
-            move |ctx| ctx.read(visible),
+            move || visible.read(),
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
@@ -66,7 +65,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let show = Box::new(Show::new(
-            move |ctx| ctx.read(visible),
+            move || visible.read(),
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
@@ -98,7 +97,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let show = Box::new(Show::new(
-            move |ctx| ctx.read(visible),
+            { let visible = visible.clone(); move || visible.read() },
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
@@ -121,11 +120,11 @@ mod tests {
         });
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);
 
-        scope.update_if_changed(visible, false);
+        visible.update_if_changes(false);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["shown", "hidden"]);
 
-        scope.update_if_changed(visible, true);
+        visible.update_if_changes(true);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["shown", "hidden", "shown"]);
     }
@@ -139,9 +138,12 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let show = Box::new(Show::new(
-            move |ctx| {
-                let _ = ctx.read(count);
-                ctx.read(visible)
+            {
+                let count = count.clone();
+                move || {
+                    let _ = count.read();
+                    visible.read()
+                }
             },
             {
                 let log = Arc::clone(&log);
@@ -159,7 +161,7 @@ mod tests {
         });
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);
 
-        scope.update_if_changed(count, 1);
+        count.update_if_changes(1);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);
     }

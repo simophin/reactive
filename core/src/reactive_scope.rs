@@ -7,7 +7,6 @@ use crate::vec_utils::extract_if;
 use futures::StreamExt;
 use futures::{FutureExt, Stream};
 use slotmap::SlotMap;
-use std::any::Any;
 use std::cell::RefCell;
 use std::future::ready;
 use std::ops::Deref;
@@ -90,10 +89,12 @@ impl ReactiveScope {
 
 impl ReactiveScope {
     pub fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
-        let component = ComponentScope::default();
+        let mut component = ComponentScope::default();
+        component.parent = parent;
         let component_id = self.components.insert(component);
-        if let Some(parent) = parent.and_then(|p| self.components.get_mut(p)) {
-            parent.children.push(component_id);
+        match parent.and_then(|p| self.components.get_mut(p)) {
+            Some(parent) => parent.children.push(component_id),
+            None => self.root.push(component_id),
         }
 
         component_id
@@ -343,7 +344,7 @@ impl ReactiveScope {
     pub(crate) fn traverse_tree_depth_last(
         &mut self,
         start: ComponentId,
-        mut f: impl FnMut(ComponentId, &mut ComponentScope),
+        f: &mut impl FnMut(ComponentId, &mut ComponentScope),
     ) {
         let Some(scope) = self.components.get_mut(start) else {
             return;
@@ -353,7 +354,7 @@ impl ReactiveScope {
 
         let children = std::mem::take(&mut scope.children);
         for child in &children {
-            self.traverse_tree_depth_last(*child, &mut f);
+            self.traverse_tree_depth_last(*child, f);
         }
 
         if let Some(scope) = self.components.get_mut(start) {
@@ -373,7 +374,7 @@ impl ReactiveScope {
         let dirty_signal_set = self.dirty_signals.clone();
 
         for component in &root {
-            self.traverse_tree_depth_last(*component, |component_id, c| {
+            self.traverse_tree_depth_last(*component, &mut |component_id, c| {
                 for effect in std::mem::take(&mut c.effects) {
                     let dirty = effect
                         .effect_state
@@ -394,6 +395,7 @@ impl ReactiveScope {
         }
 
         self.root = root;
+        self.dirty_signals.clear();
 
         let mut has_more_dirty_effects = false;
 
@@ -493,21 +495,22 @@ mod tests {
 
         scope.create_effect(child, {
             let result = Arc::clone(&result);
-            move |ctx, _: Option<&mut ()>| {
-                *result.lock().unwrap() = ctx.read(count);
+            let count = count.clone();
+            move |_, _: Option<()>| {
+                *result.lock().unwrap() = count.read();
             }
         });
 
         assert_eq!(*result.lock().unwrap(), 0);
 
-        scope.update_if_changed(count, 5);
+        count.update_if_changes(5);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*result.lock().unwrap(), 5);
 
         // Dispose the child — effect should no longer run
         scope.dispose_component(child);
 
-        scope.update_if_changed(count, 10);
+        count.update_if_changes(10);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*result.lock().unwrap(), 5); // unchanged
     }
@@ -524,7 +527,7 @@ mod tests {
         let child = scope.create_child_component(Some(root));
         let theme_signal = scope.use_context::<&str>(child, &THEME).unwrap();
 
-        assert_eq!(scope.read(theme_signal), "dark");
+        assert_eq!(theme_signal.read(), "dark");
     }
 
     #[test]
@@ -542,16 +545,16 @@ mod tests {
         // Grandchild under the overriding child sees "light"
         let grandchild = scope.create_child_component(Some(child));
         let gc_theme = scope.use_context::<&str>(grandchild, &THEME).unwrap();
-        assert_eq!(scope.read(gc_theme), "light");
+        assert_eq!(gc_theme.read(), "light");
 
         // Sibling of child still sees the root's "dark"
         let sibling = scope.create_child_component(Some(root));
         let sibling_theme = scope.use_context::<&str>(sibling, &THEME).unwrap();
-        assert_eq!(scope.read(sibling_theme), "dark");
+        assert_eq!(sibling_theme.read(), "dark");
 
         // Root itself still sees "dark"
         let root_theme = scope.use_context::<&str>(root, &THEME).unwrap();
-        assert_eq!(scope.read(root_theme), "dark");
+        assert_eq!(root_theme.read(), "dark");
     }
 
     #[test]
@@ -559,33 +562,32 @@ mod tests {
         let mut scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
-        let stream = futures::stream::iter(vec![1, 2, 3]);
-        let signal = scope.create_stream(root, 0i32, stream);
+        let signal =
+            scope.create_stream(root, 0i32, || (), |_| futures::stream::iter(vec![1, 2, 3]));
         let result = Arc::new(Mutex::new(Vec::<i32>::new()));
 
         scope.create_effect(root, {
             let result = Arc::clone(&result);
-            move |ctx, _: Option<&mut ()>| {
-                result.lock().unwrap().push(ctx.read(signal));
+            move |_, _: Option<()>| {
+                result.lock().unwrap().push(signal.read());
             }
         });
 
         // Initial effect run sees 0
         assert_eq!(*result.lock().unwrap(), vec![0]);
 
-        // Each tick polls one item from the stream
+        // Tick 1: resource future runs, for_each exhausts the sync iterator all at once (signal=3).
+        // The user effect was not dirty at collection time so it doesn't run this tick.
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), vec![0, 1]);
+        assert_eq!(*result.lock().unwrap(), vec![0]);
 
+        // Tick 2: user effect is now dirty (signal changed), runs once and sees the final value.
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2]);
-
-        scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2, 3]);
+        assert_eq!(*result.lock().unwrap(), vec![0, 3]);
 
         // Stream ended — no more updates
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), vec![0, 1, 2, 3]);
+        assert_eq!(*result.lock().unwrap(), vec![0, 3]);
     }
 
     #[test]
@@ -594,24 +596,27 @@ mod tests {
         let root = scope.create_child_component(None);
         let child = scope.create_child_component(Some(root));
 
-        let stream = futures::stream::iter(vec![1, 2, 3]);
-        let signal = scope.create_stream(child, 0i32, stream);
+        let signal =
+            scope.create_stream(child, 0i32, || (), |_| futures::stream::iter(vec![1, 2, 3]));
         let result = Arc::new(Mutex::new(0i32));
 
         scope.create_effect(child, {
             let result = Arc::clone(&result);
-            move |ctx, _: Option<&mut ()>| {
-                *result.lock().unwrap() = ctx.read(signal);
+            move |_, _: Option<()>| {
+                *result.lock().unwrap() = signal.read();
             }
         });
 
+        // Tick 1: resource future exhausts the sync iterator (signal=3).
+        // User effect was not dirty at collection time so it doesn't run yet.
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), 1);
+        assert_eq!(*result.lock().unwrap(), 0);
 
-        // Dispose — stream and effect should stop
+        // Dispose before the user effect gets a chance to run
         scope.dispose_component(child);
 
+        // Tick 2: signal is dirty but component is disposed — effect does not run
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(*result.lock().unwrap(), 1); // unchanged
+        assert_eq!(*result.lock().unwrap(), 0); // unchanged
     }
 }
