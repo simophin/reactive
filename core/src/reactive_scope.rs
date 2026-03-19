@@ -3,6 +3,7 @@ use crate::component_scope::{
 };
 use crate::signal::{Signal, SignalId, StoredSignal};
 use crate::sorted_vec::SortedVec;
+use crate::vec_utils::extract_if;
 use futures::StreamExt;
 use futures::{FutureExt, Stream};
 use slotmap::SlotMap;
@@ -63,6 +64,8 @@ impl ActiveSignalTracker {
 #[derive(Default)]
 pub struct ReactiveScope {
     components: SlotMap<ComponentId, ComponentScope>,
+    root: Vec<ComponentId>,
+
     dirty_signals: DirtySignalSet,
     active_signal_tracker: ActiveSignalTracker,
 }
@@ -87,14 +90,7 @@ impl ReactiveScope {
 
 impl ReactiveScope {
     pub fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
-        let context = parent
-            .and_then(|p| self.components.get(p))
-            .map(|p| Rc::clone(&p.context))
-            .unwrap_or_default();
-
-        let mut component = ComponentScope::default();
-        component.context = context;
-
+        let component = ComponentScope::default();
         let component_id = self.components.insert(component);
         if let Some(parent) = parent.and_then(|p| self.components.get_mut(p)) {
             parent.children.push(component_id);
@@ -127,6 +123,19 @@ impl ReactiveScope {
         }
     }
 
+    pub fn dispose_children(&mut self, id: ComponentId, f: impl FnMut(&ComponentId) -> bool) {
+        let to_dispose = self
+            .components
+            .get_mut(id)
+            .map(move |scope| extract_if(&mut scope.children, f));
+
+        if let Some(to_dispose) = to_dispose {
+            for child in to_dispose {
+                self.dispose_component(child);
+            }
+        }
+    }
+
     pub fn on_cleanup(&mut self, component_id: ComponentId, cleanup_fn: impl FnOnce() + 'static) {
         if let Some(component) = self.components.get_mut(component_id) {
             component.cleanup.push(Box::new(cleanup_fn));
@@ -142,12 +151,12 @@ impl ReactiveScope {
     pub fn provide_context<T: 'static>(
         &mut self,
         component_id: ComponentId,
-        key: &ContextKey<T>,
+        key: &'static ContextKey<T>,
         initial_value: T,
     ) -> StoredSignal<T> {
         let signal = self.create_signal(initial_value);
         if let Some(component) = self.components.get_mut(component_id) {
-            Rc::make_mut(&mut component.context).insert(key.id(), signal.clone().into());
+            component.context.insert(key.id(), signal.clone().into());
         }
 
         signal
@@ -156,12 +165,19 @@ impl ReactiveScope {
     pub fn use_context<T: 'static>(
         &self,
         component_id: ComponentId,
-        key: &ContextKey<T>,
+        key: &'static ContextKey<T>,
     ) -> Option<impl Signal<Value = T> + Clone + 'static> {
-        self.components
-            .get(component_id)
-            .and_then(|c| c.context.get(&key.id()))
-            .and_then(|signal| signal.downcast_ref().cloned())
+        let mut scope = self.components.get(component_id);
+
+        while let Some(component) = scope {
+            if let Some(signal) = component.context.get(&key.id()) {
+                return signal.downcast_ref().cloned();
+            }
+
+            scope = component.parent.and_then(|id| self.components.get(id));
+        }
+
+        None
     }
 }
 
@@ -324,6 +340,27 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
+    pub(crate) fn traverse_tree_depth_last(
+        &mut self,
+        start: ComponentId,
+        mut f: impl FnMut(ComponentId, &mut ComponentScope),
+    ) {
+        let Some(scope) = self.components.get_mut(start) else {
+            return;
+        };
+
+        f(start, scope);
+
+        let children = std::mem::take(&mut scope.children);
+        for child in &children {
+            self.traverse_tree_depth_last(*child, &mut f);
+        }
+
+        if let Some(scope) = self.components.get_mut(start) {
+            scope.children = children;
+        }
+    }
+
     pub fn tick(&mut self, future_ctx: &mut Context) -> bool {
         struct EffectUpdate {
             component_id: ComponentId,
@@ -332,23 +369,31 @@ impl ReactiveScope {
         }
 
         let mut updates = Vec::new();
-        for (component_id, c) in &mut self.components {
-            for effect in std::mem::take(&mut c.effects) {
-                let dirty = effect
-                    .effect_state
-                    .signal_accessed
-                    .intersects(&*self.dirty_signals.borrow());
-                if dirty || effect.effect_state.pending_future.is_some() {
-                    updates.push(EffectUpdate {
-                        component_id,
-                        effect,
-                        dirty,
-                    })
-                } else {
-                    c.effects.push(effect);
+        let root = std::mem::take(&mut self.root);
+        let dirty_signal_set = self.dirty_signals.clone();
+
+        for component in &root {
+            self.traverse_tree_depth_last(*component, |component_id, c| {
+                for effect in std::mem::take(&mut c.effects) {
+                    let dirty = effect
+                        .effect_state
+                        .signal_accessed
+                        .intersects(&*dirty_signal_set.borrow());
+
+                    if dirty || effect.effect_state.pending_future.is_some() {
+                        updates.push(EffectUpdate {
+                            component_id,
+                            effect,
+                            dirty,
+                        })
+                    } else {
+                        c.effects.push(effect);
+                    }
                 }
-            }
+            });
         }
+
+        self.root = root;
 
         let mut has_more_dirty_effects = false;
 

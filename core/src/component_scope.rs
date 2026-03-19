@@ -20,7 +20,7 @@ impl<T> ContextKey<T> {
         Self(PhantomData)
     }
 
-    pub const fn id(&self) -> ContextKeyId {
+    pub const fn id(&'static self) -> ContextKeyId {
         self as *const ContextKey<T> as *const ()
     }
 }
@@ -39,8 +39,9 @@ pub(crate) struct Effect {
 
 #[derive(Default)]
 pub struct ComponentScope {
+    pub(crate) parent: Option<ComponentId>,
     pub(crate) effects: Vec<Effect>,
     pub(crate) cleanup: Vec<Box<dyn FnOnce()>>,
-    pub(crate) context: Rc<HashMap<ContextKeyId, BoxedStoredSignal>>,
+    pub(crate) context: HashMap<ContextKeyId, BoxedStoredSignal>,
     pub(crate) children: Vec<ComponentId>,
 }

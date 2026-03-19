@@ -97,7 +97,7 @@ impl<'a> SetupContext<'a> {
 
     pub fn provide_context<T: 'static>(
         &mut self,
-        key: &ContextKey<T>,
+        key: &'static ContextKey<T>,
         value: T,
     ) -> StoredSignal<T> {
         self.scope.provide_context(self.component_id, key, value)
@@ -105,7 +105,7 @@ impl<'a> SetupContext<'a> {
 
     pub fn use_context<T: 'static>(
         &self,
-        key: &ContextKey<T>,
+        key: &'static ContextKey<T>,
     ) -> Option<impl Signal<Value = T> + Clone + 'static> {
         self.scope.use_context(self.component_id, key)
     }
@@ -126,8 +126,9 @@ impl<'a> SetupContext<'a> {
         self.component_id
     }
 
-    pub fn child(&mut self, component: impl Component + 'static) {
+    pub fn child(&mut self, component: impl Component + 'static) -> ComponentId {
         let mut child_ctx = self.new_child();
         Box::new(component).setup(&mut child_ctx);
+        child_ctx.component_id
     }
 }
