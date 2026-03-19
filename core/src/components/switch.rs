@@ -1,8 +1,6 @@
-use crate::EffectContext;
 use crate::component::{BoxedComponent, Component, SetupContext};
-use crate::component_scope::ComponentId;
 
-type ConditionFn = Box<dyn FnMut(&mut EffectContext) -> bool>;
+type ConditionFn = Box<dyn FnMut() -> bool>;
 type ComponentFactory = Box<dyn FnMut() -> BoxedComponent>;
 
 struct Case {
@@ -12,14 +10,14 @@ struct Case {
 
 pub struct Switch {
     cases: Vec<Case>,
-    fallback: Option<ComponentFactory>,
+    fallback: ComponentFactory,
 }
 
 impl Switch {
-    pub fn new() -> Self {
+    pub fn new(fallback: impl FnMut() -> BoxedComponent + 'static) -> Self {
         Self {
             cases: Vec::new(),
-            fallback: None,
+            fallback: Box::new(fallback),
         }
     }
 
@@ -34,11 +32,6 @@ impl Switch {
         });
         self
     }
-
-    pub fn fallback(mut self, component: impl FnMut() -> BoxedComponent + 'static) -> Self {
-        self.fallback = Some(Box::new(component));
-        self
-    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -51,50 +44,34 @@ impl Component for Switch {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let mut cases = self.cases;
         let mut fallback = self.fallback;
-        let component_id = ctx.component_id();
+        let my_id = ctx.component_id();
 
-        ctx.create_effect(
-            move |scope, active: Option<(Option<ActiveBranch>, Option<ComponentId>)>| {
-                // Evaluate conditions to find the matching branch
-                let new_branch = cases
-                    .iter_mut()
-                    .position(|case| (case.condition)())
-                    .map(ActiveBranch::Case)
-                    .or_else(|| fallback.as_ref().map(|_| ActiveBranch::Fallback));
+        ctx.create_effect(move |scope, prev_branch: Option<ActiveBranch>| {
+            // Evaluate conditions to find the matching branch
+            let new_branch = cases
+                .iter_mut()
+                .position(|case| (case.condition)())
+                .map(ActiveBranch::Case)
+                .unwrap_or(ActiveBranch::Fallback);
 
-                let prev_branch = active.as_ref().map(|a| a.0).flatten();
-                let prev_child = active.as_ref().map(|a| a.1).flatten();
+            let new_component_factory = match (prev_branch, new_branch) {
+                (Some(old), new) if old == new => None,
+                (_, ActiveBranch::Fallback) => Some(&mut fallback),
+                (_, ActiveBranch::Case(idx)) => Some(&mut cases[idx].component),
+            };
 
-                // If the active branch hasn't changed, do nothing
-                if prev_branch == new_branch {
-                    return (prev_branch, prev_child);
-                }
+            let Some(component) = new_component_factory.map(|c| c()) else {
+                return new_branch;
+            };
 
-                // Dispose the previous child component
-                if let Some(child_id) = prev_child {
-                    scope.dispose_component(child_id);
-                }
+            scope.dispose_all_children(my_id);
+            component.setup(&mut SetupContext {
+                component_id: scope.create_child_component(Some(my_id)),
+                scope,
+            });
 
-                // Set up the new branch
-                let new_child = new_branch.map(|branch| {
-                    let child_id = scope.create_component(Some(component_id));
-                    let mut child_ctx = SetupContext {
-                        scope,
-                        component_id: child_id,
-                    };
-
-                    let component = match branch {
-                        ActiveBranch::Case(idx) => (cases[idx].component)(),
-                        ActiveBranch::Fallback => (fallback.as_mut().unwrap())(),
-                    };
-
-                    component.setup(&mut child_ctx);
-                    child_id
-                });
-
-                (new_branch, new_child)
-            },
-        );
+            new_branch
+        });
     }
 }
 
@@ -109,7 +86,7 @@ mod tests {
     #[test]
     fn test_switch_initial_match() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -142,7 +119,7 @@ mod tests {
     #[test]
     fn test_switch_changes_branch() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -179,7 +156,7 @@ mod tests {
     #[test]
     fn test_switch_fallback() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let mode = scope.create_signal("unknown");
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -212,7 +189,7 @@ mod tests {
     #[test]
     fn test_switch_no_match_no_fallback() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let mode = scope.create_signal("unknown");
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -235,7 +212,7 @@ mod tests {
     #[test]
     fn test_switch_same_branch_no_rerun() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
         let count = scope.create_signal(0);
 

@@ -1,4 +1,6 @@
-use crate::component_scope::{ComponentId, ComponentScope, ContextKey, Effect, EffectState};
+use crate::component_scope::{
+    BoxedEffectFn, ComponentId, ComponentScope, ContextKey, Effect, EffectState,
+};
 use crate::signal::{Signal, SignalId, StoredSignal};
 use crate::sorted_vec::SortedVec;
 use futures::StreamExt;
@@ -8,7 +10,6 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::future::ready;
 use std::ops::Deref;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
@@ -85,46 +86,44 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    pub fn create_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
+    pub fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
         let context = parent
             .and_then(|p| self.components.get(p))
             .map(|p| Rc::clone(&p.context))
             .unwrap_or_default();
 
-        let mut component = ComponentScope::new(parent);
+        let mut component = ComponentScope::default();
         component.context = context;
 
-        let id = self.components.insert(component);
-
-        if let Some(parent_id) = parent {
-            if let Some(parent) = self.components.get_mut(parent_id) {
-                parent.children.push(id);
-            }
+        let component_id = self.components.insert(component);
+        if let Some(parent) = parent.and_then(|p| self.components.get_mut(p)) {
+            parent.children.push(component_id);
         }
 
-        id
+        component_id
     }
 
     pub fn dispose_component(&mut self, id: ComponentId) {
-        let Some(component) = self.components.remove(id) else {
+        let Some(mut component) = self.components.remove(id) else {
             return;
         };
 
-        // Remove from parent's children list
-        if let Some(parent_id) = component.parent {
-            if let Some(parent) = self.components.get_mut(parent_id) {
-                parent.children.retain(|&c| c != id);
-            }
-        }
-
-        // Dispose children depth-first
-        for child_id in component.children {
+        // Clean up children first
+        for child_id in std::mem::take(&mut component.children) {
             self.dispose_component(child_id);
         }
 
         // Run cleanup functions
         for cleanup_fn in component.cleanup {
             cleanup_fn();
+        }
+    }
+
+    pub fn dispose_all_children(&mut self, id: ComponentId) {
+        if let Some(component) = self.components.get_mut(id) {
+            for child_id in std::mem::take(&mut component.children) {
+                self.dispose_component(child_id);
+            }
         }
     }
 
@@ -177,27 +176,22 @@ impl ReactiveScope {
         mut effect_fn: impl for<'a> FnMut(&mut ReactiveScope, Option<T>) -> T + 'static,
     ) {
         let signal_tracker = self.active_signal_tracker.clone();
+        let mut last_value = None;
 
-        let (initial_value, signal_accessed) =
-            signal_tracker.run_tracking(|| effect_fn(self, None));
+        let mut effect_fn: BoxedEffectFn = Box::new(move |scope| {
+            let (value, signal_accessed) =
+                signal_tracker.run_tracking(|| effect_fn(scope, std::mem::take(&mut last_value)));
 
-        let mut last_value = Some(initial_value);
-
-        let effect = Effect {
-            effect_fn: Box::new(move |scope| {
-                let (value, signal_accessed) = signal_tracker
-                    .run_tracking(|| effect_fn(scope, std::mem::take(&mut last_value)));
-
-                last_value.replace(value);
-                EffectState {
-                    signal_accessed,
-                    pending_future: None,
-                }
-            }),
-            effect_state: EffectState {
+            last_value.replace(value);
+            EffectState {
                 signal_accessed,
                 pending_future: None,
-            },
+            }
+        });
+
+        let effect = Effect {
+            effect_state: effect_fn(self),
+            effect_fn,
         };
 
         if let Some(component) = self.components.get_mut(component_id) {
@@ -259,42 +253,28 @@ impl ReactiveScope {
         F: Future<Output = T> + 'static,
     {
         let signal = self.create_signal(ResourceState::<T>::Loading);
-        let (initial_input, deps) = self
-            .active_signal_tracker
-            .run_tracking(|| input_signal.cloned());
-
-        let mut produce_future = {
-            let signal = signal.clone();
-            move |input: I| {
-                let signal = signal.clone();
-                let future: Pin<Box<dyn Future<Output = ()>>> =
-                    Box::pin(resource_fn(input).map(move |result| {
-                        signal.set_and_notify_changes(ResourceState::Ready(result));
-                        ()
-                    }));
-
-                Some(future)
-            }
-        };
-
-        let pending_future = produce_future(initial_input);
 
         let active_signal_tracker = self.active_signal_tracker.clone();
-        let effect = Effect {
-            effect_fn: Box::new(move |_| {
+        let mut effect_fn: BoxedEffectFn = {
+            let signal = signal.clone();
+            Box::new(move |_| {
                 let (input, signal_accessed) =
                     active_signal_tracker.run_tracking(|| input_signal.cloned());
-                let pending_future = produce_future(input);
+                let signal = signal.clone();
 
                 EffectState {
                     signal_accessed,
-                    pending_future,
+                    pending_future: Some(Box::pin(resource_fn(input).map(move |result| {
+                        signal.set_and_notify_changes(ResourceState::Ready(result));
+                        ()
+                    }))),
                 }
-            }),
-            effect_state: EffectState {
-                signal_accessed: deps,
-                pending_future,
-            },
+            })
+        };
+
+        let effect = Effect {
+            effect_state: effect_fn(self),
+            effect_fn,
         };
 
         if let Some(component) = self.components.get_mut(component_id) {
@@ -411,7 +391,7 @@ mod tests {
     #[test]
     fn test_signal_and_effect() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
 
         let count = scope.create_signal(0);
         let result = Arc::new(Mutex::new(0));
@@ -444,7 +424,7 @@ mod tests {
     #[test]
     fn test_resource() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
 
         let input_signal = scope.create_signal(42i32);
 
@@ -460,8 +440,8 @@ mod tests {
     #[test]
     fn test_component_dispose() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
-        let child = scope.create_component(Some(root));
+        let root = scope.create_child_component(None);
+        let child = scope.create_child_component(Some(root));
 
         let count = scope.create_signal(0);
         let result = Arc::new(Mutex::new(0));
@@ -492,11 +472,11 @@ mod tests {
         static THEME: ContextKey<&str> = ContextKey::new();
 
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
 
         scope.provide_context(root, &THEME, "dark");
 
-        let child = scope.create_component(Some(root));
+        let child = scope.create_child_component(Some(root));
         let theme_signal = scope.use_context::<&str>(child, &THEME).unwrap();
 
         assert_eq!(scope.read(theme_signal), "dark");
@@ -507,20 +487,20 @@ mod tests {
         static THEME: ContextKey<&str> = ContextKey::new();
 
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         scope.provide_context(root, &THEME, "dark");
 
         // Child overrides the context
-        let child = scope.create_component(Some(root));
+        let child = scope.create_child_component(Some(root));
         scope.provide_context(child, &THEME, "light");
 
         // Grandchild under the overriding child sees "light"
-        let grandchild = scope.create_component(Some(child));
+        let grandchild = scope.create_child_component(Some(child));
         let gc_theme = scope.use_context::<&str>(grandchild, &THEME).unwrap();
         assert_eq!(scope.read(gc_theme), "light");
 
         // Sibling of child still sees the root's "dark"
-        let sibling = scope.create_component(Some(root));
+        let sibling = scope.create_child_component(Some(root));
         let sibling_theme = scope.use_context::<&str>(sibling, &THEME).unwrap();
         assert_eq!(scope.read(sibling_theme), "dark");
 
@@ -532,7 +512,7 @@ mod tests {
     #[test]
     fn test_stream() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
 
         let stream = futures::stream::iter(vec![1, 2, 3]);
         let signal = scope.create_stream(root, 0i32, stream);
@@ -566,8 +546,8 @@ mod tests {
     #[test]
     fn test_stream_dispose() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
-        let child = scope.create_component(Some(root));
+        let root = scope.create_child_component(None);
+        let child = scope.create_child_component(Some(root));
 
         let stream = futures::stream::iter(vec![1, 2, 3]);
         let signal = scope.create_stream(child, 0i32, stream);

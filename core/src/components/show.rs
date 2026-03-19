@@ -8,12 +8,12 @@ pub struct Show {
 
 impl Show {
     pub fn new(
-        condition: impl FnMut(&mut EffectContext) -> bool + 'static,
+        condition: impl FnMut() -> bool + 'static,
         then: impl FnMut() -> BoxedComponent + 'static,
         otherwise: impl FnMut() -> BoxedComponent + 'static,
     ) -> Self {
         Self {
-            switch: Switch::new().case(condition, then).fallback(otherwise),
+            switch: Switch::new(otherwise).case(condition, then),
         }
     }
 }
@@ -35,7 +35,7 @@ mod tests {
     #[test]
     fn test_show_initially_visible() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_show_initially_hidden() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let visible = scope.create_signal(false);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_show_toggle() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_show_same_state_no_rerun() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let count = scope.create_signal(0);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));

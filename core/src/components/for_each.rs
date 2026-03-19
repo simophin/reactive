@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_for_initial_render() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let items = scope.create_signal(vec!["a", "b", "c"]);
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_for_add_item() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let items = scope.create_signal(vec!["a", "b"]);
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_for_remove_item() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let items = scope.create_signal(vec!["a", "b", "c"]);
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
         let disposed = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_for_reorder() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let items = scope.create_signal(vec!["a", "b", "c"]);
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_for_empty() {
         let mut scope = ReactiveScope::default();
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         let items = scope.create_signal(Vec::<&str>::new());
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 

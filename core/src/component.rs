@@ -45,7 +45,7 @@ pub struct SetupContext<'a> {
 
 impl<'a> SetupContext<'a> {
     pub fn new_root(scope: &'a mut ReactiveScope) -> Self {
-        let root = scope.create_component(None);
+        let root = scope.create_child_component(None);
         Self {
             scope,
             component_id: root,
@@ -115,7 +115,7 @@ impl<'a> SetupContext<'a> {
     }
 
     pub fn new_child(&mut self) -> SetupContext<'_> {
-        let child_id = self.scope.create_component(Some(self.component_id));
+        let child_id = self.scope.create_child_component(Some(self.component_id));
         SetupContext {
             scope: self.scope,
             component_id: child_id,
