@@ -52,6 +52,10 @@ impl<'a> SetupContext<'a> {
         }
     }
 
+    pub fn create_signal<T: 'static>(&mut self, initial: T) -> StoredSignal<T> {
+        self.scope.create_signal(initial)
+    }
+
     pub fn create_effect<T: 'static>(
         &mut self,
         effect_fn: impl for<'b> FnMut(&'b mut ReactiveScope, Option<T>) -> T + 'static,
@@ -73,7 +77,7 @@ impl<'a> SetupContext<'a> {
     ) -> impl Signal<Value = ResourceState<T>> + Clone + 'static
     where
         I: Clone + 'static,
-        T: 'static,
+        T: Clone + 'static,
         F: Future<Output = T> + 'static,
     {
         self.scope
@@ -88,14 +92,14 @@ impl<'a> SetupContext<'a> {
     ) -> impl Signal<Value = T> + Clone + 'static
     where
         I: Clone + 'static,
-        T: 'static,
+        T: Clone + 'static,
         S: Stream<Item = T> + 'static,
     {
         self.scope
             .create_stream(self.component_id, initial, input_signal, stream_producer)
     }
 
-    pub fn provide_context<T: 'static>(
+    pub fn provide_context<T: Clone + 'static>(
         &mut self,
         key: &'static ContextKey<T>,
         value: T,
@@ -103,7 +107,7 @@ impl<'a> SetupContext<'a> {
         self.scope.provide_context(self.component_id, key, value)
     }
 
-    pub fn use_context<T: 'static>(
+    pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
     ) -> Option<impl Signal<Value = T> + Clone + 'static> {

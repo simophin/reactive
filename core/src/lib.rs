@@ -3,7 +3,6 @@ mod component_scope;
 pub mod components;
 mod reactive_scope;
 mod signal;
-mod signals;
 mod sorted_vec;
 mod vec_utils;
 

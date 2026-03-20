@@ -1,7 +1,5 @@
-use appkit::{Text, Window, run_app};
-use futures::StreamExt;
-use reactive_core::Signal;
-use std::time::Duration;
+use appkit::{Button, HStack, Text, VStack, Window, run_app};
+use reactive_core::ext::SignalExt;
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -12,22 +10,40 @@ fn main() {
     let _guard = rt.enter();
 
     run_app(|ctx| {
-        let count = ctx.create_stream(0, (), |_| {
-            tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(Duration::from_secs(
-                1,
-            )))
-            .skip(1)
-            .take(100)
-            .scan(0i32, |count, _| {
-                *count += 1;
-                futures::future::ready(Some(*count))
-            })
-        });
+        let count = ctx.create_signal(0i32);
 
-        // create_memo: derives a String signal from the i32 count signal
         ctx.child(
-            Window::new("Reactive App", 400.0, 200.0)
-                .child(Text::new(count.map(|c| format!("Count: {c}")))),
+            Window::new("Reactive App", 400.0, 300.0).child(
+                VStack::new()
+                    .spacing(16.0)
+                    .child(Text::new(count.map(|c| format!("Count: {c}"))).font_size(24.0))
+                    .child(
+                        HStack::new()
+                            .spacing(8.0)
+                            .child(Button::new("−", {
+                                let count = count.clone();
+                                move || {
+                                    count.update(|v| {
+                                        *v -= 1;
+                                        true
+                                    })
+                                }
+                            }))
+                            .child(Button::new("+", {
+                                let count = count.clone();
+                                move || {
+                                    count.update(|v| {
+                                        *v += 1;
+                                        true
+                                    })
+                                }
+                            }))
+                            .child(Button::new("Reset", {
+                                let count = count.clone();
+                                move || count.set_and_notify_changes(0)
+                            })),
+                    ),
+            ),
         );
     });
 }

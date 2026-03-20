@@ -1,6 +1,6 @@
 mod ui;
 
-pub use ui::{Text, Window};
+pub use ui::{Button, HStack, Text, VStack, Window};
 
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;

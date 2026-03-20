@@ -9,7 +9,7 @@ use futures::{FutureExt, Stream};
 use slotmap::SlotMap;
 use std::cell::RefCell;
 use std::future::ready;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
@@ -27,12 +27,12 @@ impl DirtySignalSet {
         self.0.borrow_mut().insert(signal_id);
     }
 
-    pub fn clear(&self) {
-        self.0.borrow_mut().clear();
-    }
-
     pub fn borrow(&self) -> impl Deref<Target = SortedVec<SignalId>> {
         self.0.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> impl DerefMut<Target = SortedVec<SignalId>> {
+        self.0.borrow_mut()
     }
 }
 
@@ -149,7 +149,7 @@ impl ReactiveScope {
 // ---------------------------------------------------------------------------
 
 impl ReactiveScope {
-    pub fn provide_context<T: 'static>(
+    pub fn provide_context<T: Clone + 'static>(
         &mut self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
@@ -163,7 +163,7 @@ impl ReactiveScope {
         signal
     }
 
-    pub fn use_context<T: 'static>(
+    pub fn use_context<T: Clone + 'static>(
         &self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
@@ -266,7 +266,7 @@ impl ReactiveScope {
     ) -> impl Signal<Value = ResourceState<T>> + Clone + 'static
     where
         I: Clone + 'static,
-        T: 'static,
+        T: Clone + 'static,
         F: Future<Output = T> + 'static,
     {
         let signal = self.create_signal(ResourceState::<T>::Loading);
@@ -276,7 +276,7 @@ impl ReactiveScope {
             let signal = signal.clone();
             Box::new(move |_| {
                 let (input, signal_accessed) =
-                    active_signal_tracker.run_tracking(|| input_signal.cloned());
+                    active_signal_tracker.run_tracking(|| input_signal.read());
                 let signal = signal.clone();
 
                 EffectState {
@@ -316,7 +316,7 @@ impl ReactiveScope {
     ) -> impl Signal<Value = T> + Clone + 'static
     where
         I: Clone + 'static,
-        T: 'static,
+        T: Clone + 'static,
         S: Stream<Item = T> + 'static,
     {
         let signal = self.create_signal(initial);
@@ -371,7 +371,7 @@ impl ReactiveScope {
 
         let mut updates = Vec::new();
         let root = std::mem::take(&mut self.root);
-        let dirty_signal_set = self.dirty_signals.clone();
+        let dirty_signal_set = std::mem::take(&mut *self.dirty_signals.borrow_mut());
 
         for component in &root {
             self.traverse_tree_depth_last(*component, &mut |component_id, c| {
@@ -379,7 +379,7 @@ impl ReactiveScope {
                     let dirty = effect
                         .effect_state
                         .signal_accessed
-                        .intersects(&*dirty_signal_set.borrow());
+                        .intersects(&dirty_signal_set);
 
                     if dirty || effect.effect_state.pending_future.is_some() {
                         updates.push(EffectUpdate {
@@ -395,7 +395,6 @@ impl ReactiveScope {
         }
 
         self.root = root;
-        self.dirty_signals.clear();
 
         let mut has_more_dirty_effects = false;
 
@@ -421,7 +420,7 @@ impl ReactiveScope {
             }
         }
 
-        has_more_dirty_effects
+        has_more_dirty_effects || !self.dirty_signals.borrow().is_empty()
     }
 }
 
