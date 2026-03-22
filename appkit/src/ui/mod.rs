@@ -6,6 +6,7 @@ pub mod progress_indicator;
 pub mod slider;
 pub mod stack;
 pub mod text;
+pub mod text_input;
 pub mod view_component;
 pub mod window;
 
@@ -18,5 +19,6 @@ pub use progress_indicator::{PROP_INDETERMINATE, ProgressIndicator};
 pub use slider::Slider;
 pub use stack::Stack;
 pub use text::Text;
+pub use text_input::{PROP_PLACEHOLDER, TextInput};
 pub use view_component::AppKitViewComponent;
 pub use window::Window;

@@ -82,7 +82,12 @@ impl<V: Message, Children: IntoVec<BoxedComponent>> Component for AppKitViewComp
         let nsview = into_nsview(view);
 
         if let Some(parent) = ctx.use_context(&PARENT_VIEW) {
-            parent.read().add_child(nsview.clone());
+            let parent = parent.read();
+            parent.add_child(nsview.clone());
+            ctx.on_cleanup({
+                let nsview = nsview.clone();
+                move || parent.remove_child(&nsview)
+            });
         }
 
         let any: &AnyObject = &*nsview;
@@ -90,9 +95,7 @@ impl<V: Message, Children: IntoVec<BoxedComponent>> Component for AppKitViewComp
             ctx.provide_context(&PARENT_VIEW, ViewParent::Stack(stack.retain()));
         }
 
-        ctx.on_cleanup(move || {
-            let _ = nsview;
-        });
+        ctx.on_cleanup(move || drop(nsview));
 
         for child in children.into_vec() {
             let mut child_ctx = ctx.new_child();

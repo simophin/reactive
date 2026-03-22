@@ -20,6 +20,13 @@ impl ViewParent {
             }
         }
     }
+
+    pub(super) fn remove_child(&self, child: &NSView) {
+        // removeFromSuperview handles both cases:
+        // - For stack views, this automatically removes it as an arranged subview too.
+        // - For window content views, this removes it from the content view's subviews.
+        child.removeFromSuperview();
+    }
 }
 
 pub(super) static PARENT_VIEW: ContextKey<ViewParent> = ContextKey::new();
