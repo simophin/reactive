@@ -22,8 +22,10 @@ impl ReactiveScope {
             }
         });
 
+        let mut effect_state = effect_fn(self);
         let effect = Effect {
-            effect_state: effect_fn(self),
+            in_flight: effect_state.pending_future.take(),
+            effect_state,
             effect_fn,
         };
 
@@ -48,16 +50,11 @@ impl ReactiveScope {
                 move |_| {
                     let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
                     signal.update_if_changes(value);
-                    EffectState {
-                        signal_accessed,
-                        pending_future: None,
-                    }
+                    EffectState { signal_accessed, pending_future: None }
                 }
             }),
-            effect_state: EffectState {
-                signal_accessed,
-                pending_future: None,
-            },
+            effect_state: EffectState { signal_accessed, pending_future: None },
+            in_flight: None,
         };
 
         if let Some(component) = self.components.get_mut(component_id) {

@@ -1,5 +1,38 @@
 use crate::component_scope::{ComponentId, ComponentScope, Effect};
-use std::task::{Context, Poll};
+use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll, Wake, Waker};
+
+// ---------------------------------------------------------------------------
+// Per-future waker
+// ---------------------------------------------------------------------------
+
+struct FutureWaker {
+    flag: Weak<AtomicBool>,
+    outer: Waker,
+}
+
+impl Wake for FutureWaker {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        // If the Arc is gone the EffectState was dropped (component disposed) — do nothing.
+        if let Some(flag) = self.flag.upgrade() {
+            flag.store(true, Ordering::Release);
+            self.outer.wake_by_ref();
+        }
+    }
+}
+
+fn make_waker(flag: Weak<AtomicBool>, outer: &Waker) -> Waker {
+    Waker::from(Arc::new(FutureWaker { flag, outer: outer.clone() }))
+}
+
+// ---------------------------------------------------------------------------
+// Tick
+// ---------------------------------------------------------------------------
 
 use super::ReactiveScope;
 
@@ -46,12 +79,13 @@ impl ReactiveScope {
                         .signal_accessed
                         .intersects(&dirty_signal_set);
 
-                    if dirty || effect.effect_state.pending_future.is_some() {
-                        updates.push(EffectUpdate {
-                            component_id,
-                            effect,
-                            dirty,
-                        });
+                    let future_needs_poll = effect
+                        .in_flight
+                        .as_ref()
+                        .is_some_and(|f| f.woken.load(Ordering::Acquire));
+
+                    if dirty || future_needs_poll {
+                        updates.push(EffectUpdate { component_id, effect, dirty });
                     } else {
                         c.effects.push(effect);
                     }
@@ -63,12 +97,25 @@ impl ReactiveScope {
 
         for mut update in updates {
             if update.dirty {
-                update.effect.effect_state = (update.effect.effect_fn)(self);
+                // Cancel any in-flight future — the inputs changed, so it's stale.
+                update.effect.in_flight = None;
+                let mut effect_state = (update.effect.effect_fn)(self);
+                // Transfer any freshly produced future into in_flight (woken=true so it
+                // is polled immediately below).
+                update.effect.in_flight = effect_state.pending_future.take();
+                update.effect.effect_state = effect_state;
             }
 
-            if let Some(mut fut) = std::mem::take(&mut update.effect.effect_state.pending_future) {
-                if let Poll::Pending = fut.as_mut().poll(future_ctx) {
-                    update.effect.effect_state.pending_future.replace(fut);
+            // Single poll path: fresh futures start with woken=true, in-flight futures
+            // have woken set by their waker.
+            if let Some(ref mut in_flight) = update.effect.in_flight {
+                // Reset before polling so any wake() concurrent with the poll is
+                // visible on the next tick's Acquire load.
+                in_flight.woken.store(false, Ordering::SeqCst);
+                let waker = make_waker(Arc::downgrade(&in_flight.woken), future_ctx.waker());
+                let mut ctx = Context::from_waker(&waker);
+                if let Poll::Ready(()) = in_flight.future.as_mut().poll(&mut ctx) {
+                    update.effect.in_flight = None;
                 }
             }
 

@@ -1,7 +1,9 @@
-use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, EffectState};
+use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, EffectState, InFlightFuture};
 use crate::signal::Signal;
 use futures::{FutureExt, Stream, StreamExt};
 use std::future::ready;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use super::ReactiveScope;
 
@@ -32,14 +34,19 @@ impl ReactiveScope {
 
             EffectState {
                 signal_accessed,
-                pending_future: Some(Box::pin(resource_fn(input).map(move |result| {
-                    signal.set_and_notify_changes(ResourceState::Ready(result));
-                }))),
+                pending_future: Some(InFlightFuture {
+                    future: Box::pin(resource_fn(input).map(move |result| {
+                        signal.set_and_notify_changes(ResourceState::Ready(result));
+                    })),
+                    woken: Arc::new(AtomicBool::new(true)),
+                }),
             }
         });
 
+        let mut effect_state = effect_fn(self);
         let effect = Effect {
-            effect_state: effect_fn(self),
+            in_flight: effect_state.pending_future.take(),
+            effect_state,
             effect_fn,
         };
 
