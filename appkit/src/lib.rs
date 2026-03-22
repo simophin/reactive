@@ -23,12 +23,6 @@ unsafe extern "C" {
     );
 }
 
-#[link(name = "CoreFoundation", kind = "framework")]
-unsafe extern "C" {
-    fn CFRunLoopRun();
-    fn CFRunLoopGetMain() -> *mut c_void;
-    fn CFRunLoopStop(rl: *mut c_void);
-}
 
 fn main_queue() -> *mut c_void {
     &raw mut _dispatch_main_q
@@ -64,9 +58,7 @@ unsafe extern "C" fn tick_callback(context: *mut c_void) {
 
     let waker = make_waker(state as *mut AppState);
     let mut cx = Context::from_waker(&waker);
-    if state.scope.tick(&mut cx) {
-        schedule_tick(state as *mut AppState);
-    }
+    state.scope.tick(&mut cx);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,14 +109,16 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
     // Bring app to front
     app.activate();
 
-    // Block on the run loop (services both UI events and dispatch queue)
-    unsafe { CFRunLoopRun() };
+    // Block until the app quits — NSApplication's event loop services
+    // both AppKit UI events and the GCD main queue (where ticks are posted).
+    app.run();
 
     // Reclaim
     unsafe { drop(Box::from_raw(state)) };
 }
 
-/// Stop the main run loop, causing [`run_app`] to return.
+/// Stop the app, causing [`run_app`] to return.
 pub fn stop_app() {
-    unsafe { CFRunLoopStop(CFRunLoopGetMain()) };
+    let mtm = unsafe { MainThreadMarker::new_unchecked() };
+    NSApplication::sharedApplication(mtm).terminate(None);
 }

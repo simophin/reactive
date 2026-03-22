@@ -1,3 +1,5 @@
+use crate::BoxedSignal;
+
 pub trait SignalExt: super::Signal {
     /// Create a derived signal by applying `map_fn` to the value.
     /// Requires `Self: Sized` so it stays off the trait-object vtable.
@@ -11,6 +13,14 @@ pub trait SignalExt: super::Signal {
             orig_signal: self.clone(),
             map_fn,
         }
+    }
+
+    fn boxed(self) -> BoxedSignal<Self::Value>
+    where
+        Self: Sized + 'static,
+        Self::Value: Clone + 'static,
+    {
+        Box::new(self)
     }
 }
 
@@ -27,8 +37,7 @@ pub struct SignalMapper<S, F> {
 impl<S, T, F> super::Signal for SignalMapper<S, F>
 where
     S: super::Signal,
-    T: 'static,
-    F: Fn(S::Value) -> T + 'static,
+    F: Fn(S::Value) -> T,
 {
     type Value = T;
 

@@ -9,9 +9,9 @@ use futures::{FutureExt, Stream};
 use slotmap::SlotMap;
 use std::cell::RefCell;
 use std::future::ready;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::rc::Rc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResourceState<T> {
@@ -20,19 +20,29 @@ pub enum ResourceState<T> {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct DirtySignalSet(Rc<RefCell<SortedVec<SignalId>>>);
+pub(crate) struct DirtySignalSet {
+    signals: Rc<RefCell<SortedVec<SignalId>>>,
+    waker: Rc<RefCell<Option<Waker>>>,
+}
 
 impl DirtySignalSet {
     pub fn mark_dirty(&self, signal_id: SignalId) {
-        self.0.borrow_mut().insert(signal_id);
+        self.signals.borrow_mut().insert(signal_id);
+        if let Some(waker) = self.waker.borrow().as_ref() {
+            waker.wake_by_ref();
+        }
+    }
+
+    pub fn set_waker(&self, waker: Waker) {
+        *self.waker.borrow_mut() = Some(waker);
     }
 
     pub fn borrow(&self) -> impl Deref<Target = SortedVec<SignalId>> {
-        self.0.borrow()
+        self.signals.borrow()
     }
 
-    pub fn borrow_mut(&self) -> impl DerefMut<Target = SortedVec<SignalId>> {
-        self.0.borrow_mut()
+    pub fn take(&self) -> SortedVec<SignalId> {
+        std::mem::take(&mut *self.signals.borrow_mut())
     }
 }
 
@@ -362,16 +372,19 @@ impl ReactiveScope {
         }
     }
 
-    pub fn tick(&mut self, future_ctx: &mut Context) -> bool {
+    pub fn tick(&mut self, future_ctx: &mut Context) {
         struct EffectUpdate {
             component_id: ComponentId,
             effect: Effect,
             dirty: bool,
         }
 
+        // Store the waker so mark_dirty can schedule the next tick from anywhere.
+        self.dirty_signals.set_waker(future_ctx.waker().clone());
+
         let mut updates = Vec::new();
         let root = std::mem::take(&mut self.root);
-        let dirty_signal_set = std::mem::take(&mut *self.dirty_signals.borrow_mut());
+        let dirty_signal_set = self.dirty_signals.take();
 
         for component in &root {
             self.traverse_tree_depth_last(*component, &mut |component_id, c| {
@@ -396,18 +409,11 @@ impl ReactiveScope {
 
         self.root = root;
 
-        let mut has_more_dirty_effects = false;
-
         for mut update in updates {
             if update.dirty {
+                // Any mark_dirty calls inside here will wake the waker directly.
                 update.effect.effect_state = (update.effect.effect_fn)(self);
             }
-
-            has_more_dirty_effects |= update
-                .effect
-                .effect_state
-                .signal_accessed
-                .intersects(&*self.dirty_signals.borrow());
 
             if let Some(mut fut) = std::mem::take(&mut update.effect.effect_state.pending_future) {
                 if let Poll::Pending = fut.as_mut().poll(future_ctx) {
@@ -419,8 +425,6 @@ impl ReactiveScope {
                 c.effects.push(update.effect);
             }
         }
-
-        has_more_dirty_effects || !self.dirty_signals.borrow().is_empty()
     }
 }
 
