@@ -39,4 +39,4 @@ tokio-stream = { version = "0.1", features = ["time"] }
 name = "basic"
 
 [[example]]
-name = "github_profile"
+name = "pokedex"

@@ -1,11 +1,11 @@
 mod constant;
 pub mod ext;
 mod primitives;
-mod stored;
+pub(crate) mod stored;
 
 pub use constant::*;
-pub(crate) use stored::BoxedStoredSignal;
 pub use stored::StoredSignal;
+pub(crate) use stored::{BoxedStoredSignal, remove_signal};
 
 pub type SignalId = u64;
 

@@ -9,6 +9,16 @@ use super::view_component::AppKitViewComponent;
 
 pub type ImageView = AppKitViewComponent<NSImageView, ()>;
 
+apple::view_props! {
+    ImageView on NSImageView {
+        editable: bool;
+        image_alignment: NSImageAlignment;
+        image_scaling: NSImageScaling;
+    }
+}
+
+/// Loads a named image (bundle asset or AppKit built-in) and sets it.
+/// Uses a custom Prop because the setter takes `Option<&NSImage>`.
 pub static PROP_IMAGE_NAME: &Prop<ImageView, NSImageView, String> = &Prop::new(|iv, name| {
     let ns_name = NSString::from_str(&name);
     let image = NSImage::imageNamed(&ns_name);

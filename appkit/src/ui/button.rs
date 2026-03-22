@@ -24,7 +24,7 @@ impl Button {
         let mut c = AppKitViewComponent::create(
             move |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let target = ActionTarget::new(on_click, mtm);
+                let target = ActionTarget::new(move |_| on_click(), mtm);
                 let button = unsafe {
                     NSButton::buttonWithTitle_target_action(
                         &NSString::new(),

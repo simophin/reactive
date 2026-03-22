@@ -9,7 +9,7 @@ use objc2_foundation::*;
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[ivars = Box<dyn Fn()>]
+    #[ivars = Box<dyn Fn(&AnyObject)>]
     #[name = "ActionTarget"]
     pub struct ActionTarget;
 
@@ -17,8 +17,8 @@ define_class!(
 
     impl ActionTarget {
         #[unsafe(method(performAction:))]
-        fn perform_action(&self, _sender: &AnyObject) {
-            self.ivars()();
+        fn perform_action(&self, sender: &AnyObject) {
+            self.ivars()(sender);
         }
     }
 );
@@ -26,8 +26,8 @@ define_class!(
 static ACTION_TARGET_KEY: u8 = 0;
 
 impl ActionTarget {
-    pub fn new(callback: impl Fn() + 'static, mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(Box::new(callback) as Box<dyn Fn()>);
+    pub fn new(callback: impl Fn(&AnyObject) + 'static, mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(Box::new(callback) as Box<dyn Fn(&AnyObject)>);
         unsafe { msg_send![super(this), init] }
     }
 

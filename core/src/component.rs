@@ -66,7 +66,7 @@ impl<'a> SetupContext<'a> {
     pub fn create_memo<T: PartialEq + Clone + 'static>(
         &mut self,
         memo_fn: impl FnMut() -> T + 'static,
-    ) -> impl Signal<Value = T> + Clone + 'static {
+    ) -> impl Signal<Value = T> + Copy + 'static {
         self.scope.create_memo(self.component_id, memo_fn)
     }
 
@@ -74,7 +74,7 @@ impl<'a> SetupContext<'a> {
         &mut self,
         input_fn: impl Signal<Value = I> + 'static,
         resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> impl Signal<Value = ResourceState<T>> + Clone + 'static
+    ) -> impl Signal<Value = ResourceState<T>> + Copy + 'static
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -89,7 +89,7 @@ impl<'a> SetupContext<'a> {
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         stream_producer: impl FnMut(I) -> S + 'static,
-    ) -> impl Signal<Value = T> + Clone + 'static
+    ) -> impl Signal<Value = T> + Copy + 'static
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -110,7 +110,7 @@ impl<'a> SetupContext<'a> {
     pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
-    ) -> Option<impl Signal<Value = T> + Clone + 'static> {
+    ) -> Option<impl Signal<Value = T> + Copy + 'static> {
         self.scope.use_context(self.component_id, key)
     }
 

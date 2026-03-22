@@ -32,7 +32,7 @@ impl Checkbox {
         let mut c = AppKitViewComponent::create(
             move |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let target = ActionTarget::new(on_change, mtm);
+                let target = ActionTarget::new(move |_| on_change(), mtm);
                 let checkbox = unsafe {
                     NSButton::checkboxWithTitle_target_action(
                         &NSString::new(),

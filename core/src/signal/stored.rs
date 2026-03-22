@@ -1,12 +1,35 @@
 use std::any::Any;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::reactive_scope::{ActiveSignalTracker, DirtySignalSet};
+use crate::reactive_scope::{WeakActiveSignalTracker, WeakDirtySignalSet};
 use crate::signal::{Signal, SignalId};
 
 static SIGNAL_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+// ---------------------------------------------------------------------------
+// Global signal store
+// ---------------------------------------------------------------------------
+
+pub(crate) struct SignalData {
+    pub value: Box<dyn Any>,
+    pub dirty: WeakDirtySignalSet,
+    pub tracker: WeakActiveSignalTracker,
+}
+
+thread_local! {
+    static SIGNALS: Rc<RefCell<HashMap<SignalId, SignalData>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+}
+
+pub(crate) fn remove_signal(id: SignalId) {
+    SIGNALS.with(|map| {
+        map.borrow_mut().remove(&id);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // StoredSignal
@@ -14,33 +37,36 @@ static SIGNAL_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub struct StoredSignal<T> {
     id: SignalId,
-    value: Rc<RefCell<T>>,
-    dirty_signal_set: DirtySignalSet,
-    active_signal_tracker: ActiveSignalTracker,
+    _marker: PhantomData<T>,
 }
+
+impl<T> Copy for StoredSignal<T> {}
 
 impl<T> Clone for StoredSignal<T> {
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            value: Rc::clone(&self.value),
-            dirty_signal_set: self.dirty_signal_set.clone(),
-            active_signal_tracker: self.active_signal_tracker.clone(),
-        }
+        *self
     }
 }
 
 impl<T> StoredSignal<T> {
-    pub(crate) fn new(
-        init: T,
-        dirty_signal_set: DirtySignalSet,
-        active_signal_tracker: ActiveSignalTracker,
-    ) -> Self {
+    pub(crate) fn new(init: T, dirty: WeakDirtySignalSet, tracker: WeakActiveSignalTracker) -> Self
+    where
+        T: 'static,
+    {
+        let id = SIGNAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+        SIGNALS.with(|map| {
+            map.borrow_mut().insert(
+                id,
+                SignalData {
+                    value: Box::new(init),
+                    dirty,
+                    tracker,
+                },
+            );
+        });
         Self {
-            id: SIGNAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
-            value: Rc::new(RefCell::new(init)),
-            dirty_signal_set,
-            active_signal_tracker,
+            id,
+            _marker: PhantomData,
         }
     }
 
@@ -48,13 +74,30 @@ impl<T> StoredSignal<T> {
         self.id
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T) -> bool) {
-        if f(&mut *self.value.borrow_mut()) {
-            self.dirty_signal_set.mark_dirty(self.id);
-        }
+    pub fn update(&self, f: impl FnOnce(&mut T) -> bool)
+    where
+        T: 'static,
+    {
+        SIGNALS.with(|map| {
+            let mut map = map.borrow_mut();
+            if let Some(data) = map.get_mut(&self.id) {
+                let value = data
+                    .value
+                    .downcast_mut::<T>()
+                    .expect("signal type mismatch");
+                if f(value) {
+                    if let Some(dirty) = data.dirty.upgrade() {
+                        dirty.mark_dirty(self.id);
+                    }
+                }
+            }
+        });
     }
 
-    pub fn set_and_notify_changes(&self, value: T) {
+    pub fn set_and_notify_changes(&self, value: T)
+    where
+        T: 'static,
+    {
         self.update(|v| {
             *v = value;
             true
@@ -63,7 +106,7 @@ impl<T> StoredSignal<T> {
 
     pub fn update_if_changes(&self, value: T)
     where
-        T: PartialEq,
+        T: PartialEq + 'static,
     {
         self.update(|v| {
             if v != &value {
@@ -80,9 +123,17 @@ impl<T: Clone + 'static> Signal for StoredSignal<T> {
     type Value = T;
 
     fn read(&self) -> T {
-        let v = (*self.value.borrow()).clone();
-        self.active_signal_tracker.on_accessed(self.id);
-        v
+        SIGNALS.with(|map| {
+            let map = map.borrow();
+            let data = map.get(&self.id).expect("signal not found");
+            if let Some(tracker) = data.tracker.upgrade() {
+                tracker.on_accessed(self.id);
+            }
+            data.value
+                .downcast_ref::<T>()
+                .expect("signal type mismatch")
+                .clone()
+        })
     }
 }
 
@@ -96,7 +147,7 @@ trait RawStoreSignal: Any {
 
 impl<T: 'static> RawStoreSignal for StoredSignal<T> {
     fn clone_to_box(&self) -> Box<dyn RawStoreSignal> {
-        Box::new(self.clone())
+        Box::new(*self)
     }
 }
 
