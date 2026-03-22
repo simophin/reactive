@@ -1,11 +1,11 @@
 use apple::Prop;
-use apple::ViewBuilder;
-use apple::bindable::BindableView;
 use objc2_app_kit::{NSFont, NSTextAlignment, NSTextField};
 use objc2_foundation::{MainThreadMarker, NSInteger, NSString};
-use reactive_core::{Component, SetupContext, Signal};
+use reactive_core::Signal;
 
-use super::context::PARENT_VIEW;
+use super::view_component::AppKitViewComponent;
+
+pub type Text = AppKitViewComponent<NSTextField, ()>;
 
 apple::view_props! {
     Text on NSTextField {
@@ -21,39 +21,16 @@ pub static PROP_FONT_SIZE: &Prop<Text, NSTextField, f64> = &Prop::new(|label, si
     label.setFont(Some(&NSFont::systemFontOfSize(size)));
 });
 
-pub struct Text {
-    builder: ViewBuilder<NSTextField>,
-}
-
-impl BindableView<NSTextField> for Text {
-    fn get_builder(&mut self) -> &mut ViewBuilder<NSTextField> {
-        &mut self.builder
-    }
-}
-
 impl Text {
-    pub fn new(text: impl Signal<Value = String> + 'static) -> Self {
-        let mut builder = ViewBuilder::new(|_| {
-            let mtm = MainThreadMarker::new().expect("must be on main thread");
-            NSTextField::labelWithString(&NSString::from_str(""), mtm)
-        });
-        builder.bind(PROP_STRING_VALUE, text);
-        Self { builder }
-    }
-}
-
-impl Component for Text {
-    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let label = self.builder.setup(ctx);
-
-        if let Some(parent) = ctx.use_context(&PARENT_VIEW) {
-            parent
-                .read()
-                .add_child(label.clone().into_super().into_super());
-        }
-
-        ctx.on_cleanup(move || {
-            let _ = label;
-        });
+    pub fn new_text(text: impl Signal<Value = String> + 'static) -> Self {
+        let mut c = AppKitViewComponent::create(
+            |_| {
+                let mtm = MainThreadMarker::new().expect("must be on main thread");
+                NSTextField::labelWithString(&NSString::from_str(""), mtm)
+            },
+            |view| view.into_super().into_super(),
+        );
+        c.as_mut().bind(PROP_STRING_VALUE, text);
+        c
     }
 }

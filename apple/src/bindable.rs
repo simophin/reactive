@@ -2,9 +2,7 @@ use crate::{Prop, ViewBuilder};
 use objc2::Message;
 use reactive_core::Signal;
 
-pub trait BindableView<V> {
-    fn get_builder(&mut self) -> &mut ViewBuilder<V>;
-
+pub trait BindableView<V>: AsMut<ViewBuilder<V>> {
     fn bind<T>(
         mut self,
         props: &'static Prop<Self, V, T>,
@@ -14,7 +12,7 @@ pub trait BindableView<V> {
         Self: Sized,
         V: Message,
     {
-        self.get_builder().bind(props, signal);
+        self.as_mut().bind(props, signal);
         self
     }
 }
