@@ -1,5 +1,5 @@
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, EffectState};
-use crate::signal::{Signal, StoredSignal};
+use crate::signal::Signal;
 use futures::{FutureExt, Stream, StreamExt};
 use std::future::ready;
 
@@ -19,7 +19,7 @@ impl ReactiveScope {
         mut resource_fn: impl FnMut(I) -> F + 'static,
     ) -> impl Signal<Value = ResourceState<T>> + Copy + 'static
     where
-        I: Clone + 'static,
+        I: 'static,
         T: Clone + 'static,
         F: Future<Output = T> + 'static,
     {
@@ -58,7 +58,7 @@ impl ReactiveScope {
         mut stream_producer: impl FnMut(I) -> S + 'static,
     ) -> impl Signal<Value = T> + Copy + 'static
     where
-        I: Clone + 'static,
+        I: 'static,
         T: Clone + 'static,
         S: Stream<Item = T> + 'static,
     {

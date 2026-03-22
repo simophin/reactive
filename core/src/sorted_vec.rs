@@ -33,24 +33,33 @@ impl<T: Ord> SortedVec<T> {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-
     pub fn intersects(&self, other: &Self) -> bool {
-        let mut i = 0;
-        let mut j = 0;
-
-        while i < self.0.len() && j < other.0.len() {
-            if self.0[i] == other.0[j] {
-                return true;
-            } else if self.0[i] < other.0[j] {
-                i += 1;
-            } else {
-                j += 1;
-            }
+        if self.0.is_empty() || other.0.is_empty() {
+            return false;
         }
 
-        false
+        let (small, large) = if self.0.len() <= other.0.len() {
+            (&self.0, &other.0)
+        } else {
+            (&other.0, &self.0)
+        };
+
+        // Binary search wins when k*log(n) < k+n. Use floor log2 via leading_zeros.
+        let log2_large = (usize::BITS - large.len().leading_zeros()) as usize;
+        if small.len() * log2_large < small.len() + large.len()
+        {
+            small.iter().any(|x| large.binary_search(x).is_ok())
+        } else {
+            let mut i = 0;
+            let mut j = 0;
+            while i < small.len() && j < large.len() {
+                match small[i].cmp(&large[j]) {
+                    std::cmp::Ordering::Equal => return true,
+                    std::cmp::Ordering::Less => i += 1,
+                    std::cmp::Ordering::Greater => j += 1,
+                }
+            }
+            false
+        }
     }
 }
