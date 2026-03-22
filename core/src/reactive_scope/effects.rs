@@ -1,4 +1,4 @@
-use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, EffectState};
+use crate::component_scope::{BoxedEffectFn, ComponentId, Effect};
 use crate::signal::{Signal, StoredSignal};
 
 use super::ReactiveScope;
@@ -16,18 +16,11 @@ impl ReactiveScope {
             let (value, signal_accessed) =
                 signal_tracker.run_tracking(|| effect_fn(scope, std::mem::take(&mut last_value)));
             last_value.replace(value);
-            EffectState {
-                signal_accessed,
-                pending_future: None,
-            }
+            (signal_accessed, None)
         });
 
-        let mut effect_state = effect_fn(self);
-        let effect = Effect {
-            in_flight: effect_state.pending_future.take(),
-            effect_state,
-            effect_fn,
-        };
+        let (signal_accessed, in_flight) = effect_fn(self);
+        let effect = Effect { effect_fn, signal_accessed, in_flight };
 
         if let Some(component) = self.components.get_mut(component_id) {
             component.effects.push(effect);
@@ -46,14 +39,12 @@ impl ReactiveScope {
         let signal_tracker = self.active_signal_tracker.clone();
 
         let effect = Effect {
-            effect_fn: Box::new({
-                move |_| {
-                    let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
-                    signal.update_if_changes(value);
-                    EffectState { signal_accessed, pending_future: None }
-                }
+            effect_fn: Box::new(move |_| {
+                let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
+                signal.update_if_changes(value);
+                (signal_accessed, None)
             }),
-            effect_state: EffectState { signal_accessed, pending_future: None },
+            signal_accessed,
             in_flight: None,
         };
 

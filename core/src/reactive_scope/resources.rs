@@ -1,4 +1,4 @@
-use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, EffectState, InFlightFuture};
+use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, InFlightFuture};
 use crate::signal::Signal;
 use futures::{FutureExt, Stream, StreamExt};
 use std::future::ready;
@@ -32,22 +32,20 @@ impl ReactiveScope {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
-            EffectState {
-                signal_accessed,
-                pending_future: Some(InFlightFuture {
-                    future: Box::pin(resource_fn(input).map(move |result| {
-                        signal.set_and_notify_changes(ResourceState::Ready(result));
-                    })),
-                    woken: Arc::new(AtomicBool::new(true)),
-                }),
-            }
+            let in_flight = Some(InFlightFuture {
+                future: Box::pin(resource_fn(input).map(move |result| {
+                    signal.set_and_notify_changes(ResourceState::Ready(result));
+                })),
+                woken: Arc::new(AtomicBool::new(true)),
+            });
+            (signal_accessed, in_flight)
         });
 
-        let mut effect_state = effect_fn(self);
+        let (signal_accessed, in_flight) = effect_fn(self);
         let effect = Effect {
-            in_flight: effect_state.pending_future.take(),
-            effect_state,
             effect_fn,
+            signal_accessed,
+            in_flight,
         };
 
         if let Some(component) = self.components.get_mut(component_id) {

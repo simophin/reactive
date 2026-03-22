@@ -26,23 +26,17 @@ impl<T> ContextKey<T> {
     }
 }
 
-pub(crate) struct EffectState {
-    pub signal_accessed: SortedVec<SignalId>,
-    /// A future produced by this effect run, always transferred to `Effect::in_flight`
-    /// immediately after the effect fn returns. Always `None` on a stored `Effect`.
-    pub pending_future: Option<InFlightFuture>,
-}
-
-pub(crate) type BoxedEffectFn = Box<dyn FnMut(&mut ReactiveScope) -> EffectState>;
-
 pub(crate) struct InFlightFuture {
     pub future: Pin<Box<dyn Future<Output = ()>>>,
     pub woken: Arc<AtomicBool>,
 }
 
+pub(crate) type BoxedEffectFn =
+    Box<dyn FnMut(&mut ReactiveScope) -> (SortedVec<SignalId>, Option<InFlightFuture>)>;
+
 pub(crate) struct Effect {
     pub effect_fn: BoxedEffectFn,
-    pub effect_state: EffectState,
+    pub signal_accessed: SortedVec<SignalId>,
     pub in_flight: Option<InFlightFuture>,
 }
 

@@ -74,10 +74,7 @@ impl ReactiveScope {
         for component in &root {
             self.traverse_tree_depth_last(*component, &mut |component_id, c| {
                 for effect in std::mem::take(&mut c.effects) {
-                    let dirty = effect
-                        .effect_state
-                        .signal_accessed
-                        .intersects(&dirty_signal_set);
+                    let dirty = effect.signal_accessed.intersects(&dirty_signal_set);
 
                     let future_needs_poll = effect
                         .in_flight
@@ -98,12 +95,9 @@ impl ReactiveScope {
         for mut update in updates {
             if update.dirty {
                 // Cancel any in-flight future — the inputs changed, so it's stale.
-                update.effect.in_flight = None;
-                let mut effect_state = (update.effect.effect_fn)(self);
-                // Transfer any freshly produced future into in_flight (woken=true so it
-                // is polled immediately below).
-                update.effect.in_flight = effect_state.pending_future.take();
-                update.effect.effect_state = effect_state;
+                let (signal_accessed, in_flight) = (update.effect.effect_fn)(self);
+                update.effect.signal_accessed = signal_accessed;
+                update.effect.in_flight = in_flight;
             }
 
             // Single poll path: fresh futures start with woken=true, in-flight futures
