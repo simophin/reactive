@@ -97,7 +97,10 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
         let show = Box::new(Show::new(
-            { let visible = visible.clone(); move || visible.read() },
+            {
+                let visible = visible.clone();
+                move || visible.read()
+            },
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {

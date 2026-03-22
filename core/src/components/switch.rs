@@ -93,13 +93,21 @@ mod tests {
 
         let switch = Box::new(
             Switch::new(|| Box::new(()))
-                .case({ let mode = mode.clone(); move || mode.read() == "a" }, {
-                    let log = Arc::clone(&log);
-                    move || -> BoxedComponent {
+                .case(
+                    {
+                        let mode = mode.clone();
+                        move || mode.read() == "a"
+                    },
+                    {
                         let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
-                    }
-                })
+                        move || -> BoxedComponent {
+                            let log = Arc::clone(&log);
+                            Box::new(move |_: &mut SetupContext| {
+                                log.lock().unwrap().push("branch_a")
+                            })
+                        }
+                    },
+                )
                 .case(move || mode.read() == "b", {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
@@ -126,20 +134,36 @@ mod tests {
 
         let switch = Box::new(
             Switch::new(|| Box::new(()))
-                .case({ let mode = mode.clone(); move || mode.read() == "a" }, {
-                    let log = Arc::clone(&log);
-                    move || -> BoxedComponent {
+                .case(
+                    {
+                        let mode = mode.clone();
+                        move || mode.read() == "a"
+                    },
+                    {
                         let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
-                    }
-                })
-                .case({ let mode = mode.clone(); move || mode.read() == "b" }, {
-                    let log = Arc::clone(&log);
-                    move || -> BoxedComponent {
+                        move || -> BoxedComponent {
+                            let log = Arc::clone(&log);
+                            Box::new(move |_: &mut SetupContext| {
+                                log.lock().unwrap().push("branch_a")
+                            })
+                        }
+                    },
+                )
+                .case(
+                    {
+                        let mode = mode.clone();
+                        move || mode.read() == "b"
+                    },
+                    {
                         let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_b"))
-                    }
-                }),
+                        move || -> BoxedComponent {
+                            let log = Arc::clone(&log);
+                            Box::new(move |_: &mut SetupContext| {
+                                log.lock().unwrap().push("branch_b")
+                            })
+                        }
+                    },
+                ),
         );
 
         switch.setup(&mut SetupContext {
@@ -193,13 +217,15 @@ mod tests {
 
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
 
-        let switch = Box::new(Switch::new(|| Box::new(())).case(move || mode.read() == "a", {
-            let log = Arc::clone(&log);
-            move || -> BoxedComponent {
+        let switch = Box::new(
+            Switch::new(|| Box::new(())).case(move || mode.read() == "a", {
                 let log = Arc::clone(&log);
-                Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
-            }
-        }));
+                move || -> BoxedComponent {
+                    let log = Arc::clone(&log);
+                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
+                }
+            }),
+        );
 
         switch.setup(&mut SetupContext {
             scope: &mut scope,

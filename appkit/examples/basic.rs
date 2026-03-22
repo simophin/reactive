@@ -1,4 +1,7 @@
-use appkit::{Button, HStack, PROP_ENABLED, Text, VStack, Window, run_app};
+use appkit::button::PROP_ENABLED;
+use appkit::stack::PROP_SPACING;
+use appkit::text::PROP_FONT_SIZE;
+use appkit::{BindableView, Button, Stack, Text, Window, run_app};
 use reactive_core::IntoSignal;
 use reactive_core::ext::SignalExt;
 
@@ -15,13 +18,16 @@ fn main() {
 
         ctx.child(
             Window::new("Reactive App", 400.0, 300.0).child(
-                VStack::new()
-                    .spacing(16.0)
-                    .child(Text::new(count.clone().map(|c| format!("Count: {c}"))).font_size(24.0))
+                Stack::vertical()
+                    .bind(PROP_SPACING, 16.0f64.into_signal())
                     .child(
-                        HStack::new()
-                            .spacing(8.0)
-                            .child(Button::new("−".into_signal().map(|s| s.to_string()), {
+                        Text::new(count.clone().map(|c| format!("Count: {c}")))
+                            .bind(PROP_FONT_SIZE, 24f64.into_signal()),
+                    )
+                    .child(
+                        Stack::horizontal()
+                            .bind(PROP_SPACING, 8.0f64.into_signal())
+                            .child(Button::new(|| "−".to_string(), {
                                 let count = count.clone();
                                 move || {
                                     count.update(|v| {
@@ -42,7 +48,7 @@ fn main() {
                                 })
                                 .bind(PROP_ENABLED, count.clone().map(|c| c % 2 == 0)),
                             )
-                            .child(Button::new("Reset".to_string().into_signal(), {
+                            .child(Button::new(|| "Reset".to_string(), {
                                 let count = count.clone();
                                 move || count.set_and_notify_changes(0)
                             })),
