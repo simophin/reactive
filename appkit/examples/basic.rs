@@ -1,4 +1,5 @@
-use appkit::{Button, HStack, Text, VStack, Window, run_app};
+use appkit::{Button, HStack, PROP_ENABLED, Text, VStack, Window, run_app};
+use reactive_core::IntoSignal;
 use reactive_core::ext::SignalExt;
 
 fn main() {
@@ -16,11 +17,11 @@ fn main() {
             Window::new("Reactive App", 400.0, 300.0).child(
                 VStack::new()
                     .spacing(16.0)
-                    .child(Text::new(count.map(|c| format!("Count: {c}"))).font_size(24.0))
+                    .child(Text::new(count.clone().map(|c| format!("Count: {c}"))).font_size(24.0))
                     .child(
                         HStack::new()
                             .spacing(8.0)
-                            .child(Button::new("−", {
+                            .child(Button::new("−".into_signal().map(|s| s.to_string()), {
                                 let count = count.clone();
                                 move || {
                                     count.update(|v| {
@@ -29,16 +30,19 @@ fn main() {
                                     })
                                 }
                             }))
-                            .child(Button::new("+", {
-                                let count = count.clone();
-                                move || {
-                                    count.update(|v| {
-                                        *v += 1;
-                                        true
-                                    })
-                                }
-                            }))
-                            .child(Button::new("Reset", {
+                            .child(
+                                Button::new(count.clone().map(|c| format!("+ Count: {c}")), {
+                                    let count = count.clone();
+                                    move || {
+                                        count.update(|v| {
+                                            *v += 1;
+                                            true
+                                        })
+                                    }
+                                })
+                                .bind(PROP_ENABLED, count.clone().map(|c| c % 2 == 0)),
+                            )
+                            .child(Button::new("Reset".to_string().into_signal(), {
                                 let count = count.clone();
                                 move || count.set_and_notify_changes(0)
                             })),

@@ -2,6 +2,7 @@ mod constant;
 pub mod ext;
 mod stored;
 
+pub use constant::*;
 pub(crate) use stored::BoxedStoredSignal;
 pub use stored::StoredSignal;
 
@@ -39,6 +40,14 @@ impl<S: Signal> Signal for Option<S> {
 
     fn read(&self) -> Self::Value {
         Some(self.as_ref()?.read())
+    }
+}
+
+impl<T> Signal for Box<dyn Signal<Value = T>> {
+    type Value = T;
+
+    fn read(&self) -> Self::Value {
+        Box::as_ref(self).read()
     }
 }
 
