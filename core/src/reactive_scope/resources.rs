@@ -49,7 +49,7 @@ impl ReactiveScope {
         };
 
         if let Some(component) = self.components.get_mut(component_id) {
-            component.effects.push(effect);
+            component.push_effect(effect);
         }
 
         signal

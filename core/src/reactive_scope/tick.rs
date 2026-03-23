@@ -73,7 +73,7 @@ impl ReactiveScope {
 
         for component in &root {
             self.traverse_tree_depth_last(*component, &mut |component_id, c| {
-                for effect in std::mem::take(&mut c.effects) {
+                for effect in std::mem::take(&mut c.active_effects) {
                     let dirty = effect.signal_accessed.intersects(&dirty_signal_set);
 
                     let future_needs_poll = effect
@@ -84,7 +84,7 @@ impl ReactiveScope {
                     if dirty || future_needs_poll {
                         updates.push(EffectUpdate { component_id, effect, dirty });
                     } else {
-                        c.effects.push(effect);
+                        c.active_effects.push(effect);
                     }
                 }
             });
@@ -114,7 +114,7 @@ impl ReactiveScope {
             }
 
             if let Some(c) = self.components.get_mut(update.component_id) {
-                c.effects.push(update.effect);
+                c.push_effect(update.effect);
             }
         }
     }
