@@ -5,13 +5,13 @@ use super::ReactiveScope;
 
 impl ReactiveScope {
     pub(crate) fn provide_context<T: Clone + 'static>(
-        &mut self,
+        &self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
         initial_value: T,
     ) -> StoredSignal<T> {
         let signal = self.create_signal(initial_value);
-        if let Some(component) = self.components.get_mut(component_id) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
             component.context.insert(key.id(), signal.into());
         }
         signal
@@ -22,13 +22,14 @@ impl ReactiveScope {
         component_id: ComponentId,
         key: &'static ContextKey<T>,
     ) -> Option<ReadSignal<T>> {
-        let mut scope = self.components.get(component_id);
+        let data = self.0.borrow();
+        let mut scope = data.components.get(component_id);
 
         while let Some(component) = scope {
             if let Some(signal) = component.context.get(&key.id()) {
                 return signal.downcast_ref().copied().map(ReadSignal);
             }
-            scope = component.parent.and_then(|id| self.components.get(id));
+            scope = component.parent.and_then(|id| data.components.get(id));
         }
 
         None
@@ -46,7 +47,7 @@ mod tests {
     fn test_context() {
         static THEME: ContextKey<&str> = ContextKey::new();
 
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         scope.provide_context(root, &THEME, "dark");
@@ -61,7 +62,7 @@ mod tests {
     fn test_context_override() {
         static THEME: ContextKey<&str> = ContextKey::new();
 
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         scope.provide_context(root, &THEME, "dark");
 

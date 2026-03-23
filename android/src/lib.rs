@@ -1,8 +1,13 @@
 extern crate self as android;
 
 use std::marker::PhantomData;
+use std::task::{Context, Waker};
 
 pub use android_macros::view_props;
+use jni::objects::JClass;
+use jni::sys::jlong;
+use jni::JNIEnv;
+use reactive_core::ReactiveScope;
 
 /// A static descriptor for a Java setter method, parameterised by the JNI type
 /// of the argument.  Holds only `&'static str` data; no allocation, no
@@ -25,6 +30,46 @@ impl<T> PropDescriptor<T> {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// JNI entrypoints — called by com.reactive.ReactiveScope (Kotlin)
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn Java_com_reactive_ReactiveScope_nativeCreate(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    let scope = Box::new(ReactiveScope::default());
+    Box::into_raw(scope) as jlong
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_reactive_ReactiveScope_nativeDestroy(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    if ptr != 0 {
+        unsafe { drop(Box::from_raw(ptr as *mut ReactiveScope)) };
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_reactive_ReactiveScope_nativeTick(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    let scope = unsafe { &mut *(ptr as *mut ReactiveScope) };
+    let waker = Waker::noop();
+    let mut ctx = Context::from_waker(&waker);
+    scope.tick(&mut ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

@@ -18,7 +18,7 @@ pub enum ResourceState<T> {
 
 impl ReactiveScope {
     pub(crate) fn create_resource<I, T, F>(
-        &mut self,
+        &self,
         component_id: ComponentId,
         input_signal: impl Signal<Value = I> + 'static,
         mut resource_fn: impl FnMut(I) -> F + 'static,
@@ -29,10 +29,10 @@ impl ReactiveScope {
         F: Future<Output = T> + 'static,
     {
         let signal = self.create_signal(ResourceState::<T>::Loading(None));
-        let active_signal_tracker = self.active_signal_tracker.clone();
+        let active_signal_tracker = self.0.borrow().active_signal_tracker.clone();
         let last_ready: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
 
-        let mut effect_fn: BoxedEffectFn = Box::new(move |_: &mut ReactiveScope| {
+        let mut effect_fn: BoxedEffectFn = Box::new(move |_: &ReactiveScope| {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
@@ -56,7 +56,7 @@ impl ReactiveScope {
             in_flight,
         };
 
-        if let Some(component) = self.components.get_mut(component_id) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
             component.push_effect(effect);
         }
 
@@ -64,7 +64,7 @@ impl ReactiveScope {
     }
 
     pub(crate) fn create_stream<S, I, T>(
-        &mut self,
+        &self,
         component_id: ComponentId,
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_resource() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         let input_signal = scope.create_signal(42i32);
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_resource_refires_on_input_change() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         let input = scope.create_signal(1i32);
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_resource_resets_to_loading_on_input_change() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         let input = scope.create_signal(1i32);
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_resource_dispose_during_loading() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let child = scope.create_child_component(Some(root));
 
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_stream() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         let signal =
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn test_stream_dispose() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let child = scope.create_child_component(Some(root));
 

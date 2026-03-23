@@ -131,7 +131,10 @@ pub fn view_props(input: TokenStream) -> TokenStream {
 
         let full_sig = format!("({param_sig})V");
         let method_name = to_setter(&prop.name.to_string());
-        let const_name = Ident::new(&to_screaming_snake(&prop.name.to_string()), Span::call_site());
+        let const_name = Ident::new(
+            &to_screaming_snake(&prop.name.to_string()),
+            Span::call_site(),
+        );
         let rust_type = jni_rust_type(&ty_str);
 
         output.extend(quote! {

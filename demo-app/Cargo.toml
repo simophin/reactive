@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["android", "macos"]
+
+[package]
+name = "demo-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reactive_core = { path = "../core", package = "core" }

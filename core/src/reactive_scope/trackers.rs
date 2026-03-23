@@ -1,7 +1,7 @@
 use crate::signal::SignalId;
 use crate::sorted_vec::SortedVec;
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::task::Waker;
 
 // ---------------------------------------------------------------------------
@@ -29,27 +29,6 @@ impl DirtySignalSet {
     pub fn take(&self) -> SortedVec<SignalId> {
         std::mem::take(&mut *self.signals.borrow_mut())
     }
-
-    pub fn downgrade(&self) -> WeakDirtySignalSet {
-        WeakDirtySignalSet {
-            signals: Rc::downgrade(&self.signals),
-            waker: Rc::downgrade(&self.waker),
-        }
-    }
-}
-
-pub(crate) struct WeakDirtySignalSet {
-    signals: Weak<RefCell<SortedVec<SignalId>>>,
-    waker: Weak<RefCell<Option<Waker>>>,
-}
-
-impl WeakDirtySignalSet {
-    pub fn upgrade(&self) -> Option<DirtySignalSet> {
-        Some(DirtySignalSet {
-            signals: self.signals.upgrade()?,
-            waker: self.waker.upgrade()?,
-        })
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -73,23 +52,5 @@ impl ActiveSignalTracker {
         let result = f();
         let accessed = self.active_tracking.borrow_mut().pop().unwrap();
         (result, accessed)
-    }
-
-    pub fn downgrade(&self) -> WeakActiveSignalTracker {
-        WeakActiveSignalTracker {
-            active_tracking: Rc::downgrade(&self.active_tracking),
-        }
-    }
-}
-
-pub(crate) struct WeakActiveSignalTracker {
-    active_tracking: Weak<RefCell<Vec<SortedVec<SignalId>>>>,
-}
-
-impl WeakActiveSignalTracker {
-    pub fn upgrade(&self) -> Option<ActiveSignalTracker> {
-        Some(ActiveSignalTracker {
-            active_tracking: self.active_tracking.upgrade()?,
-        })
     }
 }

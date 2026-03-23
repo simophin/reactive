@@ -5,20 +5,23 @@ use super::ReactiveScope;
 
 impl ReactiveScope {
     pub(crate) fn create_effect<T: 'static>(
-        &mut self,
+        &self,
         component_id: ComponentId,
-        mut effect_fn: impl for<'a> FnMut(&mut ReactiveScope, Option<T>) -> T + 'static,
+        mut effect_fn: impl for<'a> FnMut(&ReactiveScope, Option<T>) -> T + 'static,
     ) {
-        let signal_tracker = self.active_signal_tracker.clone();
+        // Clone the tracker handle before dropping the borrow.
+        let signal_tracker = self.0.borrow().active_signal_tracker.clone();
         let mut last_value = None;
 
-        let mut effect_fn: BoxedEffectFn = Box::new(move |scope| {
+        let mut effect_fn: BoxedEffectFn = Box::new(move |scope: &ReactiveScope| {
             let (value, signal_accessed) =
                 signal_tracker.run_tracking(|| effect_fn(scope, std::mem::take(&mut last_value)));
             last_value.replace(value);
             (signal_accessed, None)
         });
 
+        // Run once immediately — no borrow held, so the closure may freely call
+        // any scope method without risking a RefCell panic.
         let (signal_accessed, in_flight) = effect_fn(self);
         let effect = Effect {
             effect_fn,
@@ -26,24 +29,24 @@ impl ReactiveScope {
             in_flight,
         };
 
-        if let Some(component) = self.components.get_mut(component_id) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
             component.push_effect(effect);
         }
     }
 
     pub(crate) fn create_memo<T: 'static>(
-        &mut self,
+        &self,
         component_id: ComponentId,
         mut memo_fn: impl FnMut() -> T + 'static,
     ) -> ReadSignal<T> {
-        let (initial_value, signal_accessed) =
-            self.active_signal_tracker.run_tracking(|| memo_fn());
+        let signal_tracker = self.0.borrow().active_signal_tracker.clone();
+        let (initial_value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
 
         let signal: StoredSignal<T> = self.create_signal(initial_value);
-        let signal_tracker = self.active_signal_tracker.clone();
+        let signal_tracker = self.0.borrow().active_signal_tracker.clone();
 
         let effect = Effect {
-            effect_fn: Box::new(move |_| {
+            effect_fn: Box::new(move |_: &ReactiveScope| {
                 let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
                 signal.set_and_notify_changes(value);
                 (signal_accessed, None)
@@ -52,7 +55,7 @@ impl ReactiveScope {
             in_flight: None,
         };
 
-        if let Some(component) = self.components.get_mut(component_id) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
             component.push_effect(effect);
         }
 
@@ -71,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_signal_and_effect() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
 
         let count = scope.create_signal(0);

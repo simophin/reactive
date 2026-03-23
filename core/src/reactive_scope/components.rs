@@ -3,41 +3,56 @@ use crate::component_scope::{ComponentId, ComponentScope};
 use super::ReactiveScope;
 
 impl ReactiveScope {
-    pub(crate) fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
+    pub(crate) fn create_child_component(&self, parent: Option<ComponentId>) -> ComponentId {
+        let mut data = self.0.borrow_mut();
         let mut component = ComponentScope::default();
         component.parent = parent;
-        let component_id = self.components.insert(component);
-        match parent.and_then(|p| self.components.get_mut(p)) {
-            Some(parent) => parent.children.push(component_id),
-            None => self.root.push(component_id),
+        let component_id = data.components.insert(component);
+        match parent.and_then(|p| data.components.get_mut(p)) {
+            Some(parent_scope) => parent_scope.children.push(component_id),
+            None => data.root.push(component_id),
         }
         component_id
     }
 
-    pub(crate) fn dispose_component(&mut self, id: ComponentId) {
-        let Some(mut component) = self.components.remove(id) else {
+    pub fn dispose_component(&self, id: ComponentId) {
+        // Remove the component in a short borrow, then drop the borrow before
+        // recursing or calling cleanup fns (which are user code and may call
+        // back into the scope).
+        let component = { self.0.borrow_mut().components.remove(id) };
+        let Some(component) = component else {
             return;
         };
 
-        for child_id in std::mem::take(&mut component.children) {
+        for child_id in component.children {
             self.dispose_component(child_id);
         }
 
         for cleanup_fn in component.cleanup {
-            cleanup_fn();
+            cleanup_fn(); // no borrow held — user code may call scope methods
         }
     }
 
-    pub(crate) fn dispose_all_children(&mut self, id: ComponentId) {
-        if let Some(component) = self.components.get_mut(id) {
-            for child_id in std::mem::take(&mut component.children) {
-                self.dispose_component(child_id);
-            }
+    pub(crate) fn dispose_all_children(&self, id: ComponentId) {
+        let children = {
+            let mut data = self.0.borrow_mut();
+            data.components
+                .get_mut(id)
+                .map(|c| std::mem::take(&mut c.children))
+                .unwrap_or_default()
+        }; // borrow released
+
+        for child_id in children {
+            self.dispose_component(child_id);
         }
     }
 
-    pub(crate) fn on_cleanup(&mut self, component_id: ComponentId, cleanup_fn: impl FnOnce() + 'static) {
-        if let Some(component) = self.components.get_mut(component_id) {
+    pub(crate) fn on_cleanup(
+        &self,
+        component_id: ComponentId,
+        cleanup_fn: impl FnOnce() + 'static,
+    ) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
             component.cleanup.push(Box::new(cleanup_fn));
         }
     }
@@ -54,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_component_dispose() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let child = scope.create_child_component(Some(root));
 

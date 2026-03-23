@@ -19,8 +19,8 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
     app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
     // Set up reactive scope
-    let mut scope = ReactiveScope::default();
-    setup(&mut SetupContext::new_root(&mut scope));
+    let scope = ReactiveScope::default();
+    setup(&mut SetupContext::new_root(&scope));
 
     let state = Box::into_raw(Box::new(AppState {
         scope,

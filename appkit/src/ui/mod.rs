@@ -15,6 +15,7 @@ pub use apple::action_target;
 pub use apple::bindable::BindableView;
 pub use button::*;
 pub use checkbox::{Checkbox, PROP_CHECKED};
+pub use collection_view::CollectionView;
 pub use image_view::{ImageView, PROP_IMAGE_NAME};
 pub use progress_indicator::{PROP_INDETERMINATE, ProgressIndicator};
 pub use slider::Slider;

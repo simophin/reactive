@@ -36,42 +36,41 @@ impl Component for Vec<BoxedComponent> {
 }
 
 /// Scoped view for setting up a component.
-/// Bundles a `ReactiveScope` reference with the component's ID,
-/// so users never interact with these implementation details directly.
-pub struct SetupContext<'a> {
-    pub(crate) scope: &'a mut ReactiveScope,
+///
+/// Holds a clone of the [`ReactiveScope`] handle (cheap, `Rc` under the hood)
+/// and the component's [`ComponentId`]. All methods take `&self` so you can
+/// freely hold references without fighting the borrow checker.
+pub struct SetupContext {
+    pub(crate) scope: ReactiveScope,
     pub(crate) component_id: ComponentId,
 }
 
-impl<'a> SetupContext<'a> {
-    pub fn new_root(scope: &'a mut ReactiveScope) -> Self {
+impl SetupContext {
+    pub fn new_root(scope: &ReactiveScope) -> Self {
         let root = scope.create_child_component(None);
         Self {
-            scope,
+            scope: scope.clone(),
             component_id: root,
         }
     }
 
-    pub fn create_signal<T: 'static>(&mut self, initial: T) -> StoredSignal<T> {
+    pub fn create_signal<T: 'static>(&self, initial: T) -> StoredSignal<T> {
         self.scope.create_signal(initial)
     }
 
     pub fn create_effect<T: 'static>(
-        &mut self,
-        effect_fn: impl for<'b> FnMut(&'b mut ReactiveScope, Option<T>) -> T + 'static,
+        &self,
+        effect_fn: impl for<'b> FnMut(&ReactiveScope, Option<T>) -> T + 'static,
     ) {
         self.scope.create_effect(self.component_id, effect_fn);
     }
 
-    pub fn create_memo<T: 'static>(
-        &mut self,
-        memo_fn: impl FnMut() -> T + 'static,
-    ) -> ReadSignal<T> {
+    pub fn create_memo<T: 'static>(&self, memo_fn: impl FnMut() -> T + 'static) -> ReadSignal<T> {
         self.scope.create_memo(self.component_id, memo_fn)
     }
 
     pub fn create_resource<I, T, F>(
-        &mut self,
+        &self,
         input_fn: impl Signal<Value = I> + 'static,
         resource_fn: impl FnMut(I) -> F + 'static,
     ) -> ReadSignal<ResourceState<T>>
@@ -85,7 +84,7 @@ impl<'a> SetupContext<'a> {
     }
 
     pub fn create_stream<S, I, T>(
-        &mut self,
+        &self,
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         stream_producer: impl FnMut(I) -> S + 'static,
@@ -100,7 +99,7 @@ impl<'a> SetupContext<'a> {
     }
 
     pub fn provide_context<T: Clone + 'static>(
-        &mut self,
+        &self,
         key: &'static ContextKey<T>,
         value: T,
     ) -> StoredSignal<T> {
@@ -114,14 +113,14 @@ impl<'a> SetupContext<'a> {
         self.scope.use_context(self.component_id, key)
     }
 
-    pub fn on_cleanup(&mut self, cleanup_fn: impl FnOnce() + 'static) {
+    pub fn on_cleanup(&self, cleanup_fn: impl FnOnce() + 'static) {
         self.scope.on_cleanup(self.component_id, cleanup_fn);
     }
 
-    pub fn new_child(&mut self) -> SetupContext<'_> {
+    pub fn new_child(&self) -> SetupContext {
         let child_id = self.scope.create_child_component(Some(self.component_id));
         SetupContext {
-            scope: self.scope,
+            scope: self.scope.clone(),
             component_id: child_id,
         }
     }
@@ -130,7 +129,7 @@ impl<'a> SetupContext<'a> {
         self.component_id
     }
 
-    pub fn child(&mut self, component: impl Component + 'static) -> ComponentId {
+    pub fn child(&self, component: impl Component + 'static) -> ComponentId {
         let mut child_ctx = self.new_child();
         Box::new(component).setup(&mut child_ctx);
         child_ctx.component_id

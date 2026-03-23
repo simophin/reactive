@@ -6,8 +6,9 @@ edition = "2024"
 [dependencies]
 apple = { path = "../apple" }
 reactive_core = { path = "../core", package = "core" }
+block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSThread"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet"] }
 objc2-app-kit = { version = "0.3", features = [
     "NSApplication",
     "NSRunningApplication",
@@ -29,7 +30,9 @@ objc2-app-kit = { version = "0.3", features = [
     "NSCollectionView",
     "NSCollectionViewFlowLayout",
     "NSCollectionViewLayout",
+    "NSScrollView",
     "NSViewController",
+    "block2",
 ] }
 
 [dev-dependencies]

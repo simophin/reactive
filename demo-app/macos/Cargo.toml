@@ -1,0 +1,17 @@
+[package]
+name = "demo-app-macos"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "demo-app-macos"
+path = "src/main.rs"
+
+[dependencies]
+demo-app = { path = ".." }
+reactive_core = { path = "../../core", package = "core" }
+appkit = { path = "../../appkit" }
+ui = { path = "../../ui" }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }

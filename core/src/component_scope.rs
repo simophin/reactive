@@ -32,7 +32,7 @@ pub(crate) struct InFlightFuture {
 }
 
 pub(crate) type BoxedEffectFn =
-    Box<dyn FnMut(&mut ReactiveScope) -> (SortedVec<SignalId>, Option<InFlightFuture>)>;
+    Box<dyn FnMut(&ReactiveScope) -> (SortedVec<SignalId>, Option<InFlightFuture>)>;
 
 pub(crate) struct Effect {
     pub effect_fn: BoxedEffectFn,

@@ -33,7 +33,7 @@ mod tests {
 
     #[test]
     fn test_show_initially_visible() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -44,14 +44,17 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("shown"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("shown")
+                    })
                 }
             },
             || -> BoxedComponent { Box::new(()) },
         ));
 
         show.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);
@@ -59,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_show_initially_hidden() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let visible = scope.create_signal(false);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -70,20 +73,26 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("shown"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("shown")
+                    })
                 }
             },
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("hidden"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("hidden")
+                    })
                 }
             },
         ));
 
         show.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["hidden"]);
@@ -91,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_show_toggle() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let log = Arc::new(Mutex::new(Vec::<&str>::new()));
@@ -105,20 +114,26 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("shown"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("shown")
+                    })
                 }
             },
             {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("hidden"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("hidden")
+                    })
                 }
             },
         ));
 
         show.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);
@@ -134,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_show_same_state_no_rerun() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let visible = scope.create_signal(true);
         let count = scope.create_signal(0);
@@ -152,14 +167,17 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("shown"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("shown")
+                    })
                 }
             },
             || -> BoxedComponent { Box::new(()) },
         ));
 
         show.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["shown"]);

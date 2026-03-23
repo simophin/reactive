@@ -1,4 +1,7 @@
-use crate::component_scope::{ComponentId, ComponentScope, Effect};
+use crate::component_scope::{ComponentId, Effect};
+use crate::reactive_scope::ReactiveScopeData;
+use crate::signal::SignalId;
+use crate::sorted_vec::SortedVec;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
@@ -34,74 +37,89 @@ fn make_waker(flag: Weak<AtomicBool>, outer: &Waker) -> Waker {
 }
 
 // ---------------------------------------------------------------------------
+// Traversal + effect collection (operates on ReactiveScopeData directly,
+// no user closures called — safe to hold borrow throughout)
+// ---------------------------------------------------------------------------
+
+struct EffectUpdate {
+    component_id: ComponentId,
+    effect: Effect,
+    dirty: bool,
+}
+
+fn traverse_collect(
+    data: &mut ReactiveScopeData,
+    start: ComponentId,
+    dirty: &SortedVec<SignalId>,
+    updates: &mut Vec<EffectUpdate>,
+) {
+    let Some(scope) = data.components.get_mut(start) else {
+        return;
+    };
+
+    let effects = std::mem::take(&mut scope.active_effects);
+    let children = std::mem::take(&mut scope.children);
+
+    let mut keep = Vec::new();
+    for effect in effects {
+        let is_dirty = effect.signal_accessed.intersects(dirty);
+        let future_needs_poll = effect
+            .in_flight
+            .as_ref()
+            .is_some_and(|f| f.woken.load(Ordering::Acquire));
+
+        if is_dirty || future_needs_poll {
+            updates.push(EffectUpdate {
+                component_id: start,
+                effect,
+                dirty: is_dirty,
+            });
+        } else {
+            keep.push(effect);
+        }
+    }
+
+    if let Some(scope) = data.components.get_mut(start) {
+        scope.active_effects = keep;
+    }
+
+    for child in &children {
+        traverse_collect(data, *child, dirty, updates);
+    }
+
+    if let Some(scope) = data.components.get_mut(start) {
+        scope.children = children;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
 
 use super::ReactiveScope;
 
 impl ReactiveScope {
-    pub(crate) fn traverse_tree_depth_last(
-        &mut self,
-        start: ComponentId,
-        f: &mut impl FnMut(ComponentId, &mut ComponentScope),
-    ) {
-        let Some(scope) = self.components.get_mut(start) else {
-            return;
-        };
+    pub fn tick(&self, future_ctx: &mut Context) {
+        // Phase 1: collect dirty effects while holding the borrow.
+        // No user closures are called here, so it is safe to hold borrow_mut.
+        let mut updates: Vec<EffectUpdate> = Vec::new();
+        {
+            let mut data = self.0.borrow_mut();
+            data.dirty_signals.set_waker(future_ctx.waker().clone());
+            let dirty_signal_set = data.dirty_signals.take();
+            let root = std::mem::take(&mut data.root);
 
-        f(start, scope);
+            for &component in &root {
+                traverse_collect(&mut data, component, &dirty_signal_set, &mut updates);
+            }
 
-        let children = std::mem::take(&mut scope.children);
-        for child in &children {
-            self.traverse_tree_depth_last(*child, f);
-        }
+            data.root = root;
+        } // borrow released
 
-        if let Some(scope) = self.components.get_mut(start) {
-            scope.children = children;
-        }
-    }
-
-    pub fn tick(&mut self, future_ctx: &mut Context) {
-        struct EffectUpdate {
-            component_id: ComponentId,
-            effect: Effect,
-            dirty: bool,
-        }
-
-        self.dirty_signals.set_waker(future_ctx.waker().clone());
-
-        let mut updates = Vec::new();
-        let root = std::mem::take(&mut self.root);
-        let dirty_signal_set = self.dirty_signals.take();
-
-        for component in &root {
-            self.traverse_tree_depth_last(*component, &mut |component_id, c| {
-                for effect in std::mem::take(&mut c.active_effects) {
-                    let dirty = effect.signal_accessed.intersects(&dirty_signal_set);
-
-                    let future_needs_poll = effect
-                        .in_flight
-                        .as_ref()
-                        .is_some_and(|f| f.woken.load(Ordering::Acquire));
-
-                    if dirty || future_needs_poll {
-                        updates.push(EffectUpdate {
-                            component_id,
-                            effect,
-                            dirty,
-                        });
-                    } else {
-                        c.active_effects.push(effect);
-                    }
-                }
-            });
-        }
-
-        self.root = root;
-
+        // Phase 2: execute effects with no borrow held.
+        // Effects receive &ReactiveScope and may freely call any scope method.
         for mut update in updates {
             if update.dirty {
-                // Cancel any in-flight future — the inputs changed, so it's stale.
                 let (signal_accessed, in_flight) = (update.effect.effect_fn)(self);
                 update.effect.signal_accessed = signal_accessed;
                 update.effect.in_flight = in_flight;
@@ -120,7 +138,8 @@ impl ReactiveScope {
                 }
             }
 
-            if let Some(c) = self.components.get_mut(update.component_id) {
+            // Phase 3: push the effect back — brief borrow.
+            if let Some(c) = self.0.borrow_mut().components.get_mut(update.component_id) {
                 c.push_effect(update.effect);
             }
         }

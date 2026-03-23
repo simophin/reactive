@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::reactive_scope::{WeakActiveSignalTracker, WeakDirtySignalSet};
+use crate::reactive_scope::WeakReactiveScope;
 use crate::signal::{Signal, SignalId};
 
 static SIGNAL_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -16,8 +16,9 @@ static SIGNAL_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct SignalData {
     pub value: Box<dyn Any>,
-    pub dirty: WeakDirtySignalSet,
-    pub tracker: WeakActiveSignalTracker,
+    /// Weak back-reference to the owning scope, used to notify dirty tracking
+    /// and dependency tracking without keeping the scope alive.
+    pub scope: WeakReactiveScope,
 }
 
 thread_local! {
@@ -49,7 +50,7 @@ impl<T> Clone for StoredSignal<T> {
 }
 
 impl<T> StoredSignal<T> {
-    pub(crate) fn new(init: T, dirty: WeakDirtySignalSet, tracker: WeakActiveSignalTracker) -> Self
+    pub(crate) fn new(init: T, scope: WeakReactiveScope) -> Self
     where
         T: 'static,
     {
@@ -59,8 +60,7 @@ impl<T> StoredSignal<T> {
                 id,
                 SignalData {
                     value: Box::new(init),
-                    dirty,
-                    tracker,
+                    scope,
                 },
             );
         });
@@ -86,8 +86,8 @@ impl<T> StoredSignal<T> {
                     .downcast_mut::<T>()
                     .expect("signal type mismatch");
                 if f(value) {
-                    if let Some(dirty) = data.dirty.upgrade() {
-                        dirty.mark_dirty(self.id);
+                    if let Some(scope) = data.scope.upgrade() {
+                        scope.0.borrow().dirty_signals.mark_dirty(self.id);
                     }
                 }
             }
@@ -126,8 +126,8 @@ impl<T: Clone + 'static> Signal for StoredSignal<T> {
         SIGNALS.with(|map| {
             let map = map.borrow();
             let data = map.get(&self.id).expect("signal not found");
-            if let Some(tracker) = data.tracker.upgrade() {
-                tracker.on_accessed(self.id);
+            if let Some(scope) = data.scope.upgrade() {
+                scope.0.borrow().active_signal_tracker.on_accessed(self.id);
             }
             data.value
                 .downcast_ref::<T>()
@@ -194,5 +194,11 @@ impl<T: Clone + 'static> Signal for ReadSignal<T> {
     type Value = T;
     fn read(&self) -> T {
         self.0.read()
+    }
+}
+
+impl<T> From<StoredSignal<T>> for ReadSignal<T> {
+    fn from(s: StoredSignal<T>) -> Self {
+        Self(s)
     }
 }

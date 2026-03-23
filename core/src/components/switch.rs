@@ -1,3 +1,4 @@
+use crate::ReactiveScope;
 use crate::component::{BoxedComponent, Component, SetupContext};
 
 type ConditionFn = Box<dyn FnMut() -> bool>;
@@ -46,32 +47,35 @@ impl Component for Switch {
         let mut fallback = self.fallback;
         let my_id = ctx.component_id();
 
-        ctx.create_effect(move |scope, prev_branch: Option<ActiveBranch>| {
-            // Evaluate conditions to find the matching branch
-            let new_branch = cases
-                .iter_mut()
-                .position(|case| (case.condition)())
-                .map(ActiveBranch::Case)
-                .unwrap_or(ActiveBranch::Fallback);
+        ctx.create_effect(
+            move |scope: &ReactiveScope, prev_branch: Option<ActiveBranch>| {
+                // Evaluate conditions to find the matching branch
+                let new_branch = cases
+                    .iter_mut()
+                    .position(|case| (case.condition)())
+                    .map(ActiveBranch::Case)
+                    .unwrap_or(ActiveBranch::Fallback);
 
-            let new_component_factory = match (prev_branch, new_branch) {
-                (Some(old), new) if old == new => None,
-                (_, ActiveBranch::Fallback) => Some(&mut fallback),
-                (_, ActiveBranch::Case(idx)) => Some(&mut cases[idx].component),
-            };
+                let new_component_factory = match (prev_branch, new_branch) {
+                    (Some(old), new) if old == new => None,
+                    (_, ActiveBranch::Fallback) => Some(&mut fallback),
+                    (_, ActiveBranch::Case(idx)) => Some(&mut cases[idx].component),
+                };
 
-            let Some(component) = new_component_factory.map(|c| c()) else {
-                return new_branch;
-            };
+                let Some(component) = new_component_factory.map(|c| c()) else {
+                    return new_branch;
+                };
 
-            scope.dispose_all_children(my_id);
-            component.setup(&mut SetupContext {
-                component_id: scope.create_child_component(Some(my_id)),
-                scope,
-            });
+                scope.dispose_all_children(my_id);
+                let child_id = scope.create_child_component(Some(my_id));
+                component.setup(&mut SetupContext {
+                    component_id: child_id,
+                    scope: scope.clone(),
+                });
 
-            new_branch
-        });
+                new_branch
+            },
+        );
     }
 }
 
@@ -85,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_switch_initial_match() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
 
@@ -102,7 +106,8 @@ mod tests {
                         let log = Arc::clone(&log);
                         move || -> BoxedComponent {
                             let log = Arc::clone(&log);
-                            Box::new(move |_: &mut SetupContext| {
+                            Box::new(move |ctx: &mut SetupContext| {
+                                let _ = ctx;
                                 log.lock().unwrap().push("branch_a")
                             })
                         }
@@ -112,13 +117,16 @@ mod tests {
                     let log = Arc::clone(&log);
                     move || -> BoxedComponent {
                         let log = Arc::clone(&log);
-                        Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_b"))
+                        Box::new(move |ctx: &mut SetupContext| {
+                            let _ = ctx;
+                            log.lock().unwrap().push("branch_b")
+                        })
                     }
                 }),
         );
 
         switch.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);
@@ -126,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_switch_changes_branch() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
 
@@ -143,7 +151,8 @@ mod tests {
                         let log = Arc::clone(&log);
                         move || -> BoxedComponent {
                             let log = Arc::clone(&log);
-                            Box::new(move |_: &mut SetupContext| {
+                            Box::new(move |ctx: &mut SetupContext| {
+                                let _ = ctx;
                                 log.lock().unwrap().push("branch_a")
                             })
                         }
@@ -158,7 +167,8 @@ mod tests {
                         let log = Arc::clone(&log);
                         move || -> BoxedComponent {
                             let log = Arc::clone(&log);
-                            Box::new(move |_: &mut SetupContext| {
+                            Box::new(move |ctx: &mut SetupContext| {
+                                let _ = ctx;
                                 log.lock().unwrap().push("branch_b")
                             })
                         }
@@ -167,7 +177,7 @@ mod tests {
         );
 
         switch.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);
@@ -179,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_switch_fallback() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let mode = scope.create_signal("unknown");
 
@@ -190,20 +200,26 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("fallback"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("fallback")
+                    })
                 }
             })
             .case(move || mode.read() == "a", {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("branch_a")
+                    })
                 }
             }),
         );
 
         switch.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["fallback"]);
@@ -211,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_switch_no_match_no_fallback() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let mode = scope.create_signal("unknown");
 
@@ -222,13 +238,16 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("branch_a")
+                    })
                 }
             }),
         );
 
         switch.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert!(log.lock().unwrap().is_empty());
@@ -236,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_switch_same_branch_no_rerun() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let mode = scope.create_signal("a");
         let count = scope.create_signal(0);
@@ -255,13 +274,16 @@ mod tests {
                 let log = Arc::clone(&log);
                 move || -> BoxedComponent {
                     let log = Arc::clone(&log);
-                    Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("branch_a"))
+                    Box::new(move |ctx: &mut SetupContext| {
+                        let _ = ctx;
+                        log.lock().unwrap().push("branch_a")
+                    })
                 }
             },
         ));
 
         switch.setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["branch_a"]);

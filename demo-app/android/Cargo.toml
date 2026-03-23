@@ -1,0 +1,13 @@
+[package]
+name = "demo-app-android"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "reactive_android"
+crate-type = ["cdylib"]
+
+[dependencies]
+demo-app = { path = ".." }
+reactive_core = { path = "../../core", package = "core" }
+jni = "0.21.1"

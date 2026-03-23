@@ -23,7 +23,7 @@ macro_rules! extract {
         }
     };
 }
-use crate::reactive_scope::ReactiveScope;
+use crate::ReactiveScope;
 use crate::signal::{BoxedSignal, Signal, StoredSignal, remove_signal};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -37,7 +37,7 @@ struct Case<T> {
     /// - `Some(None)` — matched; the extracted value was pushed into the existing signal
     ///   (the child component does not need to be rebuilt).
     /// - `Some(Some(component))` — newly activated; build the subtree with this component.
-    try_match: Box<dyn FnMut(&mut T, &mut ReactiveScope) -> Option<Option<BoxedComponent>>>,
+    try_match: Box<dyn FnMut(&mut T, &ReactiveScope) -> Option<Option<BoxedComponent>>>,
 
     /// Called when this case transitions from active to inactive. Removes the case's signal
     /// from the global store so it can be garbage-collected once the child is disposed.
@@ -90,7 +90,7 @@ impl<T: Clone + 'static> Match<T> {
 
         let active1 = Rc::clone(&active);
         let try_match = Box::new(
-            move |value: &mut T, scope: &mut ReactiveScope| -> Option<Option<BoxedComponent>> {
+            move |value: &mut T, scope: &ReactiveScope| -> Option<Option<BoxedComponent>> {
                 let e = extractor(value)?;
                 let mut slot = active1.borrow_mut();
                 if let Some(sig) = *slot {
@@ -129,51 +129,54 @@ impl<T: Clone + 'static> Component for Match<T> {
         let my_id = ctx.component_id();
 
         // State: None = fallback active, Some(i) = case i active.
-        ctx.create_effect(move |scope, prev_branch: Option<Option<usize>>| {
-            let mut value = signal.read();
+        ctx.create_effect(
+            move |scope: &ReactiveScope, prev_branch: Option<Option<usize>>| {
+                let mut value = signal.read();
 
-            // Find the first matching case.
-            let mut matched: Option<(usize, Option<BoxedComponent>)> = None;
-            for (i, case) in cases.iter_mut().enumerate() {
-                if matched.is_none() {
-                    if let Some(component_opt) = (case.try_match)(&mut value, scope) {
-                        matched = Some((i, component_opt));
-                    }
-                }
-            }
-
-            let new_branch: Option<usize> = matched.as_ref().map(|(i, _)| *i);
-
-            let should_rebuild = match prev_branch {
-                None => true,
-                Some(prev) => {
-                    prev != new_branch                           // active case changed
-                        || matches!(matched, Some((_, Some(_)))) // same case, just activated
-                }
-            };
-
-            if should_rebuild {
-                // Dispose the old child first (removes its effects), then deactivate the
-                // old case's signal so it can be freed without risking a dangling read.
-                scope.dispose_all_children(my_id);
-
-                if let Some(prev) = prev_branch {
-                    if prev != new_branch {
-                        if let Some(old_idx) = prev {
-                            (cases[old_idx].deactivate)();
+                // Find the first matching case.
+                let mut matched: Option<(usize, Option<BoxedComponent>)> = None;
+                for (i, case) in cases.iter_mut().enumerate() {
+                    if matched.is_none() {
+                        if let Some(component_opt) = (case.try_match)(&mut value, scope) {
+                            matched = Some((i, component_opt));
                         }
                     }
                 }
 
-                let component = matched.and_then(|(_, c)| c).unwrap_or_else(|| fallback());
-                component.setup(&mut SetupContext {
-                    component_id: scope.create_child_component(Some(my_id)),
-                    scope,
-                });
-            }
+                let new_branch: Option<usize> = matched.as_ref().map(|(i, _)| *i);
 
-            new_branch
-        });
+                let should_rebuild = match prev_branch {
+                    None => true,
+                    Some(prev) => {
+                        prev != new_branch                           // active case changed
+                        || matches!(matched, Some((_, Some(_)))) // same case, just activated
+                    }
+                };
+
+                if should_rebuild {
+                    // Dispose the old child first (removes its effects), then deactivate the
+                    // old case's signal so it can be freed without risking a dangling read.
+                    scope.dispose_all_children(my_id);
+
+                    if let Some(prev) = prev_branch {
+                        if prev != new_branch {
+                            if let Some(old_idx) = prev {
+                                (cases[old_idx].deactivate)();
+                            }
+                        }
+                    }
+
+                    let component = matched.and_then(|(_, c)| c).unwrap_or_else(|| fallback());
+                    let child_id = scope.create_child_component(Some(my_id));
+                    component.setup(&mut SetupContext {
+                        component_id: child_id,
+                        scope: scope.clone(),
+                    });
+                }
+
+                new_branch
+            },
+        );
     }
 }
 
@@ -203,7 +206,8 @@ mod tests {
                     move |sig: ReadSignal<Option<i32>>| -> BoxedComponent {
                         let log = Arc::clone(&log1);
                         // Log the signal value at setup time (activation snapshot).
-                        Box::new(move |_: &mut SetupContext| {
+                        Box::new(move |ctx: &mut SetupContext| {
+                            let _ = ctx;
                             log.lock()
                                 .unwrap()
                                 .push(format!("loading({:?})", sig.read()));
@@ -217,7 +221,8 @@ mod tests {
                     },
                     move |sig: ReadSignal<i32>| -> BoxedComponent {
                         let log = Arc::clone(&log2);
-                        Box::new(move |_: &mut SetupContext| {
+                        Box::new(move |ctx: &mut SetupContext| {
+                            let _ = ctx;
                             log.lock().unwrap().push(format!("ready({})", sig.read()));
                         })
                     },
@@ -227,13 +232,13 @@ mod tests {
 
     #[test]
     fn test_match_initial_render() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
         make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
 
@@ -242,13 +247,13 @@ mod tests {
 
     #[test]
     fn test_match_same_branch_no_rebuild() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
         make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["loading(None)"]);
@@ -261,13 +266,13 @@ mod tests {
 
     #[test]
     fn test_match_branch_change_rebuilds() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
         make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
         assert_eq!(*log.lock().unwrap(), vec!["loading(None)"]);
@@ -287,7 +292,7 @@ mod tests {
     fn test_match_signal_updates_reactively() {
         // Verify that the signal passed to the factory reflects E changes, so child
         // effects that read it will observe the latest value.
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let profile = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -311,7 +316,7 @@ mod tests {
             },
         ))
         .setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
 
@@ -330,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_match_fallback() {
-        let mut scope = ReactiveScope::default();
+        let scope = ReactiveScope::default();
         let root = scope.create_child_component(None);
         let signal = scope.create_signal(0i32);
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -338,10 +343,13 @@ mod tests {
         let log_clone = Arc::clone(&log);
         Box::new(Match::new(signal, move || -> BoxedComponent {
             let log = Arc::clone(&log_clone);
-            Box::new(move |_: &mut SetupContext| log.lock().unwrap().push("fallback".into()))
+            Box::new(move |ctx: &mut SetupContext| {
+                let _ = ctx;
+                log.lock().unwrap().push("fallback".into())
+            })
         }))
         .setup(&mut SetupContext {
-            scope: &mut scope,
+            scope: scope.clone(),
             component_id: root,
         });
 
