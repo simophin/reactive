@@ -133,7 +133,7 @@ fn main() {
                         .case(
                             move || {
                                 !search_query.read().is_empty()
-                                    && matches!(profile.read(), ResourceState::Loading)
+                                    && matches!(profile.read(), ResourceState::Loading(_))
                             },
                             || -> BoxedComponent {
                                 Box::new(

@@ -1,7 +1,9 @@
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, InFlightFuture};
 use crate::signal::Signal;
 use futures::{FutureExt, Stream, StreamExt};
+use std::cell::RefCell;
 use std::future::ready;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -9,7 +11,8 @@ use super::ReactiveScope;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResourceState<T> {
-    Loading,
+    /// The resource is loading. Contains the last successfully loaded value, if any.
+    Loading(Option<T>),
     Ready(T),
 }
 
@@ -25,17 +28,20 @@ impl ReactiveScope {
         T: Clone + 'static,
         F: Future<Output = T> + 'static,
     {
-        let signal = self.create_signal(ResourceState::<T>::Loading);
+        let signal = self.create_signal(ResourceState::<T>::Loading(None));
         let active_signal_tracker = self.active_signal_tracker.clone();
+        let last_ready: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
 
         let mut effect_fn: BoxedEffectFn = Box::new(move |_: &mut ReactiveScope| {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
-            signal.set_and_notify_changes(ResourceState::Loading);
+            signal.set_and_notify_changes(ResourceState::Loading(last_ready.borrow().clone()));
 
+            let last_ready = Rc::clone(&last_ready);
             let in_flight = Some(InFlightFuture {
                 future: Box::pin(resource_fn(input).map(move |result| {
+                    *last_ready.borrow_mut() = Some(result.clone());
                     signal.set_and_notify_changes(ResourceState::Ready(result));
                 })),
                 woken: Arc::new(AtomicBool::new(true)),
@@ -104,7 +110,7 @@ mod tests {
         let resource_signal =
             scope.create_resource(root, input_signal, |input| async move { input * 2 });
 
-        assert_eq!(resource_signal.read(), ResourceState::Loading);
+        assert_eq!(resource_signal.read(), ResourceState::Loading(None));
 
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(resource_signal.read(), ResourceState::Ready(84));
@@ -152,11 +158,11 @@ mod tests {
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(resource.read(), ResourceState::Ready(10));
 
-        // After input changes the signal must immediately reset to Loading, even
-        // before the new future resolves.
+        // After input changes the signal must immediately reset to Loading, carrying
+        // the last ready value so callers can show stale data while fetching.
         input.update_if_changes(2);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(resource.read(), ResourceState::Loading);
+        assert_eq!(resource.read(), ResourceState::Loading(Some(10)));
     }
 
     #[test]
@@ -171,14 +177,14 @@ mod tests {
 
         // First tick: effect fires, future is Pending
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(resource.read(), ResourceState::Loading);
+        assert_eq!(resource.read(), ResourceState::Loading(None));
 
         // Dispose while the future is still in-flight — it gets dropped with the component
         scope.dispose_component(child);
 
         // Tick — no effects, pending future is gone, signal untouched
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
-        assert_eq!(resource.read(), ResourceState::Loading);
+        assert_eq!(resource.read(), ResourceState::Loading(None));
     }
 
     #[test]
