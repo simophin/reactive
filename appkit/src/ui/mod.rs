@@ -1,5 +1,6 @@
 pub mod button;
 pub mod checkbox;
+pub mod collection_view;
 pub mod context;
 pub mod image_view;
 pub mod progress_indicator;
