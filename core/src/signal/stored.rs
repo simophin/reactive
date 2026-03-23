@@ -70,7 +70,7 @@ impl<T> StoredSignal<T> {
         }
     }
 
-    pub fn id(&self) -> SignalId {
+    pub(crate) fn id(&self) -> SignalId {
         self.id
     }
 
@@ -168,5 +168,31 @@ impl BoxedStoredSignal {
 impl<T: 'static> From<StoredSignal<T>> for BoxedStoredSignal {
     fn from(value: StoredSignal<T>) -> Self {
         Self(Box::new(value))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ReadSignal — read-only handle to a StoredSignal
+// ---------------------------------------------------------------------------
+
+/// A read-only handle to a [`StoredSignal`].
+///
+/// Implements [`Signal`] but does not expose any write methods. This is the
+/// type returned by [`ReactiveScope::create_resource`] and
+/// [`ReactiveScope::create_stream`], and used as the parameter type for
+/// [`Match`](crate::components::Match) case factories.
+pub struct ReadSignal<T>(pub(crate) StoredSignal<T>);
+
+impl<T> Copy for ReadSignal<T> {}
+impl<T> Clone for ReadSignal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Clone + 'static> Signal for ReadSignal<T> {
+    type Value = T;
+    fn read(&self) -> T {
+        self.0.read()
     }
 }

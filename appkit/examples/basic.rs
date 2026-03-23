@@ -2,7 +2,7 @@ use appkit::button::PROP_ENABLED;
 use appkit::stack::PROP_SPACING;
 use appkit::text::PROP_FONT_SIZE;
 use appkit::{AppKitViewComponent, BindableView, Window, run_app};
-use reactive_core::ext::SignalExt;
+use reactive_core::SignalExt;
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()

@@ -2,8 +2,7 @@ use appkit::progress_indicator::PROP_INDETERMINATE;
 use appkit::stack::PROP_SPACING;
 use appkit::text::PROP_FONT_SIZE;
 use appkit::{BindableView, ProgressIndicator, Stack, Text, TextInput, Window, run_app};
-use reactive_core::components::Switch;
-use reactive_core::{BoxedComponent, ResourceState, Signal};
+use reactive_core::{BoxedComponent, Match, ResourceState, Signal, extract};
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -112,9 +111,7 @@ fn main() {
     run_app(|ctx| {
         let search_query = ctx.create_signal(String::new());
 
-        let profile = ctx.create_resource(search_query, |q| async move {
-            fetch_pokemon(q).await
-        });
+        let profile = ctx.create_resource(search_query, |q| async move { fetch_pokemon(q).await });
 
         ctx.child(
             Window::new("Pokédex", 480.0, 520.0).child(
@@ -126,36 +123,31 @@ fn main() {
                         move |name| search_query.set_and_notify_changes(name),
                     ))
                     .child(
-                        Switch::new(|| -> BoxedComponent {
+                        Match::new(profile, || -> BoxedComponent {
                             Box::new(hint("Type a Pokémon name above and press Return."))
                         })
-                        // Loading — indeterminate progress bar
+                        // Loading — show progress bar only when a query is in flight
                         .case(
-                            move || {
-                                !search_query.read().is_empty()
-                                    && matches!(profile.read(), ResourceState::Loading(_))
+                            move |state| match state {
+                                ResourceState::Loading(_)
+                                    if !search_query.read().is_empty() =>
+                                {
+                                    Some(())
+                                }
+                                _ => None,
                             },
-                            || -> BoxedComponent {
+                            |_sig| -> BoxedComponent {
                                 Box::new(
                                     ProgressIndicator::new_bar(0.0)
                                         .bind(PROP_INDETERMINATE, true),
                                 )
                             },
                         )
-                        // Found
+                        // Found — display the Pokémon details
                         .case(
-                            move || {
-                                matches!(
-                                    profile.read(),
-                                    ResourceState::Ready(ProfileState::Found(_))
-                                )
-                            },
-                            move || -> BoxedComponent {
-                                let ResourceState::Ready(ProfileState::Found(p)) =
-                                    profile.read()
-                                else {
-                                    return Box::new(());
-                                };
+                            extract!(ResourceState::Ready(ProfileState::Found(p)) => p.clone()),
+                            |sig| -> BoxedComponent {
+                                let p = sig.read();
                                 let types = p
                                     .types
                                     .iter()
@@ -194,13 +186,8 @@ fn main() {
                         )
                         // Not found
                         .case(
-                            move || {
-                                matches!(
-                                    profile.read(),
-                                    ResourceState::Ready(ProfileState::NotFound)
-                                )
-                            },
-                            move || -> BoxedComponent {
+                            extract!(ResourceState::Ready(ProfileState::NotFound) => ()),
+                            move |_sig| -> BoxedComponent {
                                 let name = search_query.read();
                                 Box::new(hint(Box::leak(
                                     format!("Pokémon \"{name}\" not found.").into_boxed_str(),
@@ -209,20 +196,12 @@ fn main() {
                         )
                         // Error
                         .case(
-                            move || {
-                                matches!(
-                                    profile.read(),
-                                    ResourceState::Ready(ProfileState::Error(_))
-                                )
-                            },
-                            move || -> BoxedComponent {
-                                let msg = match profile.read() {
-                                    ResourceState::Ready(ProfileState::Error(e)) => e,
-                                    _ => "Unknown error.".to_string(),
-                                };
+                            extract!(ResourceState::Ready(ProfileState::Error(e)) => std::mem::take(e)),
+                            |sig| -> BoxedComponent {
+                                let msg = sig.read();
                                 Box::new(Text::new_text(msg).bind(PROP_FONT_SIZE, 13.0))
                             },
-                        )
+                        ),
                     ),
             ),
         );

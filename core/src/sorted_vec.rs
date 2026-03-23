@@ -46,8 +46,7 @@ impl<T: Ord> SortedVec<T> {
 
         // Binary search wins when k*log(n) < k+n. Use floor log2 via leading_zeros.
         let log2_large = (usize::BITS - large.len().leading_zeros()) as usize;
-        if small.len() * log2_large < small.len() + large.len()
-        {
+        if small.len() * log2_large < small.len() + large.len() {
             small.iter().any(|x| large.binary_search(x).is_ok())
         } else {
             let mut i = 0;

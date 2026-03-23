@@ -4,6 +4,11 @@ members = [
     "core",
     "apple",
     "appkit",
-    "uikit",
+    "ui",
+    "resources",
+    "resources-build",
+    "demo",
+    "android",
+    "android-macros"
 ]
 

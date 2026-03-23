@@ -1,5 +1,5 @@
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, InFlightFuture};
-use crate::signal::Signal;
+use crate::signal::{ReadSignal, Signal};
 use futures::{FutureExt, Stream, StreamExt};
 use std::cell::RefCell;
 use std::future::ready;
@@ -17,12 +17,12 @@ pub enum ResourceState<T> {
 }
 
 impl ReactiveScope {
-    pub fn create_resource<I, T, F>(
+    pub(crate) fn create_resource<I, T, F>(
         &mut self,
         component_id: ComponentId,
         input_signal: impl Signal<Value = I> + 'static,
         mut resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> impl Signal<Value = ResourceState<T>> + Copy + 'static
+    ) -> ReadSignal<ResourceState<T>>
     where
         I: 'static,
         T: Clone + 'static,
@@ -60,16 +60,16 @@ impl ReactiveScope {
             component.push_effect(effect);
         }
 
-        signal
+        ReadSignal(signal)
     }
 
-    pub fn create_stream<S, I, T>(
+    pub(crate) fn create_stream<S, I, T>(
         &mut self,
         component_id: ComponentId,
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         mut stream_producer: impl FnMut(I) -> S + 'static,
-    ) -> impl Signal<Value = T> + Copy + 'static
+    ) -> ReadSignal<T>
     where
         I: 'static,
         T: Clone + 'static,
@@ -86,7 +86,7 @@ impl ReactiveScope {
             }
         });
 
-        signal
+        ReadSignal(signal)
     }
 }
 

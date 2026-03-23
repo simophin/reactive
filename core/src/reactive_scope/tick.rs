@@ -1,6 +1,6 @@
 use crate::component_scope::{ComponentId, ComponentScope, Effect};
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,10 @@ impl Wake for FutureWaker {
 }
 
 fn make_waker(flag: Weak<AtomicBool>, outer: &Waker) -> Waker {
-    Waker::from(Arc::new(FutureWaker { flag, outer: outer.clone() }))
+    Waker::from(Arc::new(FutureWaker {
+        flag,
+        outer: outer.clone(),
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +85,11 @@ impl ReactiveScope {
                         .is_some_and(|f| f.woken.load(Ordering::Acquire));
 
                     if dirty || future_needs_poll {
-                        updates.push(EffectUpdate { component_id, effect, dirty });
+                        updates.push(EffectUpdate {
+                            component_id,
+                            effect,
+                            dirty,
+                        });
                     } else {
                         c.active_effects.push(effect);
                     }

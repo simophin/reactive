@@ -1,10 +1,9 @@
 use crate::component_scope::{ComponentId, ComponentScope};
-use crate::vec_utils::extract_if;
 
 use super::ReactiveScope;
 
 impl ReactiveScope {
-    pub fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
+    pub(crate) fn create_child_component(&mut self, parent: Option<ComponentId>) -> ComponentId {
         let mut component = ComponentScope::default();
         component.parent = parent;
         let component_id = self.components.insert(component);
@@ -15,7 +14,7 @@ impl ReactiveScope {
         component_id
     }
 
-    pub fn dispose_component(&mut self, id: ComponentId) {
+    pub(crate) fn dispose_component(&mut self, id: ComponentId) {
         let Some(mut component) = self.components.remove(id) else {
             return;
         };
@@ -29,7 +28,7 @@ impl ReactiveScope {
         }
     }
 
-    pub fn dispose_all_children(&mut self, id: ComponentId) {
+    pub(crate) fn dispose_all_children(&mut self, id: ComponentId) {
         if let Some(component) = self.components.get_mut(id) {
             for child_id in std::mem::take(&mut component.children) {
                 self.dispose_component(child_id);
@@ -37,20 +36,7 @@ impl ReactiveScope {
         }
     }
 
-    pub fn dispose_children(&mut self, id: ComponentId, f: impl FnMut(&ComponentId) -> bool) {
-        let to_dispose = self
-            .components
-            .get_mut(id)
-            .map(move |scope| extract_if(&mut scope.children, f));
-
-        if let Some(to_dispose) = to_dispose {
-            for child in to_dispose {
-                self.dispose_component(child);
-            }
-        }
-    }
-
-    pub fn on_cleanup(&mut self, component_id: ComponentId, cleanup_fn: impl FnOnce() + 'static) {
+    pub(crate) fn on_cleanup(&mut self, component_id: ComponentId, cleanup_fn: impl FnOnce() + 'static) {
         if let Some(component) = self.components.get_mut(component_id) {
             component.cleanup.push(Box::new(cleanup_fn));
         }

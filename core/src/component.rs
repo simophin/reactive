@@ -1,5 +1,5 @@
 use crate::component_scope::ComponentId;
-use crate::signal::StoredSignal;
+use crate::signal::{ReadSignal, StoredSignal};
 use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
 use futures::Stream;
 
@@ -40,7 +40,7 @@ impl Component for Vec<BoxedComponent> {
 /// so users never interact with these implementation details directly.
 pub struct SetupContext<'a> {
     pub(crate) scope: &'a mut ReactiveScope,
-    pub component_id: ComponentId,
+    pub(crate) component_id: ComponentId,
 }
 
 impl<'a> SetupContext<'a> {
@@ -63,10 +63,10 @@ impl<'a> SetupContext<'a> {
         self.scope.create_effect(self.component_id, effect_fn);
     }
 
-    pub fn create_memo<T: PartialEq + Clone + 'static>(
+    pub fn create_memo<T: 'static>(
         &mut self,
         memo_fn: impl FnMut() -> T + 'static,
-    ) -> impl Signal<Value = T> + Copy + 'static {
+    ) -> ReadSignal<T> {
         self.scope.create_memo(self.component_id, memo_fn)
     }
 
@@ -74,7 +74,7 @@ impl<'a> SetupContext<'a> {
         &mut self,
         input_fn: impl Signal<Value = I> + 'static,
         resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> impl Signal<Value = ResourceState<T>> + Copy + 'static
+    ) -> ReadSignal<ResourceState<T>>
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -89,7 +89,7 @@ impl<'a> SetupContext<'a> {
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         stream_producer: impl FnMut(I) -> S + 'static,
-    ) -> impl Signal<Value = T> + Copy + 'static
+    ) -> ReadSignal<T>
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -110,7 +110,7 @@ impl<'a> SetupContext<'a> {
     pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
-    ) -> Option<impl Signal<Value = T> + Copy + 'static> {
+    ) -> Option<ReadSignal<T>> {
         self.scope.use_context(self.component_id, key)
     }
 

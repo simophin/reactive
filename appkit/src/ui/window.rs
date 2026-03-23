@@ -1,9 +1,11 @@
+use apple::ViewBuilder;
+use apple::bindable::BindableView;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::{BoxedComponent, Component, SetupContext};
+use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
 
 use super::context::{PARENT_VIEW, ViewParent};
 
@@ -30,20 +32,47 @@ impl AppWindowDelegate {
 }
 
 pub struct Window {
-    title: String,
-    width: f64,
-    height: f64,
+    builder: ViewBuilder<NSWindow>,
     children: Vec<BoxedComponent>,
 }
 
+apple::view_props! {
+    Window on NSWindow {
+        title: String;
+    }
+}
+
+impl AsMut<ViewBuilder<NSWindow>> for Window {
+    fn as_mut(&mut self) -> &mut ViewBuilder<NSWindow> {
+        &mut self.builder
+    }
+}
+
+impl BindableView<NSWindow> for Window {}
+
 impl Window {
-    pub fn new(title: impl Into<String>, width: f64, height: f64) -> Self {
-        Self {
-            title: title.into(),
-            width,
-            height,
+    pub fn new(title: impl Signal<Value = String> + 'static, width: f64, height: f64) -> Self {
+        let mut w = Self {
+            builder: ViewBuilder::new(move |_| {
+                let mtm = MainThreadMarker::new().expect("must be on main thread");
+                let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(width, height));
+                let style = NSWindowStyleMask::Titled
+                    | NSWindowStyleMask::Closable
+                    | NSWindowStyleMask::Resizable;
+                unsafe {
+                    NSWindow::initWithContentRect_styleMask_backing_defer(
+                        mtm.alloc(),
+                        rect,
+                        style,
+                        NSBackingStoreType::Buffered,
+                        false,
+                    )
+                }
+            }),
             children: Vec::new(),
-        }
+        };
+        w.as_mut().bind(PROP_TITLE, title);
+        w
     }
 
     pub fn child(mut self, c: impl Component + 'static) -> Self {
@@ -54,24 +83,14 @@ impl Window {
 
 impl Component for Window {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        let Window { builder, children } = *self;
+
         let mtm = MainThreadMarker::new().expect("must be on main thread");
-
-        let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(self.width, self.height));
-        let style =
-            NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Resizable;
-        let window = unsafe {
-            NSWindow::initWithContentRect_styleMask_backing_defer(
-                mtm.alloc(),
-                rect,
-                style,
-                NSBackingStoreType::Buffered,
-                false,
-            )
-        };
-
         let delegate = AppWindowDelegate::new(mtm);
+
+        let window = builder.setup(ctx);
+
         window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        window.setTitle(&NSString::from_str(&self.title));
         window.center();
         window.makeKeyAndOrderFront(None);
 
@@ -83,7 +102,7 @@ impl Component for Window {
             let _ = window;
         });
 
-        for child in self.children {
+        for child in children {
             let mut child_ctx = ctx.new_child();
             child.setup(&mut child_ctx);
         }

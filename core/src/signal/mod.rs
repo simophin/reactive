@@ -1,13 +1,14 @@
 mod constant;
-pub mod ext;
+mod ext;
 mod primitives;
 pub(crate) mod stored;
 
 pub use constant::*;
-pub use stored::StoredSignal;
+pub use ext::{SignalExt, SignalMapper};
 pub(crate) use stored::{BoxedStoredSignal, remove_signal};
+pub use stored::{ReadSignal, StoredSignal};
 
-pub type SignalId = u64;
+pub(crate) type SignalId = u64;
 
 /// A reactive signal. Object-safe: `dyn Signal<Value = T>` is valid when `T: Clone + 'static`.
 ///

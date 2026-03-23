@@ -12,7 +12,7 @@ new_key_type! {
     pub struct ComponentId;
 }
 
-pub type ContextKeyId = *const ();
+pub(crate) type ContextKeyId = *const ();
 
 pub struct ContextKey<T>(PhantomData<fn() -> T>);
 
@@ -21,7 +21,7 @@ impl<T> ContextKey<T> {
         Self(PhantomData)
     }
 
-    pub const fn id(&'static self) -> ContextKeyId {
+    pub(crate) const fn id(&'static self) -> ContextKeyId {
         self as *const ContextKey<T> as *const ()
     }
 }

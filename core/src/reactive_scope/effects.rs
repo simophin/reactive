@@ -1,10 +1,10 @@
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect};
-use crate::signal::{Signal, StoredSignal};
+use crate::signal::{ReadSignal, StoredSignal};
 
 use super::ReactiveScope;
 
 impl ReactiveScope {
-    pub fn create_effect<T: 'static>(
+    pub(crate) fn create_effect<T: 'static>(
         &mut self,
         component_id: ComponentId,
         mut effect_fn: impl for<'a> FnMut(&mut ReactiveScope, Option<T>) -> T + 'static,
@@ -20,18 +20,22 @@ impl ReactiveScope {
         });
 
         let (signal_accessed, in_flight) = effect_fn(self);
-        let effect = Effect { effect_fn, signal_accessed, in_flight };
+        let effect = Effect {
+            effect_fn,
+            signal_accessed,
+            in_flight,
+        };
 
         if let Some(component) = self.components.get_mut(component_id) {
             component.push_effect(effect);
         }
     }
 
-    pub fn create_memo<T: PartialEq + Clone + 'static>(
+    pub(crate) fn create_memo<T: 'static>(
         &mut self,
         component_id: ComponentId,
         mut memo_fn: impl FnMut() -> T + 'static,
-    ) -> impl Signal<Value = T> + Copy + 'static {
+    ) -> ReadSignal<T> {
         let (initial_value, signal_accessed) =
             self.active_signal_tracker.run_tracking(|| memo_fn());
 
@@ -41,7 +45,7 @@ impl ReactiveScope {
         let effect = Effect {
             effect_fn: Box::new(move |_| {
                 let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
-                signal.update_if_changes(value);
+                signal.set_and_notify_changes(value);
                 (signal_accessed, None)
             }),
             signal_accessed,
@@ -52,7 +56,7 @@ impl ReactiveScope {
             component.push_effect(effect);
         }
 
-        signal
+        ReadSignal(signal)
     }
 }
 
