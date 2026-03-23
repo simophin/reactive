@@ -32,6 +32,8 @@ impl ReactiveScope {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
+            signal.set_and_notify_changes(ResourceState::Loading);
+
             let in_flight = Some(InFlightFuture {
                 future: Box::pin(resource_fn(input).map(move |result| {
                     signal.set_and_notify_changes(ResourceState::Ready(result));
@@ -120,11 +122,41 @@ mod tests {
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(resource.read(), ResourceState::Ready(10));
 
-        // Changing the input re-fires the resource; with a sync future it resolves
-        // in the same tick the effect re-runs — no intermediate Loading state
+        // Changing the input re-fires the resource; the signal resets to Loading
+        // then the sync future resolves in the same tick, ending at Ready.
         input.update_if_changes(2);
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(resource.read(), ResourceState::Ready(20));
+    }
+
+    #[test]
+    fn test_resource_resets_to_loading_on_input_change() {
+        let mut scope = ReactiveScope::default();
+        let root = scope.create_child_component(None);
+
+        let input = scope.create_signal(1i32);
+        // First call resolves immediately; subsequent calls stay pending so we can
+        // observe the intermediate Loading state.
+        let call_count = std::cell::Cell::new(0usize);
+        let resource = scope.create_resource(root, input, move |v| {
+            let n = call_count.get();
+            call_count.set(n + 1);
+            if n == 0 {
+                Box::pin(std::future::ready(v * 10))
+                    as std::pin::Pin<Box<dyn std::future::Future<Output = i32>>>
+            } else {
+                Box::pin(std::future::pending::<i32>())
+            }
+        });
+
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(resource.read(), ResourceState::Ready(10));
+
+        // After input changes the signal must immediately reset to Loading, even
+        // before the new future resolves.
+        input.update_if_changes(2);
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+        assert_eq!(resource.read(), ResourceState::Loading);
     }
 
     #[test]
