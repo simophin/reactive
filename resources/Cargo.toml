@@ -1,0 +1,11 @@
+[package]
+name = "resources"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+reactive = ["dep:reactive_core"]
+
+[dependencies]
+unic-langid = "0.9"
+reactive_core = { path = "../core", package = "core", optional = true }
