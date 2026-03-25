@@ -1,5 +1,6 @@
 use crate::component_scope::ComponentId;
-use crate::signal::{ReadSignal, StoredSignal};
+use crate::signal::StoredSignal;
+use crate::signal::stored::ReadStoredSignal;
 use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
 use futures::Stream;
 
@@ -65,7 +66,10 @@ impl SetupContext {
         self.scope.create_effect(self.component_id, effect_fn);
     }
 
-    pub fn create_memo<T: 'static>(&self, memo_fn: impl FnMut() -> T + 'static) -> ReadSignal<T> {
+    pub fn create_memo<T: 'static>(
+        &self,
+        memo_fn: impl FnMut() -> T + 'static,
+    ) -> ReadStoredSignal<T> {
         self.scope.create_memo(self.component_id, memo_fn)
     }
 
@@ -73,7 +77,7 @@ impl SetupContext {
         &self,
         input_fn: impl Signal<Value = I> + 'static,
         resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> ReadSignal<ResourceState<T>>
+    ) -> ReadStoredSignal<ResourceState<T>>
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -88,7 +92,7 @@ impl SetupContext {
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         stream_producer: impl FnMut(I) -> S + 'static,
-    ) -> ReadSignal<T>
+    ) -> ReadStoredSignal<T>
     where
         I: Clone + 'static,
         T: Clone + 'static,
@@ -109,7 +113,7 @@ impl SetupContext {
     pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
-    ) -> Option<ReadSignal<T>> {
+    ) -> Option<ReadStoredSignal<T>> {
         self.scope.use_context(self.component_id, key)
     }
 

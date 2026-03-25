@@ -1,11 +1,10 @@
 use crate::component_scope::{ComponentId, Effect};
 use crate::reactive_scope::ReactiveScopeData;
-use crate::signal::SignalId;
+use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
-
 // ---------------------------------------------------------------------------
 // Per-future waker
 // ---------------------------------------------------------------------------

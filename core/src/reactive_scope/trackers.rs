@@ -1,9 +1,8 @@
-use crate::signal::SignalId;
+use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::task::Waker;
-
 // ---------------------------------------------------------------------------
 // DirtySignalSet
 // ---------------------------------------------------------------------------

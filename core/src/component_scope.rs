@@ -1,5 +1,6 @@
 use crate::ReactiveScope;
-use crate::signal::{BoxedStoredSignal, SignalId};
+use crate::signal::BoxedStoredSignal;
+use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
 use slotmap::new_key_type;
 use std::collections::HashMap;

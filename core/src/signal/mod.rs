@@ -2,21 +2,15 @@ mod constant;
 mod ext;
 mod primitives;
 pub(crate) mod stored;
+pub mod wrapper;
 
 pub use constant::*;
 pub use ext::{SignalExt, SignalMapper};
 pub(crate) use stored::BoxedStoredSignal;
-pub use stored::{ReadSignal, StoredSignal};
-
-/// The identity of a signal, derived from the pointer address of its heap allocation.
-/// Stable for the lifetime of the signal; used in sorted dependency sets.
-pub(crate) type SignalId = usize;
+pub use stored::StoredSignal;
 
 /// A reactive signal. Object-safe: `dyn Signal<Value = T>` is valid when `T: Clone + 'static`.
 ///
-/// The `access`-based zero-cost pattern has been dropped in favour of always cloning, which
-/// allows the trait to be used as a trait object — essential when binding large numbers of
-/// UI properties dynamically.
 pub trait Signal {
     type Value;
 

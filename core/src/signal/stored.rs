@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::reactive_scope::WeakReactiveScope;
-use crate::signal::{Signal, SignalId};
-
+use crate::signal::Signal;
+use crate::wrapper::SignalWrapper;
 // ---------------------------------------------------------------------------
 // SignalInner — the single heap allocation shared by all clones of a signal
 // ---------------------------------------------------------------------------
@@ -14,11 +14,17 @@ pub(crate) struct SignalInner<T> {
     scope: WeakReactiveScope,
 }
 
+/// The identity of a signal, derived from the pointer address of its heap allocation.
+/// Stable for the lifetime of the signal; used in sorted dependency sets.
+pub(crate) type SignalId = usize;
+
 // ---------------------------------------------------------------------------
 // StoredSignal
 // ---------------------------------------------------------------------------
 
 pub struct StoredSignal<T>(Rc<SignalInner<T>>);
+
+pub type ReadStoredSignal<T> = SignalWrapper<StoredSignal<T>, ()>;
 
 impl<T> Clone for StoredSignal<T> {
     fn clone(&self) -> Self {
@@ -42,9 +48,13 @@ impl<T> StoredSignal<T> {
         Rc::as_ptr(&self.0) as usize
     }
 
+    pub fn read_only(self) -> ReadStoredSignal<T> {
+        SignalWrapper::new(self, ())
+    }
+
     /// Update the value in-place. The closure returns `true` if the value changed
     /// and the signal should be marked dirty.
-    pub fn update(&self, f: impl FnOnce(&mut T) -> bool)
+    pub fn update_with(&self, f: impl FnOnce(&mut T) -> bool)
     where
         T: 'static,
     {
@@ -56,23 +66,24 @@ impl<T> StoredSignal<T> {
         }
     }
 
-    pub fn set_and_notify_changes(&self, value: T)
+    pub fn update<S: Into<T>>(&self, value: S)
     where
         T: 'static,
     {
-        self.update(|v| {
-            *v = value;
+        self.update_with(|v| {
+            *v = value.into();
             true
         });
     }
 
-    pub fn update_if_changes(&self, value: T)
+    pub fn update_if_changes<S: Into<T>>(&self, value: S)
     where
-        T: PartialEq + 'static,
+        S: PartialEq<T>,
+        T: 'static,
     {
-        self.update(|v| {
-            if v != &value {
-                *v = value;
+        self.update_with(move |v| {
+            if &value != v {
+                *v = value.into();
                 true
             } else {
                 false
@@ -127,36 +138,5 @@ impl BoxedStoredSignal {
 impl<T: 'static> From<StoredSignal<T>> for BoxedStoredSignal {
     fn from(value: StoredSignal<T>) -> Self {
         Self(Box::new(value))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ReadSignal — read-only handle to a StoredSignal
-// ---------------------------------------------------------------------------
-
-/// A read-only handle to a [`StoredSignal`].
-///
-/// Implements [`Signal`] but does not expose any write methods. This is the
-/// type returned by [`ReactiveScope::create_resource`] and
-/// [`ReactiveScope::create_stream`], and used as the parameter type for
-/// [`Match`](crate::components::Match) case factories.
-pub struct ReadSignal<T>(pub(crate) StoredSignal<T>);
-
-impl<T> Clone for ReadSignal<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<T: Clone + 'static> Signal for ReadSignal<T> {
-    type Value = T;
-    fn read(&self) -> T {
-        self.0.read()
-    }
-}
-
-impl<T> From<StoredSignal<T>> for ReadSignal<T> {
-    fn from(s: StoredSignal<T>) -> Self {
-        Self(s)
     }
 }

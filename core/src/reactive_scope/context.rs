@@ -1,7 +1,7 @@
-use crate::component_scope::{ComponentId, ContextKey};
-use crate::signal::{ReadSignal, StoredSignal};
-
 use super::ReactiveScope;
+use crate::component_scope::{ComponentId, ContextKey};
+use crate::signal::StoredSignal;
+use crate::signal::stored::ReadStoredSignal;
 
 impl ReactiveScope {
     pub(crate) fn provide_context<T: Clone + 'static>(
@@ -21,13 +21,13 @@ impl ReactiveScope {
         &self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
-    ) -> Option<ReadSignal<T>> {
+    ) -> Option<ReadStoredSignal<T>> {
         let data = self.0.borrow();
         let mut scope = data.components.get(component_id);
 
         while let Some(component) = scope {
             if let Some(signal) = component.context.get(&key.id()) {
-                return signal.downcast_ref().cloned().map(ReadSignal);
+                return signal.downcast_ref().cloned().map(|r| r.read_only());
             }
             scope = component.parent.and_then(|id| data.components.get(id));
         }
