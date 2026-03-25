@@ -77,6 +77,7 @@ mod tests {
         let result = Arc::new(Mutex::new(0));
 
         scope.create_effect(child, {
+            let count = count.clone();
             let result = Arc::clone(&result);
             move |_, _: Option<()>| {
                 *result.lock().unwrap() = count.read();

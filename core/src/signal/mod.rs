@@ -5,10 +5,12 @@ pub(crate) mod stored;
 
 pub use constant::*;
 pub use ext::{SignalExt, SignalMapper};
-pub(crate) use stored::{BoxedStoredSignal, remove_signal};
+pub(crate) use stored::BoxedStoredSignal;
 pub use stored::{ReadSignal, StoredSignal};
 
-pub(crate) type SignalId = u64;
+/// The identity of a signal, derived from the pointer address of its heap allocation.
+/// Stable for the lifetime of the signal; used in sorted dependency sets.
+pub(crate) type SignalId = usize;
 
 /// A reactive signal. Object-safe: `dyn Signal<Value = T>` is valid when `T: Clone + 'static`.
 ///

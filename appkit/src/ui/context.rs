@@ -1,5 +1,5 @@
 use objc2::rc::Retained;
-use objc2_app_kit::{NSStackView, NSView};
+use objc2_app_kit::{NSAutoresizingMaskOptions, NSStackView, NSView};
 use reactive_core::ContextKey;
 
 #[derive(Clone)]
@@ -12,6 +12,10 @@ impl ViewParent {
     pub(super) fn add_child(&self, child: Retained<NSView>) {
         match self {
             ViewParent::Window(parent) => {
+                child.setAutoresizingMask(
+                    NSAutoresizingMaskOptions::ViewWidthSizable
+                        | NSAutoresizingMaskOptions::ViewHeightSizable,
+                );
                 child.setFrame(parent.bounds());
                 parent.addSubview(&child);
             }
@@ -22,9 +26,6 @@ impl ViewParent {
     }
 
     pub(super) fn remove_child(&self, child: &NSView) {
-        // removeFromSuperview handles both cases:
-        // - For stack views, this automatically removes it as an arranged subview too.
-        // - For window content views, this removes it from the content view's subviews.
         child.removeFromSuperview();
     }
 }

@@ -21,9 +21,9 @@ impl ReactiveResourceContext {
         ctx: &mut SetupContext,
         desc: &'static AssetDescriptor<TranslationData<M>>,
     ) -> ReadSignal<&'static str> {
-        let signal = self.0;
+        let signal = self.0.clone();
         ctx.create_memo(move || {
-            let rc = signal.map(|s| s.read()).unwrap_or_default();
+            let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
             rc.resolve_translation(desc)
         })
     }
@@ -36,9 +36,9 @@ impl ReactiveResourceContext {
         desc: &'static AssetDescriptor<TranslationData<M>>,
         msg: M,
     ) -> ReadSignal<String> {
-        let signal = self.0;
+        let signal = self.0.clone();
         ctx.create_memo(move || {
-            let rc = signal.map(|s| s.read()).unwrap_or_default();
+            let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
             rc.translate(desc, &msg)
         })
     }
@@ -51,9 +51,9 @@ impl ReactiveResourceContext {
         desc: &'static AssetDescriptor<TranslationData<M>>,
         mut msg_factory: impl FnMut() -> M + 'static,
     ) -> ReadSignal<String> {
-        let signal = self.0;
+        let signal = self.0.clone();
         ctx.create_memo(move || {
-            let rc = signal.map(|s| s.read()).unwrap_or_default();
+            let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
             rc.translate(desc, &msg_factory())
         })
     }
@@ -64,8 +64,14 @@ impl ReactiveResourceContext {
         ctx: &mut SetupContext,
         asset: &'static AssetDescriptor<BinaryData>,
     ) -> ReadSignal<BinaryData> {
-        let signal = self.0;
-        ctx.create_memo(move || *signal.read().unwrap_or_default().asset(asset))
+        let signal = self.0.clone();
+        ctx.create_memo(move || {
+            *signal
+                .as_ref()
+                .map(|s| s.read())
+                .unwrap_or_default()
+                .asset(asset)
+        })
     }
 }
 

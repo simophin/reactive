@@ -1,21 +1,18 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
-use std::hash::Hash;
 use std::rc::Rc;
 
-use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2::{ClassType, DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSCollectionView, NSCollectionViewDataSource, NSCollectionViewItem, NSCollectionViewLayout,
     NSIndexPathNSCollectionViewAdditions, NSScrollView, NSView,
 };
 use objc2_foundation::{
-    MainThreadMarker, NSIndexPath, NSInteger, NSMutableSet, NSObject, NSObjectProtocol, NSSet,
+    MainThreadMarker, NSIndexPath, NSInteger, NSObject, NSObjectProtocol, NSString,
 };
-use reactive_core::{Component, ComponentId, ReadSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{Component, ReactiveScope, ReadSignal, SetupContext, Signal, StoredSignal};
 
 use super::context::{PARENT_VIEW, ViewParent};
 
@@ -23,34 +20,26 @@ use super::context::{PARENT_VIEW, ViewParent};
 // Public API
 // ---------------------------------------------------------------------------
 
-/// A reactive, signal-driven wrapper around `NSCollectionView`.
+/// A reactive, recycling wrapper around `NSCollectionView`.
 ///
-/// Items are reconciled by key, so components are never torn down and
-/// recreated for an item that merely moved or changed its data.
-///
-/// | Change kind             | Who handles it              |
-/// |-------------------------|-----------------------------|
-/// | Item data changed       | Reactive signal (no reload) |
-/// | Item added              | `insertItemsAtIndexPaths`   |
-/// | Item removed            | `deleteItemsAtIndexPaths`   |
-/// | Item moved              | `moveItemAtIndexPath:to:`   |
-pub struct CollectionView<ItemsSignal, KeyFn, CellBuilder> {
+/// Each live `NSCollectionViewItem` carries its own companion `StoredSignal<Item>`
+/// stored as an ObjC ivar.  When AppKit recycles a cell we simply write new
+/// data through that signal; reactivity propagates the update without any view
+/// teardown.
+pub struct CollectionView<ItemsSignal, CellBuilder> {
     items: ItemsSignal,
-    key_fn: KeyFn,
     cell_builder: Rc<RefCell<CellBuilder>>,
     layout: Retained<NSCollectionViewLayout>,
 }
 
-impl<ItemsSignal, KeyFn, CellBuilder> CollectionView<ItemsSignal, KeyFn, CellBuilder> {
+impl<ItemsSignal, CellBuilder> CollectionView<ItemsSignal, CellBuilder> {
     pub fn new(
         items: ItemsSignal,
-        key_fn: KeyFn,
         cell_builder: CellBuilder,
         layout: Retained<NSCollectionViewLayout>,
     ) -> Self {
         Self {
             items,
-            key_fn,
             cell_builder: Rc::new(RefCell::new(cell_builder)),
             layout,
         }
@@ -58,105 +47,48 @@ impl<ItemsSignal, KeyFn, CellBuilder> CollectionView<ItemsSignal, KeyFn, CellBui
 }
 
 // ---------------------------------------------------------------------------
-// Pool slot — one per live item, keyed by item identity
+// ReactiveCollectionViewItem — NSCollectionViewItem subclass with signal ivar
+//
+// `signal_ptr` stores a heap pointer to a `Box<StoredSignal<T>>`.
+//
+//   null  → cell is freshly allocated; no component set up yet.
+//   non-null → component is live; dereference to get the signal.
+//
+// The Box is freed via an `on_cleanup` registered on the cell's own child
+// component, so it is automatically reclaimed when the collection view
+// component tree is torn down.
 // ---------------------------------------------------------------------------
 
-struct CellSlot<T: Clone + 'static> {
-    signal: StoredSignal<T>,
-    item: Retained<NSCollectionViewItem>,
-    component_id: ComponentId,
+struct ReactiveItemIvars {
+    signal_ptr: Cell<*const c_void>,
 }
 
-// ---------------------------------------------------------------------------
-// Shared pool state
-// ---------------------------------------------------------------------------
-
-/// The live pool, shared between the reconciliation effect and the
-/// ObjC data source.
-struct PoolState<T: Clone + 'static, K: Eq + Hash + Clone + 'static> {
-    /// Keyed map of live slots.
-    slots: HashMap<K, CellSlot<T>>,
-    /// Ordered list of keys, mirrors the current datasource order.
-    key_order: Vec<K>,
-}
-
-impl<T: Clone + 'static, K: Eq + Hash + Clone + 'static> Default for PoolState<T, K> {
+impl Default for ReactiveItemIvars {
     fn default() -> Self {
+        // Null pointer = "not yet configured".  ObjC zero-initialises ivars on
+        // alloc so this matches what AppKit sees when it creates cells itself.
         Self {
-            slots: HashMap::new(),
-            key_order: Vec::new(),
+            signal_ptr: Cell::new(std::ptr::null()),
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Diff engine
-// ---------------------------------------------------------------------------
+define_class!(
+    #[unsafe(super(NSCollectionViewItem))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "ReactiveCollectionViewItem"]
+    #[ivars = ReactiveItemIvars]
+    struct ReactiveItem;
 
-struct BatchUpdate<K> {
-    /// Deleted items: (key, index in the PRE-update order).
-    deleted: Vec<(K, usize)>,
-    /// Inserted items: (key, index in the POST-update order).
-    inserted: Vec<(K, usize)>,
-    /// Survivors that moved: (index in PRE-update order, index in POST-update order).
-    moved: Vec<(usize, usize)>,
-}
-
-fn diff<K: Eq + Hash + Clone>(old_order: &[K], new_order: &[K]) -> BatchUpdate<K> {
-    let old_set: HashSet<&K> = old_order.iter().collect();
-    let new_set: HashSet<&K> = new_order.iter().collect();
-
-    let deleted = old_order
-        .iter()
-        .enumerate()
-        .filter(|(_, k)| !new_set.contains(k))
-        .map(|(i, k)| (k.clone(), i))
-        .collect();
-
-    let inserted = new_order
-        .iter()
-        .enumerate()
-        .filter(|(_, k)| !old_set.contains(k))
-        .map(|(i, k)| (k.clone(), i))
-        .collect();
-
-    // Build old-position lookup for survivors only.
-    let old_pos: HashMap<&K, usize> = old_order
-        .iter()
-        .enumerate()
-        .filter(|(_, k)| new_set.contains(k))
-        .map(|(i, k)| (k, i))
-        .collect();
-
-    let moved = new_order
-        .iter()
-        .enumerate()
-        .filter(|(_, k)| old_set.contains(k))
-        .filter_map(|(new_i, k)| old_pos.get(k).map(|&old_i| (old_i, new_i)))
-        .filter(|(old_i, new_i)| old_i != new_i)
-        .collect();
-
-    BatchUpdate {
-        deleted,
-        inserted,
-        moved,
-    }
-}
+    unsafe impl NSObjectProtocol for ReactiveItem {}
+);
 
 // ---------------------------------------------------------------------------
-// ObjC helpers: NSIndexPath / NSSet<NSIndexPath>
+// ObjC helpers
 // ---------------------------------------------------------------------------
 
-fn index_path(item: usize) -> Retained<NSIndexPath> {
+fn make_index_path(item: usize) -> Retained<NSIndexPath> {
     NSIndexPath::indexPathForItem_inSection(item as NSInteger, 0)
-}
-
-fn index_path_set(indices: impl IntoIterator<Item = usize>) -> Retained<NSSet<NSIndexPath>> {
-    let set = NSMutableSet::new();
-    for i in indices {
-        set.addObject(&*index_path(i));
-    }
-    unsafe { Retained::cast_unchecked(set) }
 }
 
 // ---------------------------------------------------------------------------
@@ -173,8 +105,6 @@ struct DataSourceCallbacks {
 // ---------------------------------------------------------------------------
 
 struct DataSourceIvars {
-    /// Raw pointer to a `Box<DataSourceCallbacks>` owned by the reactive
-    /// scope via `on_cleanup`.  Null until `new` is called.
     ptr: Cell<*const c_void>,
 }
 
@@ -237,15 +167,13 @@ impl CollectionDataSource {
 // Component impl
 // ---------------------------------------------------------------------------
 
-impl<Item, ItemsSignal, KeyFn, CellBuilder, Key, CellComponent> Component
-    for CollectionView<ItemsSignal, KeyFn, CellBuilder>
+impl<Item, ItemsSignal, CellBuilder, CellComponent> Component
+    for CollectionView<ItemsSignal, CellBuilder>
 where
-    Item: Clone + 'static,
+    Item: PartialEq + Clone + 'static,
     ItemsSignal: Signal<Value = Rc<[Item]>> + 'static,
-    KeyFn: FnMut(&Item) -> Key + 'static,
     CellBuilder: FnMut(ReadSignal<Item>) -> CellComponent + 'static,
     CellComponent: Component + 'static,
-    Key: Eq + Hash + Clone + 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let mtm =
@@ -253,7 +181,6 @@ where
 
         let CollectionView {
             items,
-            mut key_fn,
             cell_builder,
             layout,
         } = *self;
@@ -265,7 +192,6 @@ where
         scroll_view.setDocumentView(Some(collection_view.as_ref()));
 
         let sv_nsview: Retained<NSView> = scroll_view.clone().into_super();
-
         if let Some(parent_signal) = ctx.use_context(&PARENT_VIEW) {
             let parent = parent_signal.read();
             parent.add_child(sv_nsview.clone());
@@ -275,138 +201,139 @@ where
             });
         }
 
-        // ── Shared pool ────────────────────────────────────────────────────
-        let pool: Rc<RefCell<PoolState<Item, Key>>> = Rc::default();
+        // ── Register our subclass for AppKit's reuse queue ─────────────────
+        //
+        // Using `ReactiveItem` instead of the base `NSCollectionViewItem`
+        // ensures every cell vended by `makeItemWithIdentifier:forIndexPath:`
+        // carries our `signal_ptr` ivar.
+        let cell_identifier = NSString::from_str("cell");
+        unsafe {
+            let _: () = msg_send![
+                &*collection_view,
+                registerClass: ReactiveItem::class(),
+                forItemWithIdentifier: &*cell_identifier
+            ];
+        }
 
-        // ── Type-erased callbacks for the ObjC data source ─────────────────
+        // ── Current items snapshot ─────────────────────────────────────────
+        //
+        // Written by the reconciliation effect before `reloadData`; read by
+        // `item_at` to know which datum to bind to each cell.
+        let current_items: Rc<RefCell<Rc<[Item]>>> = Rc::new(RefCell::new(Rc::from([])));
+
+        // ── Clone scope for use inside the data-source callback ────────────
+        //
+        // `ReactiveScope` is `Rc<RefCell<...>>` — cheap to clone, all clones
+        // share the same runtime.  This lets `item_at` call `setup_child` and
+        // `create_signal` even though it runs outside any reactive effect.
+        let scope_for_item_at = ctx.scope();
+        let parent_id = ctx.component_id();
+
+        // ── Data-source callbacks ──────────────────────────────────────────
         let callbacks = Box::new(DataSourceCallbacks {
             item_count: Box::new({
-                let p = Rc::clone(&pool);
-                move || p.borrow().key_order.len()
+                let items = Rc::clone(&current_items);
+                move || items.borrow().len()
             }),
+
             item_at: Box::new({
-                let p = Rc::clone(&pool);
+                let items = Rc::clone(&current_items);
+                let builder = Rc::clone(&cell_builder);
+                let scope = scope_for_item_at;
+                let cv = collection_view.clone();
+                let identifier = cell_identifier.clone();
                 move |index| {
-                    let p = p.borrow();
-                    p.slots[&p.key_order[index]].item.clone()
+                    let ip = make_index_path(index);
+
+                    // Ask AppKit for a cell.  Because we registered `ReactiveItem`,
+                    // every returned instance has our `signal_ptr` ivar.
+                    let cv_item: Retained<NSCollectionViewItem> = unsafe {
+                        msg_send![
+                            &*cv,
+                            makeItemWithIdentifier: &*identifier,
+                            forIndexPath: &*ip
+                        ]
+                    };
+
+                    // Cast to our concrete subtype to reach the ivar.
+                    // SAFETY: all cells for this identifier are `ReactiveItem`.
+                    let reactive = unsafe {
+                        &*(&*cv_item as *const NSCollectionViewItem as *const ReactiveItem)
+                    };
+                    let raw = reactive.ivars().signal_ptr.get();
+
+                    if raw.is_null() {
+                        // ── Create path ─────────────────────────────────────
+                        // First time AppKit allocates this cell object.
+                        // Create a signal, store a stable heap pointer to it in
+                        // the ivar, then wire up the child component.
+
+                        let signal = scope.create_signal(items.borrow()[index].clone());
+
+                        // Heap-allocate a clone so the ivar holds a stable address.
+                        // The original `signal` is moved into `ReadSignal` below.
+                        // The Box is freed via `on_cleanup` on the cell's child component.
+                        let raw = Box::into_raw(Box::new(signal.clone())) as *const c_void;
+                        reactive.ivars().signal_ptr.set(raw);
+
+                        let container = NSView::new(mtm);
+                        cv_item.setView(&*container);
+
+                        scope.setup_child(parent_id, |child_ctx| {
+                            child_ctx.provide_context(
+                                &PARENT_VIEW,
+                                ViewParent::Window(container.clone()),
+                            );
+                            Box::new((builder.borrow_mut())(ReadSignal::from(signal)))
+                                .setup(child_ctx);
+
+                            // Free the signal Box when the collection view's
+                            // component tree is eventually disposed.
+                            child_ctx.on_cleanup(move || unsafe {
+                                drop(Box::<StoredSignal<Item>>::from_raw(
+                                    raw as *mut StoredSignal<Item>,
+                                ));
+                            });
+                        });
+                    } else {
+                        // ── Reuse path ──────────────────────────────────────
+                        // AppKit handed back a recycled cell.  The ivar already
+                        // points to the companion signal; push the new data
+                        // through it and let reactive effects do the rest.
+                        let signal = unsafe { &*(raw as *const StoredSignal<Item>) }.clone();
+                        signal.update(|curr| {
+                            let items = items.borrow();
+                            if &items[index] != curr {
+                                *curr = items[index].clone();
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                    }
+
+                    cv_item
                 }
             }),
         });
-        let callbacks_ptr: *const DataSourceCallbacks = &*callbacks;
 
+        let callbacks_ptr: *const DataSourceCallbacks = &*callbacks;
         let datasource = CollectionDataSource::new(mtm, callbacks_ptr);
         collection_view.setDataSource(Some(ProtocolObject::from_ref(&*datasource)));
 
         // ── Reconciliation effect ──────────────────────────────────────────
+        //
+        // On every items change: snapshot into `current_items`, then reload.
+        // AppKit drives `item_at` for each visible cell; create/reuse is
+        // handled there transparently.
         let cv = collection_view.clone();
-        let parent_id = ctx.component_id();
-
-        ctx.create_effect(move |scope: &reactive_core::ReactiveScope, _: Option<()>| {
-            let new_items = items.read();
-            let new_keys: Vec<Key> = new_items.iter().map(|item| key_fn(item)).collect();
-
-            // Compute diff against current order before touching the pool.
-            let update = diff(&pool.borrow().key_order, &new_keys);
-            let is_first_render = pool.borrow().key_order.is_empty() && !new_keys.is_empty();
-
-            // --- mutate pool (must finish before NSCollectionView calls) ---
-            {
-                let mut pool = pool.borrow_mut();
-
-                // Dispose slots for deleted items.
-                for (key, _) in &update.deleted {
-                    if let Some(slot) = pool.slots.remove(key) {
-                        scope.dispose_component(slot.component_id);
-                    }
-                }
-
-                // Create new slots for inserted items.
-                for (key, new_i) in &update.inserted {
-                    let item_data = &new_items[*new_i];
-                    let signal = scope.create_signal(item_data.clone());
-                    let read_signal = ReadSignal::from(signal);
-
-                    let container = NSView::new(mtm);
-                    let cv_item = NSCollectionViewItem::new(mtm);
-                    cv_item.setView(&*container);
-
-                    let builder = Rc::clone(&cell_builder);
-                    let (child_id, ()) = scope.setup_child(parent_id, |child_ctx| {
-                        child_ctx
-                            .provide_context(&PARENT_VIEW, ViewParent::Window(container.clone()));
-                        Box::new((builder.borrow_mut())(read_signal)).setup(child_ctx);
-                    });
-
-                    pool.slots.insert(
-                        key.clone(),
-                        CellSlot {
-                            signal,
-                            item: cv_item,
-                            component_id: child_id,
-                        },
-                    );
-                }
-
-                // Commit the new key ordering — the data source reads this.
-                pool.key_order = new_keys;
-
-                // Rebind all surviving slots.  When nothing structural changed,
-                // this is the only work done: no NSCollectionView call at all.
-                for item_data in new_items.iter() {
-                    let key = key_fn(item_data);
-                    if let Some(slot) = pool.slots.get(&key) {
-                        slot.signal.set_and_notify_changes(item_data.clone());
-                    }
-                }
-            } // <-- borrow_mut released here
-
-            // --- notify NSCollectionView of structural changes ------------
-            let is_structural = !update.deleted.is_empty()
-                || !update.inserted.is_empty()
-                || !update.moved.is_empty();
-
-            if is_first_render {
-                // Simple full load for the initial render.
-                cv.reloadData();
-            } else if is_structural {
-                // Animated incremental update.
-                //
-                // Index semantics (same as UICollectionView):
-                //   deleted  → pre-update positions
-                //   inserted → post-update positions
-                //   moved    → (pre-update pos, post-update pos)
-                let deleted_idx: Vec<usize> = update.deleted.iter().map(|(_, i)| *i).collect();
-                let inserted_idx: Vec<usize> = update.inserted.iter().map(|(_, i)| *i).collect();
-                let moved_pairs = update.moved;
-
-                let cv2 = cv.clone();
-                cv.performBatchUpdates_completionHandler(
-                    Some(&RcBlock::new(move || {
-                        if !deleted_idx.is_empty() {
-                            cv2.deleteItemsAtIndexPaths(&index_path_set(
-                                deleted_idx.iter().copied(),
-                            ));
-                        }
-                        if !inserted_idx.is_empty() {
-                            cv2.insertItemsAtIndexPaths(&index_path_set(
-                                inserted_idx.iter().copied(),
-                            ));
-                        }
-                        for (from, to) in &moved_pairs {
-                            cv2.moveItemAtIndexPath_toIndexPath(
-                                &index_path(*from),
-                                &index_path(*to),
-                            );
-                        }
-                    })),
-                    None,
-                );
-            }
-            // Pure data changes: reactive effects handle everything, no reload.
+        ctx.create_effect(move |_: &ReactiveScope, _: Option<()>| {
+            *current_items.borrow_mut() = items.read();
+            cv.reloadData();
         });
 
-        // Cleanup order is LIFO: datasource drops first (preventing any further
-        // calls into the callbacks), then callbacks drops safely.
+        // Cleanup: drop datasource first so no ObjC callbacks fire after the
+        // `callbacks` Box is freed.
         ctx.on_cleanup(move || {
             drop(datasource);
             drop(callbacks);

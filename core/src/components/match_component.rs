@@ -24,7 +24,7 @@ macro_rules! extract {
     };
 }
 use crate::ReactiveScope;
-use crate::signal::{BoxedSignal, Signal, StoredSignal, remove_signal};
+use crate::signal::{BoxedSignal, Signal, StoredSignal};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -93,24 +93,24 @@ impl<T: Clone + 'static> Match<T> {
             move |value: &mut T, scope: &ReactiveScope| -> Option<Option<BoxedComponent>> {
                 let e = extractor(value)?;
                 let mut slot = active1.borrow_mut();
-                if let Some(sig) = *slot {
+                if let Some(sig) = slot.as_ref() {
                     // Already active: update the signal in-place; no rebuild needed.
                     sig.set_and_notify_changes(e);
                     Some(None)
                 } else {
                     // Newly activated: create the signal and call the factory once.
                     let sig = scope.create_signal(e);
+                    let sig_for_factory = sig.clone();
                     *slot = Some(sig);
-                    Some(Some(factory(ReadSignal(sig))))
+                    Some(Some(factory(ReadSignal(sig_for_factory))))
                 }
             },
         );
 
         let active2 = Rc::clone(&active);
+        // Dropping the StoredSignal from the slot is sufficient — the Rc handles cleanup.
         let deactivate = Box::new(move || {
-            if let Some(sig) = active2.borrow_mut().take() {
-                remove_signal(sig.id());
-            }
+            active2.borrow_mut().take();
         });
 
         self.cases.push(Case {
@@ -191,7 +191,7 @@ mod tests {
 
     /// Helper: build a Match over ResourceState<i32> that logs factory activations.
     fn make_match(
-        signal: StoredSignal<ResourceState<i32>>,
+        signal: impl Signal<Value = ResourceState<i32>> + 'static,
         log: Arc<Mutex<Vec<String>>>,
     ) -> Box<Match<ResourceState<i32>>> {
         let log1 = Arc::clone(&log);
@@ -237,7 +237,7 @@ mod tests {
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
-        make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
+        make_match(signal.clone(), Arc::clone(&log)).setup(&mut SetupContext {
             scope: scope.clone(),
             component_id: root,
         });
@@ -252,7 +252,7 @@ mod tests {
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
-        make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
+        make_match(signal.clone(), Arc::clone(&log)).setup(&mut SetupContext {
             scope: scope.clone(),
             component_id: root,
         });
@@ -271,7 +271,7 @@ mod tests {
         let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
-        make_match(signal, Arc::clone(&log)).setup(&mut SetupContext {
+        make_match(signal.clone(), Arc::clone(&log)).setup(&mut SetupContext {
             scope: scope.clone(),
             component_id: root,
         });
@@ -298,7 +298,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
         let log_clone = Arc::clone(&log);
-        Box::new(Match::new(profile, || Box::new(())).case(
+        Box::new(Match::new(profile.clone(), || Box::new(())).case(
             |s| match s {
                 ResourceState::Loading(last) => Some(std::mem::take(last)),
                 _ => None,
@@ -341,7 +341,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
 
         let log_clone = Arc::clone(&log);
-        Box::new(Match::new(signal, move || -> BoxedComponent {
+        Box::new(Match::new(signal.clone(), move || -> BoxedComponent {
             let log = Arc::clone(&log_clone);
             Box::new(move |ctx: &mut SetupContext| {
                 let _ = ctx;

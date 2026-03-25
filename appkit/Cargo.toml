@@ -32,6 +32,8 @@ objc2-app-kit = { version = "0.3", features = [
     "NSCollectionViewLayout",
     "NSScrollView",
     "NSViewController",
+    "NSLayoutConstraint",
+    "NSLayoutAnchor",
     "block2",
 ] }
 
@@ -47,3 +49,6 @@ name = "basic"
 
 [[example]]
 name = "pokedex"
+
+[[example]]
+name = "posts"

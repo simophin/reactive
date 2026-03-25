@@ -12,7 +12,7 @@ impl ReactiveScope {
     ) -> StoredSignal<T> {
         let signal = self.create_signal(initial_value);
         if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
-            component.context.insert(key.id(), signal.into());
+            component.context.insert(key.id(), signal.clone().into());
         }
         signal
     }
@@ -27,7 +27,7 @@ impl ReactiveScope {
 
         while let Some(component) = scope {
             if let Some(signal) = component.context.get(&key.id()) {
-                return signal.downcast_ref().copied().map(ReadSignal);
+                return signal.downcast_ref().cloned().map(ReadSignal);
             }
             scope = component.parent.and_then(|id| data.components.get(id));
         }

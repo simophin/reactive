@@ -129,6 +129,13 @@ impl SetupContext {
         self.component_id
     }
 
+    /// Returns a clone of the underlying [`ReactiveScope`].
+    ///
+    /// Cheap — `ReactiveScope` is `Rc<RefCell<...>>` under the hood.
+    pub fn scope(&self) -> ReactiveScope {
+        self.scope.clone()
+    }
+
     pub fn child(&self, component: impl Component + 'static) -> ComponentId {
         let mut child_ctx = self.new_child();
         Box::new(component).setup(&mut child_ctx);

@@ -32,17 +32,20 @@ impl ReactiveScope {
         let active_signal_tracker = self.0.borrow().active_signal_tracker.clone();
         let last_ready: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
 
+        let signal_for_effect = signal.clone();
         let mut effect_fn: BoxedEffectFn = Box::new(move |_: &ReactiveScope| {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
-            signal.set_and_notify_changes(ResourceState::Loading(last_ready.borrow().clone()));
+            signal_for_effect
+                .set_and_notify_changes(ResourceState::Loading(last_ready.borrow().clone()));
 
             let last_ready = Rc::clone(&last_ready);
+            let signal_for_future = signal_for_effect.clone();
             let in_flight = Some(InFlightFuture {
                 future: Box::pin(resource_fn(input).map(move |result| {
                     *last_ready.borrow_mut() = Some(result.clone());
-                    signal.set_and_notify_changes(ResourceState::Ready(result));
+                    signal_for_future.set_and_notify_changes(ResourceState::Ready(result));
                 })),
                 woken: Arc::new(AtomicBool::new(true)),
             });
@@ -76,11 +79,13 @@ impl ReactiveScope {
         S: Stream<Item = T> + 'static,
     {
         let signal = self.create_signal(initial);
+        let signal_for_resource = signal.clone();
 
         self.create_resource(component_id, input_signal, {
             move |input| {
+                let sig = signal_for_resource.clone();
                 stream_producer(input).for_each(move |item| {
-                    signal.set_and_notify_changes(item);
+                    sig.set_and_notify_changes(item);
                     ready(())
                 })
             }
@@ -122,7 +127,7 @@ mod tests {
         let root = scope.create_child_component(None);
 
         let input = scope.create_signal(1i32);
-        let resource = scope.create_resource(root, input, |v| async move { v * 10 });
+        let resource = scope.create_resource(root, input.clone(), |v| async move { v * 10 });
 
         // Initial load resolves in one tick (synchronous future)
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
@@ -144,7 +149,7 @@ mod tests {
         // First call resolves immediately; subsequent calls stay pending so we can
         // observe the intermediate Loading state.
         let call_count = std::cell::Cell::new(0usize);
-        let resource = scope.create_resource(root, input, move |v| {
+        let resource = scope.create_resource(root, input.clone(), move |v| {
             let n = call_count.get();
             call_count.set(n + 1);
             if n == 0 {

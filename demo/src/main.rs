@@ -43,17 +43,19 @@ fn main() {
         let rc = resources::reactive::use_resource_context(ctx);
 
         let count = ctx.create_signal(0i32);
-        let fact = ctx.create_resource(count, fetch_cat_fact);
+        let fact = ctx.create_resource(count.clone(), fetch_cat_fact);
 
         let title = rc.translate(ctx, strings::APP_TITLE, ());
         let decr_label = rc.translate(ctx, strings::DECREMENT, ());
         let incr_label = rc.translate(ctx, strings::INCREMENT, ());
         let reset_label = rc.translate(ctx, strings::RESET, ());
         let locale_label = rc.translate(ctx, strings::SWITCH_LOCALE, ());
-        let count_label =
+        let count_label = {
+            let count = count.clone();
             rc.translate_with(ctx, strings::COUNTER_LABEL, move || strings::CounterLabel {
                 count: count.read().to_string(),
-            });
+            })
+        };
 
         ctx.child(
             Window::new(title, 520.0, 260.0).child(

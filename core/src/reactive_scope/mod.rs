@@ -10,39 +10,19 @@ use crate::component::SetupContext;
 pub use resources::ResourceState;
 
 use crate::component_scope::{ComponentId, ComponentScope};
-use crate::signal::{SignalId, StoredSignal, remove_signal};
+use crate::signal::StoredSignal;
 use slotmap::SlotMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 pub(crate) use trackers::{ActiveSignalTracker, DirtySignalSet};
 
+#[derive(Default)]
 pub(crate) struct ReactiveScopeData {
     pub(crate) components: SlotMap<ComponentId, ComponentScope>,
     pub(crate) root: Vec<ComponentId>,
     pub(crate) dirty_signals: DirtySignalSet,
     pub(crate) active_signal_tracker: ActiveSignalTracker,
-    pub(crate) owned_signals: Vec<SignalId>,
-}
-
-impl Default for ReactiveScopeData {
-    fn default() -> Self {
-        Self {
-            components: SlotMap::with_key(),
-            root: Vec::new(),
-            dirty_signals: DirtySignalSet::default(),
-            active_signal_tracker: ActiveSignalTracker::default(),
-            owned_signals: Vec::new(),
-        }
-    }
-}
-
-impl Drop for ReactiveScopeData {
-    fn drop(&mut self) {
-        for id in &self.owned_signals {
-            remove_signal(*id);
-        }
-    }
 }
 
 /// A handle to the reactive runtime. Cheap to clone — all clones share the
@@ -85,13 +65,17 @@ impl ReactiveScope {
             component_id: child_id,
         };
         let r = f(&mut ctx);
+        // The setup may have created in-flight futures (via create_resource /
+        // create_stream) or other pending work.  Fire the waker so the
+        // scheduler knows to run a tick even if no signal was dirtied.
+        // This is a no-op when called from inside an existing tick (the waker
+        // is idempotent via the tick_scheduled AtomicBool).
+        self.0.borrow().dirty_signals.wake();
         (child_id, r)
     }
 
     pub fn create_signal<T: 'static>(&self, initial: T) -> StoredSignal<T> {
-        let signal = StoredSignal::new(initial, self.downgrade());
-        self.0.borrow_mut().owned_signals.push(signal.id());
-        signal
+        StoredSignal::new(initial, self.downgrade())
     }
 }
 

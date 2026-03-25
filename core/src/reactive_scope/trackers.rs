@@ -17,6 +17,15 @@ pub(crate) struct DirtySignalSet {
 impl DirtySignalSet {
     pub fn mark_dirty(&self, signal_id: SignalId) {
         self.signals.borrow_mut().insert(signal_id);
+        self.wake();
+    }
+
+    /// Fire the stored waker without marking any signal dirty.
+    ///
+    /// Use this to ensure a tick is scheduled after component-tree
+    /// manipulation that happens outside an existing reactive effect
+    /// (e.g. inside an AppKit data-source callback).
+    pub(super) fn wake(&self) {
         if let Some(waker) = self.waker.borrow().as_ref() {
             waker.wake_by_ref();
         }

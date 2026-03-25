@@ -45,10 +45,11 @@ impl ReactiveScope {
         let signal: StoredSignal<T> = self.create_signal(initial_value);
         let signal_tracker = self.0.borrow().active_signal_tracker.clone();
 
+        let signal_for_effect = signal.clone();
         let effect = Effect {
             effect_fn: Box::new(move |_: &ReactiveScope| {
                 let (value, signal_accessed) = signal_tracker.run_tracking(|| memo_fn());
-                signal.set_and_notify_changes(value);
+                signal_for_effect.set_and_notify_changes(value);
                 (signal_accessed, None)
             }),
             signal_accessed,
@@ -81,6 +82,7 @@ mod tests {
         let result = Arc::new(Mutex::new(0));
 
         scope.create_effect(root, {
+            let count = count.clone();
             let result = Arc::clone(&result);
             move |_, last| {
                 let count_value = count.read() + last.unwrap_or_default();
