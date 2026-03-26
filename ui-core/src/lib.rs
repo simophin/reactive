@@ -15,3 +15,4 @@ pub mod encoding;
 /// the nearest real view component below them consumes and translates to
 /// platform constraints.
 pub mod layout;
+pub mod widgets;

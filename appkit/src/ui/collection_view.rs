@@ -12,7 +12,7 @@ use objc2_app_kit::{
 use objc2_foundation::{
     MainThreadMarker, NSIndexPath, NSInteger, NSObject, NSObjectProtocol, NSString,
 };
-use reactive_core::{Component, ReactiveScope, ReadSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{Component, ReactiveScope, ReadStoredSignal, SetupContext, Signal, StoredSignal};
 
 use super::context::{PARENT_VIEW, ViewParent};
 
@@ -172,7 +172,7 @@ impl<Item, ItemsSignal, CellBuilder, CellComponent> Component
 where
     Item: PartialEq + Clone + 'static,
     ItemsSignal: Signal<Value = Rc<[Item]>> + 'static,
-    CellBuilder: FnMut(ReadSignal<Item>) -> CellComponent + 'static,
+    CellBuilder: FnMut(ReadStoredSignal<Item>) -> CellComponent + 'static,
     CellComponent: Component + 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
@@ -271,7 +271,7 @@ where
                         let signal = scope.create_signal(items.borrow()[index].clone());
 
                         // Heap-allocate a clone so the ivar holds a stable address.
-                        // The original `signal` is moved into `ReadSignal` below.
+                        // The original `signal` is moved into `ReadStoredSignal` below.
                         // The Box is freed via `on_cleanup` on the cell's child component.
                         let raw = Box::into_raw(Box::new(signal.clone())) as *const c_void;
                         reactive.ivars().signal_ptr.set(raw);
@@ -282,9 +282,9 @@ where
                         scope.setup_child(parent_id, |child_ctx| {
                             child_ctx.provide_context(
                                 &PARENT_VIEW,
-                                ViewParent::Window(container.clone()),
+                                ViewParent::View(container.clone()),
                             );
-                            Box::new((builder.borrow_mut())(ReadSignal::from(signal)))
+                            Box::new((builder.borrow_mut())(signal.read_only()))
                                 .setup(child_ctx);
 
                             // Free the signal Box when the collection view's

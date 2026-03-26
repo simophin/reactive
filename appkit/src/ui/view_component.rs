@@ -2,11 +2,12 @@ use apple::ViewBuilder;
 use apple::bindable::BindableView;
 use objc2::Message;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSStackView, NSView};
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
+use ui_core::layout::LAYOUT_HINTS;
 
 use super::context::{PARENT_VIEW, ViewParent};
+use super::flex::{ChildEntry, CHILD_VIEW_REGISTRY, activate_fill};
 
 pub struct AppKitViewComponent<V, Children> {
     builder: ViewBuilder<V>,
@@ -73,26 +74,35 @@ impl<T> IntoVec<T> for () {
 
 impl<V: Message, Children: IntoVec<BoxedComponent>> Component for AppKitViewComponent<V, Children> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let AppKitViewComponent {
-            builder,
-            children,
-            into_nsview,
-        } = *self;
+        let AppKitViewComponent { builder, children, into_nsview } = *self;
         let view = builder.setup(ctx);
         let nsview = into_nsview(view);
+        nsview.setTranslatesAutoresizingMaskIntoConstraints(false);
+
+        let hints = ctx.use_context(&LAYOUT_HINTS).map(|s| s.read()).unwrap_or_default();
 
         if let Some(parent) = ctx.use_context(&PARENT_VIEW) {
             let parent = parent.read();
             parent.add_child(nsview.clone());
             ctx.on_cleanup({
                 let nsview = nsview.clone();
-                move || parent.remove_child(&nsview)
+                move || nsview.removeFromSuperview()
             });
+
+            if let Some(registry) = ctx.use_context(&CHILD_VIEW_REGISTRY) {
+                registry.read().borrow_mut().push(ChildEntry { view: nsview.clone(), hints });
+            } else if let ViewParent::View(parent_nsview) = &parent {
+                activate_fill(&nsview, parent_nsview, &hints);
+            }
+            // ViewParent::Stack: NSStackView arranges its children; no extra constraints needed.
         }
 
-        let any: &AnyObject = &*nsview;
+        // Provide a parent context for any children of this view.
+        let any: &objc2::runtime::AnyObject = &*nsview;
         if let Some(stack) = any.downcast_ref::<NSStackView>() {
             ctx.provide_context(&PARENT_VIEW, ViewParent::Stack(stack.retain()));
+        } else {
+            ctx.provide_context(&PARENT_VIEW, ViewParent::View(nsview.clone()));
         }
 
         ctx.on_cleanup(move || drop(nsview));

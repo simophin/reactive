@@ -6,8 +6,10 @@ use objc2::{MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
+use ui_core::widgets;
 
 use super::context::{PARENT_VIEW, ViewParent};
+
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -95,7 +97,7 @@ impl Component for Window {
         window.makeKeyAndOrderFront(None);
 
         let content_view = window.contentView().unwrap();
-        ctx.provide_context(&PARENT_VIEW, ViewParent::Window(content_view.clone()));
+        ctx.provide_context(&PARENT_VIEW, ViewParent::View(content_view.clone()));
 
         ctx.on_cleanup(move || {
             let _ = delegate;
@@ -106,5 +108,19 @@ impl Component for Window {
             let mut child_ctx = ctx.new_child();
             child.setup(&mut child_ctx);
         }
+    }
+}
+
+impl widgets::Window for Window {
+    fn new(
+        title: impl Signal<Value = String> + 'static,
+        width: f64,
+        height: f64,
+    ) -> Self {
+        Window::new(title, width, height)
+    }
+
+    fn child(self, child: impl Component + 'static) -> Self {
+        self.child(child)
     }
 }

@@ -159,7 +159,7 @@ impl ReactiveTextView {
     }
 }
 
-fn make_reactive_text_view(
+pub(super) fn make_reactive_text_view(
     on_text_change: impl FnMut(Retained<NSString>) -> bool + 'static,
     on_selection_change: impl FnMut(Range<usize>) -> Range<usize> + 'static,
     mtm: MainThreadMarker,
@@ -259,5 +259,28 @@ impl TextView {
             into_nsview,
         )
         .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s)))
+    }
+}
+
+impl ui_core::widgets::Label for TextView {
+    fn new(text: impl Signal<Value = String> + 'static) -> Self {
+        TextView::label(text)
+    }
+
+    fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
+        self.bind(PROP_FONT_SIZE, size)
+    }
+}
+
+impl ui_core::widgets::TextInput for TextView {
+    fn new(
+        value: impl Signal<Value = String> + 'static,
+        on_change: impl Fn(&str) + 'static,
+    ) -> Self {
+        TextView::input_text(value.boxed().typed(), on_change)
+    }
+
+    fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
+        self.bind(PROP_FONT_SIZE, size)
     }
 }

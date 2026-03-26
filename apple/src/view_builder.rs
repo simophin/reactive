@@ -28,10 +28,6 @@ where
             .push(Box::new(move |ctx, view| props.bind(ctx, view, signal)));
     }
 
-    pub fn push_binder(&mut self, binder: impl FnOnce(&mut SetupContext, Retained<V>) + 'static) {
-        self.property_binders.push(Box::new(binder));
-    }
-
     pub fn setup(self, ctx: &mut SetupContext) -> Retained<V> {
         let view = (self.create_view)(ctx);
         for binder in self.property_binders {
