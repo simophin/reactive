@@ -1,4 +1,4 @@
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
+use reactive_core::{Component, SetupContext, Signal};
 
 use super::with_updated_hints;
 

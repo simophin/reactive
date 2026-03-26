@@ -1,4 +1,5 @@
 use super::{Button, Column, Label, Row, Slider, TextInput, Window};
+use crate::widgets::list::List;
 
 pub trait Platform {
     type Button: Button;
@@ -8,4 +9,5 @@ pub trait Platform {
     type Row: Row;
     type Column: Column;
     type Window: Window;
+    type List: List;
 }

@@ -14,7 +14,7 @@ pub use types::{
     Alignment, CrossAxisAlignment, EdgeInsets, LAYOUT_HINTS, LayoutHints, MainAxisAlignment,
 };
 
-use reactive_core::{SetupContext, Signal, SignalExt};
+use reactive_core::{SetupContext, SignalExt};
 
 fn with_updated_hints(ctx: &mut SetupContext, update: impl Fn(&mut LayoutHints) + 'static) {
     ctx.set_context(
@@ -76,7 +76,10 @@ mod tests {
     #[test]
     fn padding_sets_insets() {
         with_hints!(
-            Padding { insets: EdgeInsets::all(16), child: () },
+            Padding {
+                insets: EdgeInsets::all(16),
+                child: ()
+            },
             |h| {
                 assert_eq!(h.padding.top, 16);
                 assert_eq!(h.padding.right, 16);
@@ -89,7 +92,10 @@ mod tests {
     #[test]
     fn padding_symmetric() {
         with_hints!(
-            Padding { insets: EdgeInsets::symmetric(8, 24), child: () },
+            Padding {
+                insets: EdgeInsets::symmetric(8, 24),
+                child: ()
+            },
             |h| {
                 assert_eq!(h.padding.top, 8);
                 assert_eq!(h.padding.bottom, 8);
@@ -109,15 +115,24 @@ mod tests {
     #[test]
     fn align_sets_given_alignment() {
         with_hints!(
-            Align { alignment: Alignment::TopLeading, child: () },
-            |h| { assert!(matches!(h.alignment, Some(Alignment::TopLeading))); }
+            Align {
+                alignment: Alignment::TopLeading,
+                child: ()
+            },
+            |h| {
+                assert!(matches!(h.alignment, Some(Alignment::TopLeading)));
+            }
         );
     }
 
     #[test]
     fn sized_box_sets_width_and_height() {
         with_hints!(
-            SizedBox { width: Some(100usize), height: Some(50usize), child: () },
+            SizedBox {
+                width: Some(100usize),
+                height: Some(50usize),
+                child: ()
+            },
             |h| {
                 assert_eq!(h.fixed_width, Some(100));
                 assert_eq!(h.fixed_height, Some(50));
@@ -136,7 +151,11 @@ mod tests {
     #[test]
     fn sized_box_partial_dimensions() {
         with_hints!(
-            SizedBox { width: Some(200usize), height: None::<usize>, child: () },
+            SizedBox {
+                width: Some(200usize),
+                height: None::<usize>,
+                child: ()
+            },
             |h| {
                 assert_eq!(h.fixed_width, Some(200));
                 assert!(h.fixed_height.is_none());
@@ -147,17 +166,29 @@ mod tests {
     #[test]
     fn expanded_sets_flex() {
         let flex = NonZeroUsize::new(2).unwrap();
-        with_hints!(Expanded { flex: Some(flex), child: () }, |h| {
-            assert_eq!(h.flex, Some(flex));
-        });
+        with_hints!(
+            Expanded {
+                flex: Some(flex),
+                child: ()
+            },
+            |h| {
+                assert_eq!(h.flex, Some(flex));
+            }
+        );
     }
 
     #[test]
     fn expanded_flex_one() {
         let flex = NonZeroUsize::new(1).unwrap();
-        with_hints!(Expanded { flex: Some(flex), child: () }, |h| {
-            assert_eq!(h.flex.unwrap().get(), 1);
-        });
+        with_hints!(
+            Expanded {
+                flex: Some(flex),
+                child: ()
+            },
+            |h| {
+                assert_eq!(h.flex.unwrap().get(), 1);
+            }
+        );
     }
 
     #[test]

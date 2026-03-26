@@ -2,6 +2,7 @@ use super::button::Button;
 use super::flex::{Column, Row};
 use super::slider::Slider;
 use super::window::Window;
+use crate::collection_view::CollectionView;
 use crate::text_view::TextView;
 use ui_core::widgets::Platform;
 
@@ -15,4 +16,5 @@ impl Platform for AppKit {
     type Row = Row;
     type Column = Column;
     type Window = Window;
+    type List = CollectionView;
 }

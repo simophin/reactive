@@ -1,11 +1,14 @@
-use apple::Prop;
-use objc2::rc::Retained;
-use objc2::{MainThreadOnly, msg_send};
-use objc2_app_kit::*;
-use objc2_foundation::*;
-use reactive_core::Signal;
-
 use super::view_component::AppKitViewComponent;
+use apple::Prop;
+use apple::bindable::BindableView;
+use objc2_app_kit::*;
+use objc2_core_foundation::{CFData, CFRetained};
+use objc2_core_graphics::CGImage;
+use objc2_foundation::*;
+use objc2_image_io::CGImageSource;
+use reactive_core::Signal;
+use std::error::Error;
+use thiserror::Error;
 
 pub type ImageView = AppKitViewComponent<NSImageView, ()>;
 
@@ -17,25 +20,58 @@ apple::view_props! {
     }
 }
 
-/// Loads a named image (bundle asset or AppKit built-in) and sets it.
-/// Uses a custom Prop because the setter takes `Option<&NSImage>`.
-pub static PROP_IMAGE_NAME: &Prop<ImageView, NSImageView, String> = &Prop::new(|iv, name| {
-    let ns_name = NSString::from_str(&name);
-    let image = NSImage::imageNamed(&ns_name);
-    iv.setImage(image.as_deref());
+pub struct ImageHandle(CFRetained<CGImage>);
+
+static PROP_IMAGE: &Prop<ImageView, NSImageView, ImageHandle> = &Prop::new(|view, handle| {
+    let mtm = MainThreadMarker::new().unwrap();
+    let img = unsafe { NSImage::initWithCGImage_size(mtm.alloc(), &handle.0, NSSize::ZERO) };
+    view.setImage(Some(&img));
 });
 
-impl ImageView {
-    pub fn new_image(name: impl Signal<Value = String> + 'static) -> Self {
-        let mut c = AppKitViewComponent::create(
-            |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let iv: Retained<NSImageView> = unsafe { msg_send![NSImageView::alloc(mtm), init] };
-                iv
-            },
-            |view: Retained<NSImageView>| view.into_super().into_super(),
+static PROP_ACCESSIBILITY_LABEL: &Prop<ImageView, NSImageView, Option<String>> =
+    &Prop::new(|view, text| {
+        view.setAccessibilityLabel(
+            text.map(|s| NSString::from_str(&s))
+                .as_ref()
+                .map(|s| s.as_ref()),
         );
-        c.as_mut().bind(PROP_IMAGE_NAME, name);
-        c
+    });
+
+#[derive(Error, Debug)]
+enum ImageDecodeError {
+    #[error("failed to create CGImageSource from data")]
+    CreateSource,
+    #[error("failed to create CGImage from source")]
+    CreateImage,
+}
+
+impl TryFrom<Vec<u8>> for ImageHandle {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let source = unsafe { CGImageSource::with_data(&CFData::from_bytes(&value), None) }
+            .ok_or_else(|| Box::new(ImageDecodeError::CreateSource) as Box<dyn Error>)?;
+
+        unsafe {
+            Ok(Self(source.image_at_index(0, None).ok_or_else(|| {
+                Box::new(ImageDecodeError::CreateImage) as Box<dyn Error>
+            })?))
+        }
+    }
+}
+
+impl ui_core::widgets::Image for ImageView {
+    type NativeHandle = ImageHandle;
+
+    fn new(
+        image: impl Signal<Value = Self::NativeHandle> + 'static,
+        desc: Option<impl Signal<Value = String> + 'static>,
+    ) -> Self {
+        AppKitViewComponent::create(
+            move |ctx| NSImageView::new(MainThreadMarker::new().unwrap()),
+            |view| view.into_super().into_super(),
+        )
+        .bind(PROP_IMAGE, image)
+        .bind(PROP_ACCESSIBILITY_LABEL, desc)
     }
 }

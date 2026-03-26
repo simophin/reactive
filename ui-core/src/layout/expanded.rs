@@ -1,4 +1,4 @@
-use reactive_core::{Component, ConstantSignal, SetupContext, Signal};
+use reactive_core::{Component, SetupContext, Signal};
 use std::num::NonZeroUsize;
 
 use super::with_updated_hints;

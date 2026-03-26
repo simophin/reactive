@@ -25,7 +25,7 @@ macro_rules! extract {
 }
 use crate::ReactiveScope;
 use crate::signal::stored::ReadStoredSignal;
-use crate::signal::{BoxedSignal, Signal, StoredSignal};
+use crate::signal::{Signal, StoredSignal};
 
 /// A reactive `match`-like component.
 ///

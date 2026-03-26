@@ -10,6 +10,9 @@ ui-core = { path = "../ui-core" }
 block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet", "NSNotification", "NSAttributedString", "NSDictionary", "NSRange"] }
+objc2-core-graphics = { version = "0.3.2", features = ["CGImage"] }
+objc2-core-foundation = { version = "0.3.2", features = ["CFData"] }
+objc2-image-io = { version = "0.3.2", features = ["CGImageSource"] }
 objc2-app-kit = { version = "0.3", features = [
     "NSApplication",
     "NSRunningApplication",
@@ -41,6 +44,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSLayoutAnchor",
     "block2",
 ] }
+thiserror = "2.0.18"
 
 [dev-dependencies]
 futures = "0.3"

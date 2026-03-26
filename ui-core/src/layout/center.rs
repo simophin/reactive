@@ -1,4 +1,4 @@
-use reactive_core::{BoxedComponent, Component, SetupContext};
+use reactive_core::{Component, SetupContext};
 
 use super::types::Alignment;
 use super::with_updated_hints;
