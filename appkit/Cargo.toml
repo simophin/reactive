@@ -5,10 +5,11 @@ edition = "2024"
 
 [dependencies]
 apple = { path = "../apple" }
-reactive_core = { path = "../core", package = "core" }
+reactive-core = { path = "../core", package = "core" }
+ui-core = { path = "../ui-core" }
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet", "NSNotification", "NSAttributedString", "NSDictionary", "NSRange"] }
 objc2-app-kit = { version = "0.3", features = [
     "NSApplication",
     "NSRunningApplication",
@@ -22,6 +23,10 @@ objc2-app-kit = { version = "0.3", features = [
     "NSGraphics",
     "NSCell",
     "NSText",
+    "NSTextView",
+    "NSTextStorage",
+    "NSLayoutManager",
+    "NSTextContainer",
     "NSFont",
     "NSImage",
     "NSImageView",

@@ -2,9 +2,9 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::SignalWrapper;
 use crate::reactive_scope::WeakReactiveScope;
 use crate::signal::Signal;
-use crate::wrapper::SignalWrapper;
 // ---------------------------------------------------------------------------
 // SignalInner — the single heap allocation shared by all clones of a signal
 // ---------------------------------------------------------------------------
@@ -104,39 +104,5 @@ impl<T: Clone + 'static> Signal for StoredSignal<T> {
                 .on_accessed(self.id());
         }
         self.0.value.borrow().clone()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// BoxedStoredSignal — type-erased handle used by the context system
-// ---------------------------------------------------------------------------
-
-trait RawStoreSignal: Any {
-    fn clone_to_box(&self) -> Box<dyn RawStoreSignal>;
-}
-
-impl<T: 'static> RawStoreSignal for StoredSignal<T> {
-    fn clone_to_box(&self) -> Box<dyn RawStoreSignal> {
-        Box::new(self.clone())
-    }
-}
-
-pub(crate) struct BoxedStoredSignal(Box<dyn RawStoreSignal>);
-
-impl Clone for BoxedStoredSignal {
-    fn clone(&self) -> Self {
-        Self(self.0.clone_to_box())
-    }
-}
-
-impl BoxedStoredSignal {
-    pub fn downcast_ref<T: 'static>(&self) -> Option<&StoredSignal<T>> {
-        (self.0.as_ref() as &dyn Any).downcast_ref()
-    }
-}
-
-impl<T: 'static> From<StoredSignal<T>> for BoxedStoredSignal {
-    fn from(value: StoredSignal<T>) -> Self {
-        Self(Box::new(value))
     }
 }

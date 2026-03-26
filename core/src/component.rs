@@ -1,7 +1,7 @@
 use crate::component_scope::ComponentId;
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
-use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
+use crate::{ContextKey, ReactiveScope, ResourceState, Signal, TypedBoxedSignal};
 use futures::Stream;
 
 pub trait Component {
@@ -110,10 +110,18 @@ impl SetupContext {
         self.scope.provide_context(self.component_id, key, value)
     }
 
+    pub fn set_context<T: Clone + 'static>(
+        &self,
+        key: &'static ContextKey<T>,
+        value: impl Signal<Value = T> + 'static,
+    ) {
+        self.scope.set_context(self.component_id, key, value);
+    }
+
     pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
-    ) -> Option<ReadStoredSignal<T>> {
+    ) -> Option<TypedBoxedSignal<T>> {
         self.scope.use_context(self.component_id, key)
     }
 
@@ -140,7 +148,7 @@ impl SetupContext {
         self.scope.clone()
     }
 
-    pub fn child(&self, component: impl Component + 'static) -> ComponentId {
+    pub fn child(&self, component: impl Component) -> ComponentId {
         let mut child_ctx = self.new_child();
         Box::new(component).setup(&mut child_ctx);
         child_ctx.component_id

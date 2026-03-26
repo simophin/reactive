@@ -11,7 +11,7 @@ pub type Checkbox = AppKitViewComponent<NSButton, ()>;
 apple::view_props! {
     Checkbox on NSButton {
         title: String;
-        enabled: bool;
+        pub enabled: bool;
     }
 }
 

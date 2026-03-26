@@ -1,5 +1,5 @@
 use crate::ComponentId;
-use crate::component::{BoxedComponent, Component, SetupContext};
+use crate::component::{Component, SetupContext};
 
 /// Builds an extractor closure for use with [`Match::case`].
 ///
@@ -36,21 +36,24 @@ use crate::signal::{BoxedSignal, Signal, StoredSignal};
 /// holding the extracted value `E`. While the same case remains active, subsequent changes to
 /// `E` are pushed into that signal — the child component reacts through its own effects without
 /// being rebuilt. The child is only rebuilt when the active case index changes.
-pub struct Match<T> {
-    signal: BoxedSignal<T>,
-    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, &mut T) -> bool>>,
-    fallback: Box<dyn FnMut() -> BoxedComponent>,
+pub struct Match<S: Signal> {
+    signal: S,
+    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, &mut S::Value) -> bool>>,
+    fallback: Box<dyn FnMut(&ReactiveScope, ComponentId)>,
 }
 
-impl<T: Clone + 'static> Match<T> {
+impl<S: Signal> Match<S> {
     pub fn new<C: Component + 'static>(
-        signal: impl Signal<Value = T> + 'static,
+        signal: S,
         mut fallback: impl FnMut() -> C + 'static,
     ) -> Self {
         Self {
-            signal: Box::new(signal),
+            signal,
             cases: Vec::new(),
-            fallback: Box::new(move || Box::new(fallback())),
+            fallback: Box::new(move |scope, component| {
+                scope.dispose_all_children(component);
+                scope.setup_child(component, |ctx| Box::new(fallback()).setup(ctx));
+            }),
         }
     }
 
@@ -66,7 +69,7 @@ impl<T: Clone + 'static> Match<T> {
     /// annotate with [`ReadSignal<E>`] if an explicit type is needed.
     pub fn case<E: PartialEq + 'static, C: Component + 'static>(
         mut self,
-        mut extractor: impl FnMut(&mut T) -> Option<E> + 'static,
+        mut extractor: impl FnMut(&mut S::Value) -> Option<E> + 'static,
         mut factory: impl FnMut(ReadStoredSignal<E>) -> C + 'static,
     ) -> Self {
         let mut case_signal: Option<StoredSignal<E>> = None;
@@ -103,7 +106,11 @@ enum ActiveBranch {
     Fallback,
 }
 
-impl<T: Clone + 'static> Component for Match<T> {
+impl<S> Component for Match<S>
+where
+    S: Signal + 'static,
+    S::Value: Clone + 'static,
+{
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let signal = self.signal;
         let mut cases = self.cases;
@@ -123,9 +130,7 @@ impl<T: Clone + 'static> Component for Match<T> {
 
                 match active_branch {
                     Some(ActiveBranch::Case) | None => {
-                        // Create fallback branch
-                        scope.dispose_all_children(my_id);
-                        scope.setup_child(my_id, |ctx| Box::new(fallback()).setup(ctx));
+                        fallback(scope, my_id);
                     }
                     Some(ActiveBranch::Fallback) => {}
                 }
@@ -146,10 +151,10 @@ mod tests {
     use std::task::Context;
 
     /// Helper: build a Match over ResourceState<i32> that logs factory activations.
-    fn make_match(
-        signal: impl Signal<Value = ResourceState<i32>> + 'static,
+    fn make_match<S: Signal<Value = ResourceState<i32>> + 'static>(
+        signal: S,
         log: Arc<Mutex<Vec<String>>>,
-    ) -> Box<Match<ResourceState<i32>>> {
+    ) -> Box<Match<S>> {
         let log1 = Arc::clone(&log);
         let log2 = Arc::clone(&log);
         Box::new(

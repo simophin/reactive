@@ -1,13 +1,13 @@
+use super::ReactiveScope;
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect, InFlightFuture};
-use crate::signal::{ReadSignal, Signal};
+use crate::signal::Signal;
+use crate::signal::stored::ReadStoredSignal;
 use futures::{FutureExt, Stream, StreamExt};
 use std::cell::RefCell;
 use std::future::ready;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-
-use super::ReactiveScope;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResourceState<T> {
@@ -22,7 +22,7 @@ impl ReactiveScope {
         component_id: ComponentId,
         input_signal: impl Signal<Value = I> + 'static,
         mut resource_fn: impl FnMut(I) -> F + 'static,
-    ) -> ReadSignal<ResourceState<T>>
+    ) -> ReadStoredSignal<ResourceState<T>>
     where
         I: 'static,
         T: Clone + 'static,
@@ -37,15 +37,14 @@ impl ReactiveScope {
             let (input, signal_accessed) =
                 active_signal_tracker.run_tracking(|| input_signal.read());
 
-            signal_for_effect
-                .set_and_notify_changes(ResourceState::Loading(last_ready.borrow().clone()));
+            signal_for_effect.update(ResourceState::Loading(last_ready.borrow().clone()));
 
             let last_ready = Rc::clone(&last_ready);
             let signal_for_future = signal_for_effect.clone();
             let in_flight = Some(InFlightFuture {
                 future: Box::pin(resource_fn(input).map(move |result| {
                     *last_ready.borrow_mut() = Some(result.clone());
-                    signal_for_future.set_and_notify_changes(ResourceState::Ready(result));
+                    signal_for_future.update(ResourceState::Ready(result));
                 })),
                 woken: Arc::new(AtomicBool::new(true)),
             });
@@ -63,7 +62,7 @@ impl ReactiveScope {
             component.push_effect(effect);
         }
 
-        ReadSignal(signal)
+        signal.read_only()
     }
 
     pub(crate) fn create_stream<S, I, T>(
@@ -72,7 +71,7 @@ impl ReactiveScope {
         initial: T,
         input_signal: impl Signal<Value = I> + 'static,
         mut stream_producer: impl FnMut(I) -> S + 'static,
-    ) -> ReadSignal<T>
+    ) -> ReadStoredSignal<T>
     where
         I: 'static,
         T: Clone + 'static,
@@ -85,13 +84,13 @@ impl ReactiveScope {
             move |input| {
                 let sig = signal_for_resource.clone();
                 stream_producer(input).for_each(move |item| {
-                    sig.set_and_notify_changes(item);
+                    sig.update(item);
                     ready(())
                 })
             }
         });
 
-        ReadSignal(signal)
+        signal.read_only()
     }
 }
 

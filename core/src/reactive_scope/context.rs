@@ -1,7 +1,7 @@
 use super::ReactiveScope;
 use crate::component_scope::{ComponentId, ContextKey};
 use crate::signal::StoredSignal;
-use crate::signal::stored::ReadStoredSignal;
+use crate::{Signal, SignalExt, TypedBoxedSignal};
 
 impl ReactiveScope {
     pub(crate) fn provide_context<T: Clone + 'static>(
@@ -17,17 +17,28 @@ impl ReactiveScope {
         signal
     }
 
+    pub(crate) fn set_context<T: Clone + 'static>(
+        &self,
+        component_id: ComponentId,
+        key: &'static ContextKey<T>,
+        value: impl Signal<Value = T> + 'static,
+    ) {
+        if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
+            component.context.insert(key.id(), value.boxed());
+        }
+    }
+
     pub(crate) fn use_context<T: Clone + 'static>(
         &self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
-    ) -> Option<ReadStoredSignal<T>> {
+    ) -> Option<TypedBoxedSignal<T>> {
         let data = self.0.borrow();
         let mut scope = data.components.get(component_id);
 
         while let Some(component) = scope {
             if let Some(signal) = component.context.get(&key.id()) {
-                return signal.downcast_ref().cloned().map(|r| r.read_only());
+                return Some(signal.clone().typed());
             }
             scope = component.parent.and_then(|id| data.components.get(id));
         }

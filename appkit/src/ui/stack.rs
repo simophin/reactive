@@ -10,8 +10,8 @@ pub type Stack = AppKitViewComponent<NSStackView, Vec<BoxedComponent>>;
 
 apple::view_props! {
     Stack on NSStackView {
-        orientation: NSUserInterfaceLayoutOrientation;
-        spacing: f64;
+        pub orientation: NSUserInterfaceLayoutOrientation;
+        pub spacing: f64;
     }
 }
 

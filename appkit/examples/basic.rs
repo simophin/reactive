@@ -1,7 +1,6 @@
 use appkit::button::PROP_ENABLED;
 use appkit::stack::PROP_SPACING;
-use appkit::text::PROP_FONT_SIZE;
-use appkit::{AppKitViewComponent, BindableView, Window, run_app};
+use appkit::{AppKitViewComponent, BindableView, PROP_FONT_SIZE, TextView, Window, run_app};
 use reactive_core::SignalExt;
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
                 AppKitViewComponent::new_vertical_stack()
                     .bind(PROP_SPACING, 16.0)
                     .child(
-                        AppKitViewComponent::new_text(count.clone().map(|c| format!("Count: {c}")))
+                        TextView::label(count.clone().map_value(|c| format!("Count: {c}")))
                             .bind(PROP_FONT_SIZE, 24.0),
                     )
                     .child(
@@ -29,7 +28,7 @@ fn main() {
                             .child(AppKitViewComponent::new_button("−", {
                                 let count = count.clone();
                                 move || {
-                                    count.update(|v| {
+                                    count.update_with(|v| {
                                         *v -= 1;
                                         true
                                     })
@@ -37,22 +36,22 @@ fn main() {
                             }))
                             .child(
                                 AppKitViewComponent::new_button(
-                                    count.clone().map(|c| format!("+ Count: {c}")),
+                                    count.clone().map_value(|c| format!("+ Count: {c}")),
                                     {
                                         let count = count.clone();
                                         move || {
-                                            count.update(|v| {
+                                            count.update_with(|v| {
                                                 *v += 1;
                                                 true
                                             })
                                         }
                                     },
                                 )
-                                .bind(PROP_ENABLED, count.clone().map(|c| c % 2 == 0)),
+                                .bind(PROP_ENABLED, count.clone().map_value(|c| c % 2 == 0)),
                             )
                             .child(AppKitViewComponent::new_button("Reset", {
                                 let count = count.clone();
-                                move || count.set_and_notify_changes(0)
+                                move || count.update(0)
                             })),
                     ),
             ),

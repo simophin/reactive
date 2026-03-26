@@ -1,5 +1,6 @@
 use crate::Signal;
 
+#[derive(Clone)]
 pub struct SignalWrapper<S, T>(S, T);
 
 impl<S, T> SignalWrapper<S, T> {

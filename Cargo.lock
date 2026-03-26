@@ -41,6 +41,7 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-stream",
+ "ui-core",
 ]
 
 [[package]]
@@ -157,21 +158,6 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "demo"
-version = "0.1.0"
-dependencies = [
- "appkit",
- "core",
- "reqwest",
- "resources",
- "resources-build",
- "serde",
- "tokio",
- "ui",
- "unic-langid",
-]
 
 [[package]]
 name = "dispatch2"
@@ -1578,10 +1564,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "ui"
+name = "ui-core"
 version = "0.1.0"
 dependencies = [
- "appkit",
  "core",
 ]
 

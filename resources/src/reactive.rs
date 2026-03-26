@@ -2,7 +2,7 @@
 //!
 //! Enabled with the `reactive` feature.
 
-use reactive_core::{ContextKey, ReadSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{ContextKey, ReadStoredSignal, SetupContext, Signal, StoredSignal};
 
 use crate::{AssetDescriptor, BinaryData, Message, ResourceContext, TranslationData};
 
@@ -12,7 +12,7 @@ static RESOURCE_CTX_KEY: ContextKey<ResourceContext> = ContextKey::new();
 ///
 /// Returned by [`use_resource_context`].  Methods mirror [`ResourceContext`]'s
 /// own resolve/format API but produce reactive memos instead of plain values.
-pub struct ReactiveResourceContext(Option<ReadSignal<ResourceContext>>);
+pub struct ReactiveResourceContext(Option<ReadStoredSignal<ResourceContext>>);
 
 impl ReactiveResourceContext {
     /// Memo: resolves a translation template reactively (no parameters).
@@ -20,7 +20,7 @@ impl ReactiveResourceContext {
         &self,
         ctx: &mut SetupContext,
         desc: &'static AssetDescriptor<TranslationData<M>>,
-    ) -> ReadSignal<&'static str> {
+    ) -> ReadStoredSignal<&'static str> {
         let signal = self.0.clone();
         ctx.create_memo(move || {
             let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
@@ -35,7 +35,7 @@ impl ReactiveResourceContext {
         ctx: &mut SetupContext,
         desc: &'static AssetDescriptor<TranslationData<M>>,
         msg: M,
-    ) -> ReadSignal<String> {
+    ) -> ReadStoredSignal<String> {
         let signal = self.0.clone();
         ctx.create_memo(move || {
             let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
@@ -50,7 +50,7 @@ impl ReactiveResourceContext {
         ctx: &mut SetupContext,
         desc: &'static AssetDescriptor<TranslationData<M>>,
         mut msg_factory: impl FnMut() -> M + 'static,
-    ) -> ReadSignal<String> {
+    ) -> ReadStoredSignal<String> {
         let signal = self.0.clone();
         ctx.create_memo(move || {
             let rc = signal.as_ref().map(|s| s.read()).unwrap_or_default();
@@ -63,7 +63,7 @@ impl ReactiveResourceContext {
         &self,
         ctx: &mut SetupContext,
         asset: &'static AssetDescriptor<BinaryData>,
-    ) -> ReadSignal<BinaryData> {
+    ) -> ReadStoredSignal<BinaryData> {
         let signal = self.0.clone();
         ctx.create_memo(move || {
             *signal

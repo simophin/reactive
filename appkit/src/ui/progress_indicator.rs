@@ -11,9 +11,9 @@ pub type ProgressIndicator = AppKitViewComponent<NSProgressIndicator, ()>;
 
 apple::view_props! {
     ProgressIndicator on NSProgressIndicator {
-        double_value: f64;
-        min_value: f64;
-        max_value: f64;
+        pub double_value: f64;
+        pub min_value: f64;
+        pub max_value: f64;
     }
 }
 

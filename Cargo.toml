@@ -2,13 +2,12 @@
 resolver = "2"
 members = [
     "core",
+    "ui-core",
     "apple",
     "appkit",
-    "ui",
     "resources",
     "resources-build",
-    "demo",
     "android",
     "android-macros"
-]
+, "ui-core"]
 

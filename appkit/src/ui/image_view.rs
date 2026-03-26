@@ -11,9 +11,9 @@ pub type ImageView = AppKitViewComponent<NSImageView, ()>;
 
 apple::view_props! {
     ImageView on NSImageView {
-        editable: bool;
-        image_alignment: NSImageAlignment;
-        image_scaling: NSImageScaling;
+        pub editable: bool;
+        pub image_alignment: NSImageAlignment;
+        pub image_scaling: NSImageScaling;
     }
 }
 

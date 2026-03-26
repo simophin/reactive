@@ -1,13 +1,15 @@
 mod constant;
+mod dynamic;
 mod ext;
-mod primitives;
+pub(crate) mod primitives;
 pub(crate) mod stored;
-pub mod wrapper;
+mod wrapper;
 
 pub use constant::*;
+pub use dynamic::*;
 pub use ext::{SignalExt, SignalMapper};
-pub(crate) use stored::BoxedStoredSignal;
-pub use stored::StoredSignal;
+pub use stored::{ReadStoredSignal, StoredSignal};
+pub use wrapper::SignalWrapper;
 
 /// A reactive signal. Object-safe: `dyn Signal<Value = T>` is valid when `T: Clone + 'static`.
 ///
@@ -40,13 +42,3 @@ impl<S: Signal> Signal for Option<S> {
         Some(self.as_ref()?.read())
     }
 }
-
-impl<T> Signal for Box<dyn Signal<Value = T>> {
-    type Value = T;
-
-    fn read(&self) -> Self::Value {
-        Box::as_ref(self).read()
-    }
-}
-
-pub type BoxedSignal<T> = Box<dyn Signal<Value = T>>;

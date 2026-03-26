@@ -1,10 +1,9 @@
 use appkit::progress_indicator::PROP_INDETERMINATE;
 use appkit::stack::PROP_SPACING;
-use appkit::text::PROP_FONT_SIZE;
-use appkit::{BindableView, ProgressIndicator, Stack, Text, TextInput, Window, run_app};
+use appkit::text_view::PROP_SELECTABLE;
+use appkit::{BindableView, PROP_FONT_SIZE, ProgressIndicator, Stack, TextView, Window, run_app};
 use reactive_core::{BoxedComponent, Match, ResourceState, Signal, extract};
 use serde::Deserialize;
-
 // ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
@@ -88,12 +87,12 @@ async fn fetch_pokemon(name: String) -> ProfileState {
 fn info_row(label: &'static str, value: String) -> impl reactive_core::Component {
     Stack::new_horizontal_stack()
         .bind(PROP_SPACING, 8.0)
-        .child(Text::new_text(label).bind(PROP_FONT_SIZE, 13.0))
-        .child(Text::new_text(value).bind(PROP_FONT_SIZE, 13.0))
+        .child(TextView::label(label).bind(PROP_FONT_SIZE, 13.0))
+        .child(TextView::label(value).bind(PROP_FONT_SIZE, 13.0))
 }
 
 fn hint(text: &'static str) -> impl reactive_core::Component {
-    Text::new_text(text).bind(PROP_FONT_SIZE, 13.0)
+    TextView::label(text).bind(PROP_FONT_SIZE, 13.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -109,18 +108,28 @@ fn main() {
     let _guard = rt.enter();
 
     run_app(|ctx| {
+        let input_text = ctx.create_signal(String::new());
         let search_query = ctx.create_signal(String::new());
 
-        let profile = ctx.create_resource(search_query, |q| async move { fetch_pokemon(q).await });
+        let profile =
+            ctx.create_resource(
+                search_query.clone(),
+                |q| async move { fetch_pokemon(q).await },
+            );
 
         ctx.child(
             Window::new("Pokédex", 480.0, 520.0).child(
                 Stack::new_vertical_stack()
                     .bind(PROP_SPACING, 16.0)
-                    .child(Text::new_text("Pokédex").bind(PROP_FONT_SIZE, 22.0))
-                    .child(TextInput::new_text_input(
-                        "Enter a Pokémon name and press Return…",
-                        move |name| search_query.set_and_notify_changes(name),
+                    .child(TextView::label("Pokédex")
+                        .bind(PROP_SELECTABLE, false)
+                        .bind(PROP_FONT_SIZE, 22.0))
+                    .child(TextView::input_text(
+                        input_text,
+                        {
+                            let search_query = search_query.clone();
+                            move |name| search_query.update_if_changes(name)
+                        },
                     ))
                     .child(
                         Match::new(profile, || -> BoxedComponent {
@@ -128,13 +137,16 @@ fn main() {
                         })
                         // Loading — show progress bar only when a query is in flight
                         .case(
-                            move |state| match state {
-                                ResourceState::Loading(_)
-                                    if !search_query.read().is_empty() =>
-                                {
-                                    Some(())
+                            {
+                                let search_query = search_query.clone();
+                                move |state| match state {
+                                    ResourceState::Loading(_)
+                                        if !search_query.read().is_empty() =>
+                                    {
+                                        Some(())
+                                    }
+                                    _ => None,
                                 }
-                                _ => None,
                             },
                             |_sig| -> BoxedComponent {
                                 Box::new(
@@ -187,11 +199,14 @@ fn main() {
                         // Not found
                         .case(
                             extract!(ResourceState::Ready(ProfileState::NotFound) => ()),
-                            move |_sig| -> BoxedComponent {
-                                let name = search_query.read();
-                                Box::new(hint(Box::leak(
-                                    format!("Pokémon \"{name}\" not found.").into_boxed_str(),
-                                )))
+                            {
+                                let search_query = search_query.clone();
+                                move |_sig| -> BoxedComponent {
+                                    let name = search_query.read();
+                                    Box::new(hint(Box::leak(
+                                        format!("Pokémon \"{name}\" not found.").into_boxed_str(),
+                                    )))
+                                }
                             },
                         )
                         // Error
@@ -199,7 +214,7 @@ fn main() {
                             extract!(ResourceState::Ready(ProfileState::Error(e)) => std::mem::take(e)),
                             |sig| -> BoxedComponent {
                                 let msg = sig.read();
-                                Box::new(Text::new_text(msg).bind(PROP_FONT_SIZE, 13.0))
+                                Box::new(TextView::label(msg).bind(PROP_FONT_SIZE, 13.0))
                             },
                         ),
                     ),

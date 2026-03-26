@@ -2,10 +2,12 @@ pub mod action_target;
 pub mod app_loop;
 pub mod bindable;
 pub mod prop;
+pub mod text_input_state;
 pub mod view_builder;
 
 pub use action_target::ActionTarget;
 pub use prop::Prop;
+pub use text_input_state::TextInputState;
 pub use view_builder::ViewBuilder;
 
 // Re-exported so the view_props! macro can reference it via $crate::paste
@@ -31,9 +33,9 @@ pub use paste;
 #[macro_export]
 macro_rules! view_props {
     // String — needs NSString conversion
-    ($component:ident on $view:ident { $name:ident : String ; $($rest:tt)* }) => {
+    ($component:ident on $view:ident { $vis:vis $name:ident : String ; $($rest:tt)* }) => {
         $crate::paste::paste! {
-            pub static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, String> =
+            $vis static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, String> =
                 &$crate::Prop::new(|view, value| {
                     view.[<set $name:camel>](
                         &::objc2_foundation::NSString::from_str(&value)
@@ -43,9 +45,9 @@ macro_rules! view_props {
         $crate::view_props!($component on $view { $($rest)* });
     };
     // All other types — passed through directly
-    ($component:ident on $view:ident { $name:ident : $ty:ty ; $($rest:tt)* }) => {
+    ($component:ident on $view:ident { $vis:vis $name:ident : $ty:ty ; $($rest:tt)* }) => {
         $crate::paste::paste! {
-            pub static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, $ty> =
+            $vis static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, $ty> =
                 &$crate::Prop::new(|view, value| {
                     view.[<set $name:camel>](value);
                 });

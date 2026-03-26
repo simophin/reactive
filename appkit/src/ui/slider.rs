@@ -10,9 +10,9 @@ pub type Slider = AppKitViewComponent<NSSlider, ()>;
 
 apple::view_props! {
     Slider on NSSlider {
-        min_value: f64;
-        max_value: f64;
-        double_value: f64;
+        pub min_value: f64;
+        pub max_value: f64;
+        pub double_value: f64;
     }
 }
 

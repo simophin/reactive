@@ -3,10 +3,10 @@ use crate::BoxedSignal;
 pub trait SignalExt: super::Signal {
     /// Create a derived signal by applying `map_fn` to the value.
     /// Requires `Self: Sized` so it stays off the trait-object vtable.
-    fn map<T, F>(self, map_fn: F) -> SignalMapper<Self, F>
+    fn map_value<T, F>(self, map_fn: F) -> SignalMapper<Self, F>
     where
         Self: Sized,
-        T: Clone + 'static,
+        T: 'static,
         F: Fn(Self::Value) -> T + 'static,
     {
         SignalMapper {
@@ -15,12 +15,12 @@ pub trait SignalExt: super::Signal {
         }
     }
 
-    fn boxed(self) -> BoxedSignal<Self::Value>
+    fn boxed(self) -> BoxedSignal
     where
         Self: Sized + 'static,
-        Self::Value: Clone + 'static,
+        Self::Value: 'static,
     {
-        Box::new(self)
+        self.into()
     }
 }
 

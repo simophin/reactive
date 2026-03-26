@@ -301,7 +301,7 @@ where
                         // points to the companion signal; push the new data
                         // through it and let reactive effects do the rest.
                         let signal = unsafe { &*(raw as *const StoredSignal<Item>) }.clone();
-                        signal.update(|curr| {
+                        signal.update_with(|curr| {
                             let items = items.borrow();
                             if &items[index] != curr {
                                 *curr = items[index].clone();

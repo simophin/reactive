@@ -38,7 +38,7 @@ pub struct Window {
 
 apple::view_props! {
     Window on NSWindow {
-        title: String;
+        pub title: String;
     }
 }
 

@@ -11,8 +11,8 @@ pub type Button = AppKitViewComponent<NSButton, ()>;
 apple::view_props! {
     Button on NSButton {
         title: String;
-        enabled: bool;
-        highlighted: bool;
+        pub enabled: bool;
+        pub highlighted: bool;
     }
 }
 
