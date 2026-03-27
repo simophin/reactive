@@ -1,12 +1,10 @@
 use crate::view_component::{AppKitViewBuilder, AppKitViewComponent, SingleChildView};
-use apple::ViewBuilder;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use std::rc::Rc;
+use reactive_core::{Component, Signal};
 use ui_core::widgets;
 
 define_class!(
@@ -73,9 +71,6 @@ impl widgets::Window for Window {
                 },
                 |window| window.contentView().unwrap(),
                 Box::new(child),
-                Rc::new(move |parent, _, child, hint| {
-                    parent.addSubview(&child);
-                }),
             )
             .bind(PROP_TITLE, title),
         )

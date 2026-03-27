@@ -45,6 +45,7 @@ objc2-app-kit = { version = "0.3", features = [
     "block2",
 ] }
 thiserror = "2.0.18"
+clap = { version = "4.6.0", features = ["derive"] }
 
 [dev-dependencies]
 futures = "0.3"

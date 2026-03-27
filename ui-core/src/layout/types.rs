@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EdgeInsets {
     pub top: usize,
     pub right: usize,
@@ -26,7 +26,7 @@ impl EdgeInsets {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Alignment {
     TopLeading,
     Top,
@@ -40,7 +40,7 @@ pub enum Alignment {
     BottomTrailing,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CrossAxisAlignment {
     #[default]
     Stretch,
@@ -63,7 +63,7 @@ pub enum MainAxisAlignment {
 /// Layout hints propagated via context from logical layout components to the
 /// nearest real view component below them. Real view components consume and
 /// reset these hints so they don't leak to grandchildren.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LayoutHints {
     pub padding: EdgeInsets,
     /// Override the default fill/stretch positioning within the parent.
@@ -116,12 +116,18 @@ mod tests {
 
     #[test]
     fn cross_axis_alignment_default_is_stretch() {
-        assert!(matches!(CrossAxisAlignment::default(), CrossAxisAlignment::Stretch));
+        assert!(matches!(
+            CrossAxisAlignment::default(),
+            CrossAxisAlignment::Stretch
+        ));
     }
 
     #[test]
     fn main_axis_alignment_default_is_start() {
-        assert!(matches!(MainAxisAlignment::default(), MainAxisAlignment::Start));
+        assert!(matches!(
+            MainAxisAlignment::default(),
+            MainAxisAlignment::Start
+        ));
     }
 
     #[test]

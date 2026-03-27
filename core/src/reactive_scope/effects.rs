@@ -1,4 +1,5 @@
 use super::ReactiveScope;
+use crate::Signal;
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect};
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
@@ -61,6 +62,28 @@ impl ReactiveScope {
         }
 
         signal.read_only()
+    }
+
+    pub(crate) fn pipe_signal<S, T>(
+        &self,
+        component_id: ComponentId,
+        from: impl Signal<Value = S> + 'static,
+        to: StoredSignal<T>,
+    ) where
+        T: PartialEq<S> + 'static,
+        S: Into<T> + 'static,
+    {
+        self.create_effect(component_id, move |_, _| {
+            let from_value = from.read();
+            to.update_with(|curr| {
+                if curr != &from_value {
+                    *curr = from_value.into();
+                    true
+                } else {
+                    false
+                }
+            })
+        });
     }
 }
 
