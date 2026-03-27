@@ -15,4 +15,9 @@ pub mod encoding;
 /// the nearest real view component below them consumes and translates to
 /// platform constraints.
 pub mod layout;
+pub mod prop;
+pub mod view_builder;
 pub mod widgets;
+
+pub use prop::Prop;
+pub use view_builder::ViewBuilder;

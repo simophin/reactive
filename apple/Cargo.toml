@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
+ui-core = { path = "../ui-core" }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSThread"] }
 paste = "1"

@@ -1,9 +1,10 @@
 use crate::context::{CHILD_VIEW, CHILDREN_VIEWS, ChildViewEntry};
-use apple::{Prop, ViewBuilder};
+use apple::Prop;
 use objc2::Message;
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
 use reactive_core::{BoxedComponent, Component, IntoSignal, SetupContext, Signal, StoredSignal};
+use ui_core::ViewBuilder;
 use ui_core::layout::LAYOUT_HINTS;
 
 pub trait ChildViewStrategy {
@@ -44,12 +45,12 @@ impl ChildViewStrategy for MultipleChildView {
 }
 
 pub struct AppKitViewBuilder<V, C> {
-    builder: ViewBuilder<V>,
+    builder: ViewBuilder<Retained<V>>,
     children: C,
     into_nsview: fn(Retained<V>) -> Retained<NSView>,
 }
 
-impl<V: Message> AppKitViewBuilder<V, NoChildView> {
+impl<V: Message + 'static> AppKitViewBuilder<V, NoChildView> {
     pub fn create_no_child(
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
@@ -62,7 +63,7 @@ impl<V: Message> AppKitViewBuilder<V, NoChildView> {
     }
 }
 
-impl<V: Message> AppKitViewBuilder<V, SingleChildView> {
+impl<V: Message + 'static> AppKitViewBuilder<V, SingleChildView> {
     pub fn create_with_child(
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
@@ -76,7 +77,7 @@ impl<V: Message> AppKitViewBuilder<V, SingleChildView> {
     }
 }
 
-impl<V: Message> AppKitViewBuilder<V, MultipleChildView> {
+impl<V: Message + 'static> AppKitViewBuilder<V, MultipleChildView> {
     pub fn create_multiple_child(
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
@@ -94,7 +95,7 @@ impl<V: Message> AppKitViewBuilder<V, MultipleChildView> {
     }
 }
 
-impl<V: Message> AppKitViewBuilder<V, AtMostOneChildView> {
+impl<V: Message + 'static> AppKitViewBuilder<V, AtMostOneChildView> {
     pub fn create_with_optional_child(
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
@@ -125,7 +126,7 @@ impl Component for IndexedChild {
     }
 }
 
-impl<V, Children> AppKitViewBuilder<V, Children> {
+impl<V: 'static, Children> AppKitViewBuilder<V, Children> {
     pub fn bind<T, ValueType>(
         mut self,
         prop: &'static Prop<T, V, ValueType>,
@@ -187,7 +188,7 @@ impl<V, Children> AppKitViewBuilder<V, Children> {
 
 pub struct AppKitViewComponent<V, C>(pub AppKitViewBuilder<V, C>);
 
-impl<V: Message, C> Component for AppKitViewComponent<V, C>
+impl<V: Message + 'static, C> Component for AppKitViewComponent<V, C>
 where
     V: Message,
     C: ChildViewStrategy,
