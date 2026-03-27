@@ -2,9 +2,9 @@ use objc2::rc::Retained;
 use reactive_core::{SetupContext, Signal};
 use std::marker::PhantomData;
 
-pub struct Prop<RustType, ObjCType, ObjCValueType> {
-    setter: fn(&Retained<ObjCType>, ObjCValueType),
-    phantom: PhantomData<fn() -> RustType>,
+pub struct Prop<FrameworkType, ViewType, ValueType> {
+    setter: fn(&Retained<ViewType>, ValueType),
+    phantom: PhantomData<fn() -> FrameworkType>,
 }
 
 impl<RustType, ObjCType, ObjCValueType> Copy for Prop<RustType, ObjCType, ObjCValueType> {}

@@ -54,9 +54,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tokio-stream = { version = "0.1", features = ["time"] }
 
 [[example]]
-name = "basic"
-
-[[example]]
 name = "pokedex"
 
 [[example]]

@@ -1,3 +1,6 @@
+use super::view_component::AppKitViewBuilder;
+use super::view_component::AppKitViewComponent;
+use crate::view_component::NoChildView;
 use apple::Prop;
 use objc2::rc::Retained;
 use objc2::{MainThreadOnly, msg_send};
@@ -5,9 +8,7 @@ use objc2_app_kit::*;
 use objc2_foundation::*;
 use reactive_core::Signal;
 
-use super::view_component::AppKitViewComponent;
-
-pub type ProgressIndicator = AppKitViewComponent<NSProgressIndicator, ()>;
+pub type ProgressIndicator = AppKitViewComponent<NSProgressIndicator, NoChildView>;
 
 apple::view_props! {
     ProgressIndicator on NSProgressIndicator {
@@ -29,7 +30,7 @@ pub static PROP_INDETERMINATE: &Prop<ProgressIndicator, NSProgressIndicator, boo
 
 impl ProgressIndicator {
     pub fn new_bar(value: impl Signal<Value = f64> + 'static) -> Self {
-        let mut c = AppKitViewComponent::create(
+        Self(AppKitViewBuilder::create_no_child(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let pi: Retained<NSProgressIndicator> =
@@ -38,13 +39,11 @@ impl ProgressIndicator {
                 pi
             },
             |view: Retained<NSProgressIndicator>| view.into_super(),
-        );
-        c.as_mut().bind(PROP_DOUBLE_VALUE, value);
-        c
+        ))
     }
 
     pub fn new_spinner() -> Self {
-        AppKitViewComponent::create(
+        Self(AppKitViewBuilder::create_no_child(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let pi: Retained<NSProgressIndicator> =
@@ -55,6 +54,6 @@ impl ProgressIndicator {
                 pi
             },
             |view: Retained<NSProgressIndicator>| view.into_super(),
-        )
+        ))
     }
 }

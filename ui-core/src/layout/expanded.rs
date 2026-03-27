@@ -13,11 +13,11 @@ pub struct Expanded<F: Signal<Value = Option<NonZeroUsize>>, C: Component> {
 impl<F, C> Component for Expanded<F, C>
 where
     F: Signal<Value = Option<NonZeroUsize>> + 'static,
-    C: Component,
+    C: Component + 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Expanded { flex, child } = *self;
         with_updated_hints(ctx, move |h| h.flex = flex.read());
-        ctx.child(child);
+        ctx.child(Box::new(child));
     }
 }

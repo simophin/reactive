@@ -1,115 +1,215 @@
-use apple::ViewBuilder;
-use apple::bindable::BindableView;
+use crate::context::CHILD_ADDER;
+use apple::{Prop, ViewBuilder};
 use objc2::Message;
 use objc2::rc::Retained;
-use objc2_app_kit::{NSStackView, NSView};
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::layout::LAYOUT_HINTS;
+use objc2_app_kit::NSView;
+use reactive_core::{BoxedComponent, Component, SetupContext, Signal, SignalExt};
+use std::rc::Rc;
+use ui_core::layout::{LAYOUT_HINTS, LayoutHints};
 
-use super::context::{PARENT_VIEW, ViewParent};
-use super::flex::{ChildEntry, CHILD_VIEW_REGISTRY, activate_fill};
+//parent_view, child_index, child
+pub type OnSetChildView =
+    Rc<dyn Fn(&Retained<NSView>, usize, Retained<NSView>, Rc<dyn Signal<Value = LayoutHints>>)>;
 
-pub struct AppKitViewComponent<V, Children> {
-    builder: ViewBuilder<V>,
-    children: Children,
-    into_nsview: fn(Retained<V>) -> Retained<NSView>,
+pub trait ChildViewStrategy {
+    fn into_data(self) -> Option<(OnSetChildView, Vec<BoxedComponent>)>;
 }
 
-impl<V: Message, Children> AsMut<ViewBuilder<V>> for AppKitViewComponent<V, Children> {
-    fn as_mut(&mut self) -> &mut ViewBuilder<V> {
-        &mut self.builder
+pub trait MayHaveChild {}
+
+pub struct NoChildView;
+pub struct SingleChildView(BoxedComponent, OnSetChildView);
+pub struct AtMostOneChildView(Option<BoxedComponent>, OnSetChildView);
+pub struct MultipleChildView(Vec<BoxedComponent>, OnSetChildView);
+
+impl MayHaveChild for SingleChildView {}
+impl MayHaveChild for AtMostOneChildView {}
+impl MayHaveChild for MultipleChildView {}
+
+impl ChildViewStrategy for NoChildView {
+    fn into_data(self) -> Option<(OnSetChildView, Vec<BoxedComponent>)> {
+        None
     }
 }
 
-impl<V: Message, Children> BindableView<V> for AppKitViewComponent<V, Children> {}
+impl ChildViewStrategy for SingleChildView {
+    fn into_data(self) -> Option<(OnSetChildView, Vec<BoxedComponent>)> {
+        Some((self.1, vec![self.0]))
+    }
+}
 
-impl<V: Message, Children: Default> AppKitViewComponent<V, Children> {
-    pub(super) fn create(
+impl ChildViewStrategy for AtMostOneChildView {
+    fn into_data(self) -> Option<(OnSetChildView, Vec<BoxedComponent>)> {
+        if let Some(v) = self.0 {
+            Some((self.1, vec![v]))
+        } else {
+            Some((self.1, Default::default()))
+        }
+    }
+}
+
+impl ChildViewStrategy for MultipleChildView {
+    fn into_data(self) -> Option<(OnSetChildView, Vec<BoxedComponent>)> {
+        Some((self.1, self.0))
+    }
+}
+
+pub struct AppKitViewBuilder<V, C> {
+    builder: ViewBuilder<V>,
+    children: C,
+    into_nsview: fn(Retained<V>) -> Retained<NSView>,
+}
+
+impl<V: Message> AppKitViewBuilder<V, NoChildView> {
+    pub fn create_no_child(
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
     ) -> Self {
         Self {
             builder: ViewBuilder::new(creator),
-            children: Default::default(),
+            children: NoChildView,
             into_nsview,
         }
     }
 }
 
-impl<V> AppKitViewComponent<V, Vec<BoxedComponent>> {
-    pub fn child(mut self, c: impl Component + 'static) -> Self {
-        self.children.push(Box::new(c));
+impl<V: Message> AppKitViewBuilder<V, SingleChildView> {
+    pub fn create_with_child(
+        creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
+        into_nsview: fn(Retained<V>) -> Retained<NSView>,
+        child: BoxedComponent,
+        on_set_child_view: OnSetChildView,
+    ) -> Self {
+        Self {
+            builder: ViewBuilder::new(creator),
+            children: SingleChildView(child, on_set_child_view),
+            into_nsview,
+        }
+    }
+}
+
+impl<V: Message> AppKitViewBuilder<V, MultipleChildView> {
+    pub fn create_multiple_child(
+        creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
+        into_nsview: fn(Retained<V>) -> Retained<NSView>,
+        on_set_child_view: OnSetChildView,
+    ) -> Self {
+        Self {
+            builder: ViewBuilder::new(creator),
+            children: MultipleChildView(Vec::new(), on_set_child_view),
+            into_nsview,
+        }
+    }
+
+    pub fn add_child(mut self, c: BoxedComponent) -> Self {
+        self.children.0.push(c);
         self
     }
 }
 
-impl<V> AppKitViewComponent<V, Option<BoxedComponent>> {
-    pub fn child(mut self, c: impl Component + 'static) -> Self {
-        self.children.replace(Box::new(c));
-        self
+impl<V: Message> AppKitViewBuilder<V, AtMostOneChildView> {
+    pub fn create_with_optional_child(
+        creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
+        into_nsview: fn(Retained<V>) -> Retained<NSView>,
+        child: Option<BoxedComponent>,
+        on_set_child_view: OnSetChildView,
+    ) -> Self {
+        Self {
+            builder: ViewBuilder::new(creator),
+            children: AtMostOneChildView(child, on_set_child_view),
+            into_nsview,
+        }
     }
 }
 
-trait IntoVec<T> {
-    fn into_vec(self) -> Vec<T>;
+struct IndexedChild<C> {
+    index: usize,
+    parent: Retained<NSView>,
+    child: C,
+    on_set_child: OnSetChildView,
 }
 
-impl<T> IntoVec<T> for Vec<T> {
-    fn into_vec(self) -> Vec<T> {
-        self
-    }
-}
-
-impl<T> IntoVec<T> for Option<T> {
-    fn into_vec(self) -> Vec<T> {
-        self.into_iter().collect()
-    }
-}
-
-impl<T> IntoVec<T> for () {
-    fn into_vec(self) -> Vec<T> {
-        Vec::new()
-    }
-}
-
-impl<V: Message, Children: IntoVec<BoxedComponent>> Component for AppKitViewComponent<V, Children> {
+impl Component for IndexedChild<BoxedComponent> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let AppKitViewComponent { builder, children, into_nsview } = *self;
+        let Self {
+            index,
+            child,
+            on_set_child: on_set_child,
+            parent,
+        } = *self;
+
+        ctx.set_context(&CHILD_ADDER, move || {
+            let on_set_child = on_set_child.clone();
+            let parent = parent.clone();
+            Rc::new(move |child, hints| on_set_child(&parent, index, child, hints))
+                as Rc<dyn Fn(_, _)>
+        });
+
+        ctx.child(child);
+    }
+}
+
+impl<V, Children> AppKitViewBuilder<V, Children> {
+    pub fn bind<T, ValueType>(
+        mut self,
+        prop: &'static Prop<T, V, ValueType>,
+        value: impl Signal<Value = ValueType> + 'static,
+    ) -> Self
+    where
+        V: Message,
+        ValueType: 'static,
+    {
+        self.builder.bind(prop, value);
+        self
+    }
+
+    pub fn setup(self, ctx: &mut SetupContext)
+    where
+        V: Message,
+        Children: ChildViewStrategy,
+    {
+        let AppKitViewBuilder {
+            builder,
+            children,
+            into_nsview,
+        } = self;
         let view = builder.setup(ctx);
         let nsview = into_nsview(view);
         nsview.setTranslatesAutoresizingMaskIntoConstraints(false);
 
-        let hints = ctx.use_context(&LAYOUT_HINTS).map(|s| s.read()).unwrap_or_default();
+        // Asked to add this view as a child of something
+        if let Some(adder) = ctx.use_context(&CHILD_ADDER) {
+            adder.read()(
+                nsview.clone(),
+                Rc::new(
+                    ctx.use_context(&LAYOUT_HINTS)
+                        .map_value(|h| h.unwrap_or_default()),
+                ),
+            );
+        }
 
-        if let Some(parent) = ctx.use_context(&PARENT_VIEW) {
-            let parent = parent.read();
-            parent.add_child(nsview.clone());
-            ctx.on_cleanup({
-                let nsview = nsview.clone();
-                move || nsview.removeFromSuperview()
-            });
-
-            if let Some(registry) = ctx.use_context(&CHILD_VIEW_REGISTRY) {
-                registry.read().borrow_mut().push(ChildEntry { view: nsview.clone(), hints });
-            } else if let ViewParent::View(parent_nsview) = &parent {
-                activate_fill(&nsview, parent_nsview, &hints);
+        // If we have children, we'll provide the child adder through IndexedChild component
+        if let Some((on_set_child, children)) = children.into_data() {
+            for (index, child) in children.into_iter().enumerate() {
+                ctx.child(Box::new(IndexedChild {
+                    index,
+                    child,
+                    on_set_child: on_set_child.clone(),
+                    parent: nsview.clone(),
+                }));
             }
-            // ViewParent::Stack: NSStackView arranges its children; no extra constraints needed.
         }
+    }
+}
 
-        // Provide a parent context for any children of this view.
-        let any: &objc2::runtime::AnyObject = &*nsview;
-        if let Some(stack) = any.downcast_ref::<NSStackView>() {
-            ctx.provide_context(&PARENT_VIEW, ViewParent::Stack(stack.retain()));
-        } else {
-            ctx.provide_context(&PARENT_VIEW, ViewParent::View(nsview.clone()));
-        }
+pub struct AppKitViewComponent<V, C>(pub AppKitViewBuilder<V, C>);
 
-        ctx.on_cleanup(move || drop(nsview));
-
-        for child in children.into_vec() {
-            let mut child_ctx = ctx.new_child();
-            child.setup(&mut child_ctx);
-        }
+impl<V: Message, C> Component for AppKitViewComponent<V, C>
+where
+    V: Message,
+    C: ChildViewStrategy,
+{
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        self.0.setup(ctx);
     }
 }

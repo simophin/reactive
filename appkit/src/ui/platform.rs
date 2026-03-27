@@ -1,8 +1,8 @@
 use super::button::Button;
-use super::flex::{Column, Row};
 use super::slider::Slider;
 use super::window::Window;
 use crate::collection_view::CollectionView;
+use crate::flex::Flex;
 use crate::text_view::TextView;
 use ui_core::widgets::Platform;
 
@@ -13,8 +13,8 @@ impl Platform for AppKit {
     type Label = TextView;
     type TextInput = TextView;
     type Slider = Slider;
-    type Row = Row;
-    type Column = Column;
+    type Row = Flex;
+    type Column = Flex;
     type Window = Window;
     type List = CollectionView;
 }

@@ -33,7 +33,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::rc::Rc;
 
-    use reactive_core::{Component, ReactiveScope, SetupContext};
+    use reactive_core::{Component, ReactiveScope, SetupContext, Signal};
 
     use super::*;
 
@@ -60,9 +60,9 @@ mod tests {
                         Box::new(comp).setup(wrapper_ctx);
                         // After the component's setup ran and stored its hints
                         // on wrapper_ctx, add a leaf child that reads them.
-                        wrapper_ctx.child(move |leaf: &mut SetupContext| {
+                        wrapper_ctx.child(Box::new(move |leaf: &mut SetupContext| {
                             cap2.set(leaf.use_context(&LAYOUT_HINTS).map(|s| s.read()));
-                        });
+                        }));
                     }
                 },
             })
@@ -199,9 +199,9 @@ mod tests {
 
         let scope = ReactiveScope::default();
         let mut ctx = SetupContext::new_root(&scope);
-        ctx.child(move |leaf: &mut SetupContext| {
+        ctx.child(Box::new(move |leaf: &mut SetupContext| {
             cap2.set(leaf.use_context(&LAYOUT_HINTS).map(|s| s.read()));
-        });
+        }));
 
         assert!(captured.get().is_none());
     }

@@ -1,17 +1,16 @@
 use std::cell::RefCell;
 use std::ops::Range;
 
+use super::view_component::AppKitViewBuilder;
+use crate::view_component::{AppKitViewComponent, NoChildView};
 use apple::Prop;
-use apple::bindable::BindableView;
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
 use reactive_core::{Signal, SignalExt};
 
-use super::view_component::AppKitViewComponent;
-
-pub type TextView = AppKitViewComponent<NSTextView, ()>;
+pub type TextView = AppKitViewComponent<NSTextView, NoChildView>;
 
 apple::view_props! {
     TextView on NSTextView {
@@ -178,17 +177,19 @@ fn into_nsview(view: Retained<NSTextView>) -> Retained<NSView> {
 impl TextView {
     /// A non-editable, non-selectable text label backed by NSTextView.
     pub fn label(text: impl Signal<Value = String> + 'static) -> Self {
-        AppKitViewComponent::create(
-            |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let tv = NSTextView::initWithFrame(NSTextView::alloc(mtm), NSRect::ZERO);
-                tv.setEditable(false);
-                tv.setDrawsBackground(false);
-                tv
-            },
-            into_nsview,
+        Self(
+            AppKitViewBuilder::create_no_child(
+                |_| {
+                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                    let tv = NSTextView::initWithFrame(NSTextView::alloc(mtm), NSRect::ZERO);
+                    tv.setEditable(false);
+                    tv.setDrawsBackground(false);
+                    tv
+                },
+                into_nsview,
+            )
+            .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s))),
         )
-        .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s)))
     }
 
     /// A fully reactive text input backed by ReactiveTextStorage (backing
@@ -217,22 +218,24 @@ impl TextView {
             on_selection_change(proposed.clone());
             selection_for_check.read()
         };
-        AppKitViewComponent::create(
-            move |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let tv = make_reactive_text_view(text_change_cb, selection_change_cb, mtm);
-                tv.setEditable(true);
-                tv
-            },
-            into_nsview,
-        )
-        .bind(PROP_STRING, text)
-        .bind(
-            PROP_SELECTEDRANGE,
-            selection.map_value(|r| NSRange {
-                location: r.start,
-                length: r.len(),
-            }),
+        Self(
+            AppKitViewBuilder::create_no_child(
+                move |_| {
+                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                    let tv = make_reactive_text_view(text_change_cb, selection_change_cb, mtm);
+                    tv.setEditable(true);
+                    tv
+                },
+                into_nsview,
+            )
+            .bind(PROP_STRING, text)
+            .bind(
+                PROP_SELECTEDRANGE,
+                selection.map_value(|r| NSRange {
+                    location: r.start,
+                    length: r.len(),
+                }),
+            ),
         )
     }
 
@@ -249,16 +252,18 @@ impl TextView {
             on_change(&proposed.to_string());
             text_for_check.read() == proposed_str
         };
-        AppKitViewComponent::create(
-            move |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let tv = make_reactive_text_view(text_change_cb, |r| r, mtm);
-                tv.setEditable(true);
-                tv
-            },
-            into_nsview,
+        Self(
+            AppKitViewBuilder::create_no_child(
+                move |_| {
+                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                    let tv = make_reactive_text_view(text_change_cb, |r| r, mtm);
+                    tv.setEditable(true);
+                    tv
+                },
+                into_nsview,
+            )
+            .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s))),
         )
-        .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s)))
     }
 }
 
@@ -268,7 +273,7 @@ impl ui_core::widgets::Label for TextView {
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
-        self.bind(PROP_FONT_SIZE, size)
+        Self(self.0.bind(PROP_FONT_SIZE, size))
     }
 }
 
@@ -281,6 +286,6 @@ impl ui_core::widgets::TextInput for TextView {
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
-        self.bind(PROP_FONT_SIZE, size)
+        Self(self.0.bind(PROP_FONT_SIZE, size))
     }
 }

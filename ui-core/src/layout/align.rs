@@ -12,12 +12,12 @@ pub struct Align<A: Signal<Value = Alignment>, C: Component> {
 impl<A, C> Component for Align<A, C>
 where
     A: Signal<Value = Alignment> + 'static,
-    C: Component,
+    C: Component + 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Align { alignment, child } = *self;
 
         with_updated_hints(ctx, move |h| h.alignment = Some(alignment.read()));
-        ctx.child(child);
+        ctx.child(Box::new(child));
     }
 }

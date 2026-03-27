@@ -148,9 +148,9 @@ impl SetupContext {
         self.scope.clone()
     }
 
-    pub fn child(&self, component: impl Component) -> ComponentId {
+    pub fn child(&self, component: BoxedComponent) -> ComponentId {
         let mut child_ctx = self.new_child();
-        Box::new(component).setup(&mut child_ctx);
+        component.setup(&mut child_ctx);
         child_ctx.component_id
     }
 }

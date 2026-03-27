@@ -26,7 +26,7 @@ impl<S: Signal<Value = Option<usize>> + Clone, C: Component> SizedBox<S, S, C> {
 impl<
     W: Signal<Value = Option<usize>> + 'static,
     H: Signal<Value = Option<usize>> + 'static,
-    C: Component,
+    C: Component + 'static,
 > Component for SizedBox<W, H, C>
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
@@ -41,6 +41,6 @@ impl<
             h.fixed_height = height.read();
         });
 
-        ctx.child(child);
+        ctx.child(Box::new(child));
     }
 }

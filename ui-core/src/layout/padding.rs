@@ -8,10 +8,10 @@ pub struct Padding<I: Signal<Value = EdgeInsets>, C> {
     pub child: C,
 }
 
-impl<I: Signal<Value = EdgeInsets> + 'static, C: Component> Component for Padding<I, C> {
+impl<I: Signal<Value = EdgeInsets> + 'static, C: Component + 'static> Component for Padding<I, C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Padding { insets, child } = *self;
         with_updated_hints(ctx, move |h| h.padding = insets.read());
-        ctx.child(child);
+        ctx.child(Box::new(child));
     }
 }

@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 
-use crate::view_component::AppKitViewComponent;
+use crate::view_component::AppKitViewBuilder;
 use objc2::rc::Retained;
 use objc2::{ClassType, DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
@@ -13,7 +13,7 @@ use reactive_core::{Component, ReadStoredSignal, SetupContext, Signal};
 use ui_core::widgets::{ListData, ListOrientation};
 
 pub struct CollectionView {
-    component: AppKitViewComponent<NSCollectionView, ()>,
+    component: AppKitViewBuilder<NSCollectionView, ()>,
     orientation: ListOrientation,
 }
 

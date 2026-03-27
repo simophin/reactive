@@ -1,6 +1,6 @@
 use super::view_component::AppKitViewComponent;
+use crate::view_component::{AppKitViewBuilder, NoChildView};
 use apple::Prop;
-use apple::bindable::BindableView;
 use objc2_app_kit::*;
 use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::CGImage;
@@ -10,7 +10,7 @@ use reactive_core::Signal;
 use std::error::Error;
 use thiserror::Error;
 
-pub type ImageView = AppKitViewComponent<NSImageView, ()>;
+pub type ImageView = AppKitViewComponent<NSImageView, NoChildView>;
 
 apple::view_props! {
     ImageView on NSImageView {
@@ -67,11 +67,13 @@ impl ui_core::widgets::Image for ImageView {
         image: impl Signal<Value = Self::NativeHandle> + 'static,
         desc: Option<impl Signal<Value = String> + 'static>,
     ) -> Self {
-        AppKitViewComponent::create(
-            move |ctx| NSImageView::new(MainThreadMarker::new().unwrap()),
-            |view| view.into_super().into_super(),
+        Self(
+            AppKitViewBuilder::create_no_child(
+                move |ctx| NSImageView::new(MainThreadMarker::new().unwrap()),
+                |view| view.into_super().into_super(),
+            )
+            .bind(PROP_IMAGE, image)
+            .bind(PROP_ACCESSIBILITY_LABEL, desc),
         )
-        .bind(PROP_IMAGE, image)
-        .bind(PROP_ACCESSIBILITY_LABEL, desc)
     }
 }

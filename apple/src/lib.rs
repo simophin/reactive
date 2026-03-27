@@ -1,6 +1,5 @@
 pub mod action_target;
 pub mod app_loop;
-pub mod bindable;
 pub mod prop;
 pub mod text_input_state;
 pub mod view_builder;
