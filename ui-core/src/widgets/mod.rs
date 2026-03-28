@@ -6,6 +6,7 @@ mod list;
 mod platform;
 mod row;
 mod slider;
+mod stack;
 mod text_input;
 mod window;
 
@@ -17,5 +18,6 @@ pub use list::*;
 pub use platform::Platform;
 pub use row::Row;
 pub use slider::Slider;
+pub use stack::Stack;
 pub use text_input::TextInput;
 pub use window::Window;

@@ -7,6 +7,7 @@ pub mod image_view;
 pub mod platform;
 pub mod progress_indicator;
 pub mod slider;
+pub mod stack;
 pub mod text_view;
 pub mod view_component;
 pub mod window;

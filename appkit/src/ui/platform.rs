@@ -1,5 +1,6 @@
 use super::button::Button;
 use super::slider::Slider;
+use super::stack::Stack as AppKitStack;
 use super::window::Window;
 use crate::collection_view::CollectionView;
 use crate::flex::Flex;
@@ -15,6 +16,7 @@ impl Platform for AppKit {
     type Slider = Slider;
     type Row = Flex;
     type Column = Flex;
+    type Stack = AppKitStack;
     type Window = Window;
     type List = CollectionView;
 }

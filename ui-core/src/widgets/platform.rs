@@ -1,4 +1,4 @@
-use super::{Button, Column, Label, Row, Slider, TextInput, Window};
+use super::{Button, Column, Label, Row, Slider, Stack, TextInput, Window};
 use crate::widgets::list::List;
 
 pub trait Platform {
@@ -8,6 +8,7 @@ pub trait Platform {
     type Slider: Slider;
     type Row: Row;
     type Column: Column;
+    type Stack: Stack;
     type Window: Window;
     type List: List;
 }
