@@ -6,7 +6,7 @@ use objc2::rc::Retained;
 use objc2::{MainThreadOnly, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::Signal;
+use reactive_core::{Signal, SignalExt};
 
 pub type ProgressIndicator = AppKitViewComponent<NSProgressIndicator, NoChildView>;
 
@@ -29,7 +29,7 @@ pub static PROP_INDETERMINATE: &Prop<ProgressIndicator, NSProgressIndicator, boo
     });
 
 impl ProgressIndicator {
-    pub fn new_bar(value: impl Signal<Value = f64> + 'static) -> Self {
+    fn build_bar(_value: impl Signal<Value = f64> + 'static) -> Self {
         Self(AppKitViewBuilder::create_no_child(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
@@ -42,7 +42,7 @@ impl ProgressIndicator {
         ))
     }
 
-    pub fn new_spinner() -> Self {
+    fn build_spinner() -> Self {
         Self(AppKitViewBuilder::create_no_child(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
@@ -55,5 +55,23 @@ impl ProgressIndicator {
             },
             |view: Retained<NSProgressIndicator>| view.into_super(),
         ))
+    }
+
+    pub fn new_bar(value: impl Signal<Value = f64> + 'static) -> Self {
+        Self::build_bar(value)
+    }
+
+    pub fn new_spinner() -> Self {
+        Self::build_spinner()
+    }
+}
+
+impl ui_core::widgets::ProgressIndicator for ProgressIndicator {
+    fn new_bar(value: impl Signal<Value = usize> + 'static) -> Self {
+        Self::build_bar(value.map_value(|v| v as f64))
+    }
+
+    fn new_spinner() -> Self {
+        Self::build_spinner()
     }
 }

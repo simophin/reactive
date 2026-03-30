@@ -1,10 +1,10 @@
 use appkit::platform::AppKit;
 use appkit::run_app;
-use reactive_core::{ResourceState, SetupContext, SignalExt};
+use reactive_core::{Match, ResourceState, SetupContext, SignalExt, extract};
 use std::num::NonZeroUsize;
 use ui_core::layout::types::TextAlignment;
 use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
-use ui_core::widgets::{Button, Column, Label, Platform, Row, Window};
+use ui_core::widgets::{Button, Column, Label, Platform, ProgressIndicator, Row, Window};
 
 #[derive(serde::Deserialize)]
 struct CatFact {
@@ -92,14 +92,13 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
                 flex: shared_flex,
                 child: Padding {
                     insets: EdgeInsets::all(16),
-                    child: P::Label::new(fact.map_value(|state| {
-                        match state {
-                            ResourceState::Loading(last) => last
-                                .map(|s| format!("… {s}"))
-                                .unwrap_or_else(|| "…".to_string()),
-                            ResourceState::Ready(s) => s,
-                        }
-                    })),
+                    child: Match::new(fact, || Center {
+                        child: P::ProgressIndicator::new_spinner(),
+                    })
+                    .case(
+                        extract!(ResourceState::Ready(v) => std::mem::take(v)),
+                        P::Label::new,
+                    ),
                 },
             }),
     });

@@ -24,7 +24,7 @@ pub struct ImageHandle(CFRetained<CGImage>);
 
 static PROP_IMAGE: &Prop<ImageView, NSImageView, ImageHandle> = &Prop::new(|view, handle| {
     let mtm = MainThreadMarker::new().unwrap();
-    let img = unsafe { NSImage::initWithCGImage_size(mtm.alloc(), &handle.0, NSSize::ZERO) };
+    let img = NSImage::initWithCGImage_size(mtm.alloc(), &handle.0, NSSize::ZERO);
     view.setImage(Some(&img));
 });
 
@@ -69,7 +69,7 @@ impl ui_core::widgets::Image for ImageView {
     ) -> Self {
         Self(
             AppKitViewBuilder::create_no_child(
-                move |ctx| NSImageView::new(MainThreadMarker::new().unwrap()),
+                move |_| NSImageView::new(MainThreadMarker::new().unwrap()),
                 |view| view.into_super().into_super(),
             )
             .bind(PROP_IMAGE, image)

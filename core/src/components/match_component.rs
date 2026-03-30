@@ -38,7 +38,7 @@ use crate::signal::{Signal, StoredSignal};
 /// being rebuilt. The child is only rebuilt when the active case index changes.
 pub struct Match<S: Signal> {
     signal: S,
-    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, &mut S::Value) -> bool>>,
+    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, &mut S::Value, bool) -> bool>>,
     fallback: Box<dyn FnMut(&ReactiveScope, ComponentId)>,
 }
 
@@ -74,35 +74,43 @@ impl<S: Signal> Match<S> {
     ) -> Self {
         let mut case_signal: Option<StoredSignal<E>> = None;
 
-        self.cases
-            .push(Box::new(move |scope, component_id, value| -> bool {
-                match (extractor(value), &case_signal) {
-                    (Some(e), None) => {
+        self.cases.push(Box::new(
+            move |scope, component_id, value, is_active| -> bool {
+                let Some(e) = extractor(value) else {
+                    return false;
+                };
+
+                match (&case_signal, is_active) {
+                    (Some(signal), true) => {
+                        signal.update_if_changes(e);
+                    }
+                    (Some(signal), false) => {
+                        signal.update_if_changes(e);
+                        scope.dispose_all_children(component_id);
+
+                        let comp = Box::new(factory(signal.clone().read_only()));
+                        scope.setup_child(component_id, |ctx| comp.setup(ctx));
+                    }
+                    (None, _) => {
                         let signal = scope.create_signal(e);
                         case_signal = Some(signal.clone());
                         scope.dispose_all_children(component_id);
 
                         let comp = Box::new(factory(signal.clone().read_only()));
                         scope.setup_child(component_id, |ctx| comp.setup(ctx));
-
-                        true
                     }
-
-                    (Some(e), Some(signal)) => {
-                        signal.update_if_changes(e);
-                        true
-                    }
-
-                    _ => false,
                 }
-            }));
+
+                true
+            },
+        ));
 
         self
     }
 }
 
 enum ActiveBranch {
-    Case,
+    Case(usize),
     Fallback,
 }
 
@@ -122,14 +130,15 @@ where
             move |scope: &ReactiveScope, active_branch: Option<ActiveBranch>| {
                 let mut value = signal.read();
 
-                for case in &mut cases {
-                    if case(scope, my_id, &mut value) {
-                        return ActiveBranch::Case;
+                for (index, case) in cases.iter_mut().enumerate() {
+                    let is_active = matches!(active_branch, Some(ActiveBranch::Case(active)) if active == index);
+                    if case(scope, my_id, &mut value, is_active) {
+                        return ActiveBranch::Case(index);
                     }
                 }
 
                 match active_branch {
-                    Some(ActiveBranch::Case) | None => {
+                    Some(ActiveBranch::Case(_)) | None => {
                         fallback(scope, my_id);
                     }
                     Some(ActiveBranch::Fallback) => {}
@@ -247,6 +256,34 @@ mod tests {
         signal.update(ResourceState::Ready(99));
         scope.tick(&mut Context::from_waker(noop_waker_ref()));
         assert_eq!(*log.lock().unwrap(), vec!["loading(None)", "ready(99)"]);
+    }
+
+    #[test]
+    fn test_match_rebuilds_when_returning_to_a_previous_case() {
+        let scope = ReactiveScope::default();
+        let root = scope.create_child_component(None);
+        let signal = scope.create_signal(ResourceState::<i32>::Loading(None));
+        let log = Arc::new(Mutex::new(Vec::<String>::new()));
+
+        make_match(signal.clone(), Arc::clone(&log)).setup(&mut SetupContext {
+            scope: scope.clone(),
+            component_id: root,
+        });
+        assert_eq!(*log.lock().unwrap(), vec!["loading(None)"]);
+
+        signal.update(ResourceState::Ready(1));
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+
+        signal.update(ResourceState::Loading(Some(1)));
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+
+        signal.update(ResourceState::Ready(2));
+        scope.tick(&mut Context::from_waker(noop_waker_ref()));
+
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["loading(None)", "ready(1)", "loading(Some(1))", "ready(2)"]
+        );
     }
 
     #[test]

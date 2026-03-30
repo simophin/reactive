@@ -1,5 +1,6 @@
 use super::button::Button;
 use super::label::Label;
+use super::progress_indicator::ProgressIndicator;
 use super::slider::Slider;
 use super::stack::Stack as AppKitStack;
 use super::window::Window;
@@ -13,6 +14,7 @@ pub struct AppKit;
 impl Platform for AppKit {
     type Button = Button;
     type Label = Label;
+    type ProgressIndicator = ProgressIndicator;
     type TextInput = TextView;
     type Slider = Slider;
     type Row = Flex;
