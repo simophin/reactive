@@ -1,7 +1,7 @@
-use reactive_core::{Component, SetupContext, Signal};
+use reactive_core::{Component, IntoSignal, SetupContext, Signal};
 use std::num::NonZeroUsize;
 
-use super::with_updated_hints;
+use super::{FLEX_PARENT_DATA, FlexParentData};
 
 /// Expands a child to fill its share of remaining space in a Row/Column.
 /// Equivalent to Flutter's `Expanded`.
@@ -17,7 +17,10 @@ where
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Expanded { flex, child } = *self;
-        with_updated_hints(ctx, move |h| h.flex = flex.read());
-        ctx.child(Box::new(child));
+        ctx.set_context(
+            &FLEX_PARENT_DATA,
+            FlexParentData { flex: flex.read() }.into_signal(),
+        );
+        ctx.boxed_child(Box::new(child));
     }
 }

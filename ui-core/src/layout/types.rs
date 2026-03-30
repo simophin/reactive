@@ -1,3 +1,6 @@
+use reactive_core::ContextKey;
+use std::num::NonZeroUsize;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EdgeInsets {
     pub top: usize,
@@ -40,6 +43,13 @@ pub enum Alignment {
     BottomTrailing,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAlignment {
+    Leading,
+    Center,
+    Trailing,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CrossAxisAlignment {
     #[default]
@@ -60,23 +70,43 @@ pub enum MainAxisAlignment {
     SpaceEvenly,
 }
 
-/// Layout hints propagated via context from logical layout components to the
-/// nearest real view component below them. Real view components consume and
-/// reset these hints so they don't leak to grandchildren.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BoxModifier {
+    Padding(EdgeInsets),
+    Align(Alignment),
+    SizedBox {
+        width: Option<usize>,
+        height: Option<usize>,
+    },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BoxModifierChain {
+    pub modifiers: Vec<BoxModifier>,
+}
+
+impl BoxModifierChain {
+    pub fn with_appended(mut self, modifier: BoxModifier) -> Self {
+        self.modifiers.push(modifier);
+        self
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LayoutHints {
-    pub padding: EdgeInsets,
-    /// Override the default fill/stretch positioning within the parent.
-    pub alignment: Option<Alignment>,
-    pub fixed_width: Option<usize>,
-    pub fixed_height: Option<usize>,
-    /// Non-zero flex factor for Row/Column children.
+pub struct FlexParentData {
     pub flex: Option<NonZeroUsize>,
 }
 
-use reactive_core::{ContextKey, Signal};
-use std::num::NonZeroUsize;
-pub static LAYOUT_HINTS: ContextKey<LayoutHints> = ContextKey::new();
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChildLayoutInfo {
+    pub box_modifiers: BoxModifierChain,
+    pub flex: FlexParentData,
+}
+
+pub static BOX_MODIFIERS: ContextKey<BoxModifierChain> = ContextKey::new();
+pub static FLEX_PARENT_DATA: ContextKey<FlexParentData> = ContextKey::new();
+
+use reactive_core::Signal;
 
 #[cfg(test)]
 mod tests {
@@ -131,13 +161,15 @@ mod tests {
     }
 
     #[test]
-    fn layout_hints_default() {
-        let h = LayoutHints::default();
-        assert_eq!(h.padding.top, 0);
-        assert!(h.alignment.is_none());
-        assert!(h.fixed_width.is_none());
-        assert!(h.fixed_height.is_none());
-        assert!(h.flex.is_none());
+    fn box_modifier_chain_default() {
+        let chain = BoxModifierChain::default();
+        assert!(chain.modifiers.is_empty());
+    }
+
+    #[test]
+    fn flex_parent_data_default() {
+        let flex = FlexParentData::default();
+        assert!(flex.flex.is_none());
     }
 
     #[test]
@@ -173,6 +205,14 @@ impl Signal for Alignment {
 }
 
 impl Signal for CrossAxisAlignment {
+    type Value = Self;
+
+    fn read(&self) -> Self::Value {
+        *self
+    }
+}
+
+impl Signal for TextAlignment {
     type Value = Self;
 
     fn read(&self) -> Self::Value {

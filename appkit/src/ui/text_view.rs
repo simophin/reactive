@@ -267,16 +267,6 @@ impl TextView {
     }
 }
 
-impl ui_core::widgets::Label for TextView {
-    fn new(text: impl Signal<Value = String> + 'static) -> Self {
-        TextView::label(text)
-    }
-
-    fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
-        Self(self.0.bind(PROP_FONT_SIZE, size))
-    }
-}
-
 impl ui_core::widgets::TextInput for TextView {
     fn new(
         value: impl Signal<Value = String> + 'static,

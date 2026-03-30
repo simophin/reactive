@@ -1,13 +1,12 @@
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
-use reactive_core::{ContextKey, Signal, StoredSignal};
-use std::rc::Rc;
-use ui_core::layout::LayoutHints;
+use reactive_core::{ContextKey, StoredSignal};
+use ui_core::layout::ChildLayoutInfo;
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ChildViewEntry {
     pub view: Retained<NSView>,
-    pub layout_hints: LayoutHints,
+    pub layout: ChildLayoutInfo,
 }
 
 pub(crate) static CHILD_VIEW: ContextKey<StoredSignal<Option<ChildViewEntry>>> = ContextKey::new();

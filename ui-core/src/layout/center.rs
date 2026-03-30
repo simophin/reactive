@@ -1,7 +1,8 @@
 use reactive_core::{Component, SetupContext};
 
+use super::BoxModifier;
 use super::types::Alignment;
-use super::with_updated_hints;
+use super::with_appended_box_modifier;
 
 /// Centers a child within its available space.
 pub struct Center<C: Component> {
@@ -10,7 +11,7 @@ pub struct Center<C: Component> {
 
 impl<C: Component + 'static> Component for Center<C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        with_updated_hints(ctx, |h| h.alignment = Some(Alignment::Center));
-        ctx.child(Box::new(self.child));
+        with_appended_box_modifier(ctx, BoxModifier::Align(Alignment::Center));
+        ctx.boxed_child(Box::new(self.child));
     }
 }

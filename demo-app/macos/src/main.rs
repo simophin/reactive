@@ -1,6 +1,9 @@
 use appkit::platform::AppKit;
 use appkit::run_app;
 use reactive_core::{ResourceState, SetupContext, SignalExt};
+use std::num::NonZeroUsize;
+use ui_core::layout::types::TextAlignment;
+use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
 use ui_core::widgets::{Button, Column, Label, Platform, Row, Window};
 
 #[derive(serde::Deserialize)]
@@ -23,16 +26,31 @@ async fn fetch_cat_fact(_count: i32) -> String {
 fn app<P: Platform>(ctx: &mut SetupContext) {
     let count = ctx.create_signal(0);
     let fact = ctx.create_resource(count.clone(), fetch_cat_fact);
+    let shared_flex = NonZeroUsize::new(1);
 
-    ctx.child(
-        P::Window::new("Reactive Demo", 520.0, 260.0).child(
-            P::Column::new()
-                .child(P::Label::new(
-                    count.clone().map_value(|c| format!("Count: {c}")),
-                ))
-                .child(
-                    P::Row::new()
-                        .child(P::Button::new("-", {
+    ctx.child(Padding {
+        insets: EdgeInsets::all(24),
+        child: P::Column::new()
+            .spacing(18usize)
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .child(
+                P::Label::new("Reactive Demo")
+                    .font_size(24.0)
+                    .alignment(TextAlignment::Center),
+            )
+            .child(P::Label::new(
+                "The controls below now run through Padding, Center, SizedBox, and Expanded.",
+            ))
+            .child(SizedBox {
+                width: None::<usize>,
+                height: Some(44usize),
+                child: P::Row::new()
+                    .spacing(12usize)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .child(SizedBox {
+                        width: Some(72usize),
+                        height: None::<usize>,
+                        child: P::Button::new("-", {
                             let count = count.clone();
                             move || {
                                 count.update_with(|v| {
@@ -40,8 +58,21 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
                                     true
                                 })
                             }
-                        }))
-                        .child(P::Button::new("+", {
+                        }),
+                    })
+                    .child(Expanded {
+                        flex: shared_flex,
+                        child: Center {
+                            child: P::Label::new(
+                                count.clone().map_value(|c| format!("Count: {c}")),
+                            )
+                            .font_size(18.0),
+                        },
+                    })
+                    .child(SizedBox {
+                        width: Some(72usize),
+                        height: None::<usize>,
+                        child: P::Button::new("+", {
                             let count = count.clone();
                             move || {
                                 count.update_with(|v| {
@@ -49,19 +80,29 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
                                     true
                                 })
                             }
-                        }))
-                        .child(P::Button::new("Reset", move || count.update_if_changes(0))),
-                )
-                .child(P::Label::new(fact.map_value(|state| {
-                    match state {
-                        ResourceState::Loading(last) => last
-                            .map(|s| format!("… {s}"))
-                            .unwrap_or_else(|| "…".to_string()),
-                        ResourceState::Ready(s) => s,
-                    }
-                }))),
-        ),
-    );
+                        }),
+                    })
+                    .child(SizedBox {
+                        width: Some(92usize),
+                        height: None::<usize>,
+                        child: P::Button::new("Reset", move || count.update_if_changes(0)),
+                    }),
+            })
+            .child(Expanded {
+                flex: shared_flex,
+                child: Padding {
+                    insets: EdgeInsets::all(16),
+                    child: P::Label::new(fact.map_value(|state| {
+                        match state {
+                            ResourceState::Loading(last) => last
+                                .map(|s| format!("… {s}"))
+                                .unwrap_or_else(|| "…".to_string()),
+                            ResourceState::Ready(s) => s,
+                        }
+                    })),
+                },
+            }),
+    });
 }
 
 fn main() {
@@ -73,6 +114,11 @@ fn main() {
     let _guard = rt.enter();
 
     run_app(|ctx| {
-        app::<AppKit>(ctx);
+        ctx.child(appkit::window::Window::new(
+            "Reactive Demo",
+            app::<AppKit>,
+            500.0,
+            500.0,
+        ));
     });
 }

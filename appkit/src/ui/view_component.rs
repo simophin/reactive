@@ -2,10 +2,14 @@ use crate::context::{CHILD_VIEW, CHILDREN_VIEWS, ChildViewEntry};
 use apple::Prop;
 use objc2::Message;
 use objc2::rc::Retained;
-use objc2_app_kit::NSView;
+use objc2_app_kit::{NSUserInterfaceItemIdentification, NSView};
+use objc2_foundation::NSString;
 use reactive_core::{BoxedComponent, Component, IntoSignal, SetupContext, Signal, StoredSignal};
+use std::any::type_name;
 use ui_core::ViewBuilder;
-use ui_core::layout::LAYOUT_HINTS;
+use ui_core::layout::{
+    BOX_MODIFIERS, BoxModifierChain, ChildLayoutInfo, FLEX_PARENT_DATA, FlexParentData,
+};
 
 pub trait ChildViewStrategy {
     fn into_data(self) -> Vec<BoxedComponent>;
@@ -48,6 +52,7 @@ pub struct AppKitViewBuilder<V, C> {
     builder: ViewBuilder<Retained<V>>,
     children: C,
     into_nsview: fn(Retained<V>) -> Retained<NSView>,
+    debug_identifier: Option<String>,
 }
 
 impl<V: Message + 'static> AppKitViewBuilder<V, NoChildView> {
@@ -59,6 +64,7 @@ impl<V: Message + 'static> AppKitViewBuilder<V, NoChildView> {
             builder: ViewBuilder::new(creator),
             children: NoChildView,
             into_nsview,
+            debug_identifier: None,
         }
     }
 }
@@ -73,6 +79,7 @@ impl<V: Message + 'static> AppKitViewBuilder<V, SingleChildView> {
             builder: ViewBuilder::new(creator),
             children: SingleChildView(child),
             into_nsview,
+            debug_identifier: None,
         }
     }
 }
@@ -86,6 +93,7 @@ impl<V: Message + 'static> AppKitViewBuilder<V, MultipleChildView> {
             builder: ViewBuilder::new(creator),
             children: MultipleChildView(Vec::new()),
             into_nsview,
+            debug_identifier: None,
         }
     }
 
@@ -105,6 +113,7 @@ impl<V: Message + 'static> AppKitViewBuilder<V, AtMostOneChildView> {
             builder: ViewBuilder::new(creator),
             children: AtMostOneChildView(child),
             into_nsview,
+            debug_identifier: None,
         }
     }
 }
@@ -122,11 +131,16 @@ impl Component for IndexedChild {
         } = *self;
 
         ctx.set_context(&CHILD_VIEW, child_view_entry.into_signal());
-        ctx.child(child);
+        ctx.boxed_child(child);
     }
 }
 
 impl<V: 'static, Children> AppKitViewBuilder<V, Children> {
+    pub fn debug_identifier(mut self, identifier: impl Into<String>) -> Self {
+        self.debug_identifier = Some(identifier.into());
+        self
+    }
+
     pub fn bind<T, ValueType>(
         mut self,
         prop: &'static Prop<T, V, ValueType>,
@@ -140,7 +154,7 @@ impl<V: 'static, Children> AppKitViewBuilder<V, Children> {
         self
     }
 
-    pub fn setup(self, ctx: &mut SetupContext)
+    pub fn setup(self, ctx: &mut SetupContext) -> Retained<V>
     where
         V: Message,
         Children: ChildViewStrategy,
@@ -149,41 +163,60 @@ impl<V: 'static, Children> AppKitViewBuilder<V, Children> {
             builder,
             children,
             into_nsview,
+            debug_identifier,
         } = self;
         let view = builder.setup(ctx);
-        let nsview = into_nsview(view);
+        let nsview = into_nsview(view.clone());
         nsview.setTranslatesAutoresizingMaskIntoConstraints(false);
+        let debug_identifier =
+            debug_identifier.unwrap_or_else(|| short_type_name::<V>().to_string());
+        NSUserInterfaceItemIdentification::setIdentifier(
+            &*nsview,
+            Some(&NSString::from_str(&debug_identifier)),
+        );
 
-        // Asked to add this view as a child
         if let Some(child_view) = ctx.use_context(&CHILD_VIEW) {
             let nsview = nsview.clone();
-            let layout_hints = ctx.use_context(&LAYOUT_HINTS);
+            let box_modifiers = ctx.use_context(&BOX_MODIFIERS);
+            let flex_parent_data = ctx.use_context(&FLEX_PARENT_DATA);
             ctx.create_effect(move |_, _| {
                 child_view.read().update_if_changes(Some(ChildViewEntry {
                     view: nsview.clone(),
-                    layout_hints: layout_hints.read().unwrap_or_default(),
+                    layout: ChildLayoutInfo {
+                        box_modifiers: box_modifiers.read().unwrap_or_default(),
+                        flex: flex_parent_data.read().unwrap_or_default(),
+                    },
                 }));
             });
         }
 
-        // If we have children, we'll provide the child adder through IndexedChild component
+        ctx.set_context(&BOX_MODIFIERS, BoxModifierChain::default().into_signal());
+        ctx.set_context(&FLEX_PARENT_DATA, FlexParentData::default().into_signal());
+
         let children = children.into_data();
         if !children.is_empty() {
-            let children_views = ctx
-                .provide_context(
-                    &CHILDREN_VIEWS,
-                    vec![ctx.create_signal(None); children.len()],
-                )
-                .read();
+            let children_views_signal = ctx.provide_context(
+                &CHILDREN_VIEWS,
+                (0..children.len())
+                    .map(|_| ctx.create_signal(None))
+                    .collect::<Vec<_>>(),
+            );
+            let children_views = children_views_signal.read();
 
             for (child, child_view_entry) in children.into_iter().zip(children_views.into_iter()) {
-                ctx.child(Box::new(IndexedChild {
+                ctx.boxed_child(Box::new(IndexedChild {
                     child,
                     child_view_entry,
                 }));
             }
         }
+
+        view
     }
+}
+
+fn short_type_name<T>() -> &'static str {
+    type_name::<T>().rsplit("::").next().unwrap_or("NSView")
 }
 
 pub struct AppKitViewComponent<V, C>(pub AppKitViewBuilder<V, C>);

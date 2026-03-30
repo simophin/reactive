@@ -4,6 +4,8 @@ pub mod collection_view;
 pub mod context;
 pub mod flex;
 pub mod image_view;
+pub mod label;
+mod layout;
 pub mod platform;
 pub mod progress_indicator;
 pub mod slider;

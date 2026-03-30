@@ -26,6 +26,14 @@ impl Signal for () {
     fn read(&self) {}
 }
 
+impl<T> Signal for Box<dyn Signal<Value = T>> {
+    type Value = T;
+
+    fn read(&self) -> Self::Value {
+        self.as_ref().read()
+    }
+}
+
 /// Any `Fn() -> T` is a computed signal that re-evaluates on every read.
 impl<T, F: Fn() -> T> Signal for F {
     type Value = T;

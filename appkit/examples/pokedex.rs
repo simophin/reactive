@@ -117,7 +117,7 @@ fn main() {
                 |q| async move { fetch_pokemon(q).await },
             );
 
-        ctx.child(
+        ctx.boxed_child(
             Window::new("Pokédex", 480.0, 520.0).child(
                 Stack::new_vertical_stack()
                     .bind(PROP_SPACING, 16.0)

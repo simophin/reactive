@@ -63,7 +63,7 @@ fn main() {
         // `ResourceState::Ready(Vec<Post>)`.
         let posts = ctx.create_resource((), |_| fetch_posts());
 
-        ctx.child(
+        ctx.boxed_child(
             Window::new("Posts", 620.0, 800.0).child(
                 // Show a spinner while loading; switch to the list when ready.
                 Match::new(posts, || -> BoxedComponent {

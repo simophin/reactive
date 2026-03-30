@@ -1,6 +1,6 @@
 use reactive_core::{Component, SetupContext, Signal};
 
-use super::with_updated_hints;
+use super::{BoxModifier, with_appended_box_modifier};
 
 /// Constrains a child to a fixed width and/or height.
 pub struct SizedBox<
@@ -36,11 +36,14 @@ impl<
             child,
         } = *self;
 
-        with_updated_hints(ctx, move |h| {
-            h.fixed_width = width.read();
-            h.fixed_height = height.read();
-        });
+        with_appended_box_modifier(
+            ctx,
+            BoxModifier::SizedBox {
+                width: width.read(),
+                height: height.read(),
+            },
+        );
 
-        ctx.child(Box::new(child));
+        ctx.boxed_child(Box::new(child));
     }
 }

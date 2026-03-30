@@ -11,25 +11,23 @@ pub use expanded::Expanded;
 pub use padding::Padding;
 pub use sized_box::SizedBox;
 pub use types::{
-    Alignment, CrossAxisAlignment, EdgeInsets, LAYOUT_HINTS, LayoutHints, MainAxisAlignment,
+    Alignment, BOX_MODIFIERS, BoxModifier, BoxModifierChain, ChildLayoutInfo, CrossAxisAlignment,
+    EdgeInsets, FLEX_PARENT_DATA, FlexParentData, MainAxisAlignment,
 };
 
 use reactive_core::{SetupContext, SignalExt};
 
-fn with_updated_hints(ctx: &mut SetupContext, update: impl Fn(&mut LayoutHints) + 'static) {
+fn with_appended_box_modifier(ctx: &mut SetupContext, modifier: BoxModifier) {
     ctx.set_context(
-        &LAYOUT_HINTS,
-        ctx.use_context(&LAYOUT_HINTS).map_value(move |h| {
-            let mut hints = h.unwrap_or_default();
-            update(&mut hints);
-            hints
-        }),
+        &BOX_MODIFIERS,
+        ctx.use_context(&BOX_MODIFIERS)
+            .map_value(move |chain| chain.unwrap_or_default().with_appended(modifier.clone())),
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::RefCell;
     use std::num::NonZeroUsize;
     use std::rc::Rc;
 
@@ -37,179 +35,143 @@ mod tests {
 
     use super::*;
 
-    /// Runs `component`, capturing the `LayoutHints` visible to its child via context.
-    ///
-    /// The hints are passed to `check` for assertions.  Because setup is
-    /// synchronous the `Rc<Cell<…>>` trick avoids `RefCell` borrow dance.
-    macro_rules! with_hints {
-        ($component:expr, |$h:ident| $body:expr) => {{
-            let captured: Rc<Cell<Option<LayoutHints>>> = Rc::new(Cell::new(None));
+    macro_rules! with_layout_info {
+        ($component:expr, |$info:ident| $body:expr) => {{
+            let captured: Rc<RefCell<Option<ChildLayoutInfo>>> = Rc::new(RefCell::new(None));
             let cap2 = Rc::clone(&captured);
 
             let scope = ReactiveScope::default();
             let mut ctx = SetupContext::new_root(&scope);
 
-            Box::new(Padding {
-                // Use an identity-Padding (zero insets) as the outer shell so
-                // that `child` receives a `SetupContext` from which it can call
-                // `use_context`.  The real component-under-test is nested inside.
-                insets: EdgeInsets::default(),
-                child: {
-                    let comp = $component;
-                    move |wrapper_ctx: &mut SetupContext| {
-                        Box::new(comp).setup(wrapper_ctx);
-                        // After the component's setup ran and stored its hints
-                        // on wrapper_ctx, add a leaf child that reads them.
-                        wrapper_ctx.child(Box::new(move |leaf: &mut SetupContext| {
-                            cap2.set(leaf.use_context(&LAYOUT_HINTS).map(|s| s.read()));
-                        }));
-                    }
-                },
+            Box::new({
+                let comp = $component;
+                move |wrapper_ctx: &mut SetupContext| {
+                    Box::new(comp).setup(wrapper_ctx);
+                    wrapper_ctx.boxed_child(Box::new(move |leaf: &mut SetupContext| {
+                        *cap2.borrow_mut() = Some(ChildLayoutInfo {
+                            box_modifiers: leaf
+                                .use_context(&BOX_MODIFIERS)
+                                .map(|s| s.read())
+                                .unwrap_or_default(),
+                            flex: leaf
+                                .use_context(&FLEX_PARENT_DATA)
+                                .map(|s| s.read())
+                                .unwrap_or_default(),
+                        });
+                    }));
+                }
             })
             .setup(&mut ctx);
 
-            let $h = captured.get().expect("hints not captured");
+            let $info = captured.borrow().clone().expect("layout info not captured");
             $body
         }};
     }
 
     #[test]
-    fn padding_sets_insets() {
-        with_hints!(
+    fn padding_appends_padding_modifier() {
+        with_layout_info!(
             Padding {
                 insets: EdgeInsets::all(16),
                 child: ()
             },
-            |h| {
-                assert_eq!(h.padding.top, 16);
-                assert_eq!(h.padding.right, 16);
-                assert_eq!(h.padding.bottom, 16);
-                assert_eq!(h.padding.left, 16);
+            |info| {
+                assert_eq!(
+                    info.box_modifiers.modifiers,
+                    vec![BoxModifier::Padding(EdgeInsets::all(16))]
+                );
             }
         );
     }
 
     #[test]
-    fn padding_symmetric() {
-        with_hints!(
-            Padding {
-                insets: EdgeInsets::symmetric(8, 24),
-                child: ()
-            },
-            |h| {
-                assert_eq!(h.padding.top, 8);
-                assert_eq!(h.padding.bottom, 8);
-                assert_eq!(h.padding.left, 24);
-                assert_eq!(h.padding.right, 24);
-            }
-        );
-    }
-
-    #[test]
-    fn center_sets_center_alignment() {
-        with_hints!(Center { child: () }, |h| {
-            assert!(matches!(h.alignment, Some(Alignment::Center)));
+    fn center_appends_align_modifier() {
+        with_layout_info!(Center { child: () }, |info| {
+            assert_eq!(
+                info.box_modifiers.modifiers,
+                vec![BoxModifier::Align(Alignment::Center)]
+            );
         });
     }
 
     #[test]
-    fn align_sets_given_alignment() {
-        with_hints!(
+    fn align_appends_given_alignment() {
+        with_layout_info!(
             Align {
                 alignment: Alignment::TopLeading,
                 child: ()
             },
-            |h| {
-                assert!(matches!(h.alignment, Some(Alignment::TopLeading)));
+            |info| {
+                assert_eq!(
+                    info.box_modifiers.modifiers,
+                    vec![BoxModifier::Align(Alignment::TopLeading)]
+                );
             }
         );
     }
 
     #[test]
-    fn sized_box_sets_width_and_height() {
-        with_hints!(
+    fn sized_box_appends_sized_box_modifier() {
+        with_layout_info!(
             SizedBox {
                 width: Some(100usize),
                 height: Some(50usize),
                 child: ()
             },
-            |h| {
-                assert_eq!(h.fixed_width, Some(100));
-                assert_eq!(h.fixed_height, Some(50));
+            |info| {
+                assert_eq!(
+                    info.box_modifiers.modifiers,
+                    vec![BoxModifier::SizedBox {
+                        width: Some(100),
+                        height: Some(50)
+                    }]
+                );
             }
         );
     }
 
     #[test]
-    fn sized_box_square() {
-        with_hints!(SizedBox::square(Some(64usize), ()), |h| {
-            assert_eq!(h.fixed_width, Some(64));
-            assert_eq!(h.fixed_height, Some(64));
-        });
-    }
-
-    #[test]
-    fn sized_box_partial_dimensions() {
-        with_hints!(
-            SizedBox {
-                width: Some(200usize),
-                height: None::<usize>,
-                child: ()
-            },
-            |h| {
-                assert_eq!(h.fixed_width, Some(200));
-                assert!(h.fixed_height.is_none());
-            }
-        );
-    }
-
-    #[test]
-    fn expanded_sets_flex() {
+    fn expanded_sets_flex_parent_data() {
         let flex = NonZeroUsize::new(2).unwrap();
-        with_hints!(
+        with_layout_info!(
             Expanded {
                 flex: Some(flex),
                 child: ()
             },
-            |h| {
-                assert_eq!(h.flex, Some(flex));
+            |info| {
+                assert_eq!(info.flex.flex, Some(flex));
             }
         );
     }
 
     #[test]
-    fn expanded_flex_one() {
-        let flex = NonZeroUsize::new(1).unwrap();
-        with_hints!(
-            Expanded {
-                flex: Some(flex),
-                child: ()
-            },
-            |h| {
-                assert_eq!(h.flex.unwrap().get(), 1);
-            }
-        );
-    }
-
-    #[test]
-    fn no_hints_without_layout_component() {
-        // Verify that a plain child component sees no hints when none are set.
-        let captured: Rc<Cell<Option<LayoutHints>>> = Rc::new(Cell::new(None));
+    fn no_layout_data_without_layout_component() {
+        let captured: Rc<RefCell<Option<ChildLayoutInfo>>> = Rc::new(RefCell::new(None));
         let cap2 = Rc::clone(&captured);
 
         let scope = ReactiveScope::default();
-        let mut ctx = SetupContext::new_root(&scope);
-        ctx.child(Box::new(move |leaf: &mut SetupContext| {
-            cap2.set(leaf.use_context(&LAYOUT_HINTS).map(|s| s.read()));
+        let ctx = SetupContext::new_root(&scope);
+        ctx.boxed_child(Box::new(move |leaf: &mut SetupContext| {
+            *cap2.borrow_mut() = Some(ChildLayoutInfo {
+                box_modifiers: leaf
+                    .use_context(&BOX_MODIFIERS)
+                    .map(|s| s.read())
+                    .unwrap_or_default(),
+                flex: leaf
+                    .use_context(&FLEX_PARENT_DATA)
+                    .map(|s| s.read())
+                    .unwrap_or_default(),
+            });
         }));
 
-        assert!(captured.get().is_none());
+        let info = captured.borrow().clone().expect("layout info not captured");
+        assert!(info.box_modifiers.modifiers.is_empty());
+        assert!(info.flex.flex.is_none());
     }
 
     #[test]
-    fn nested_padding_and_center_accumulate() {
-        // Padding wraps Center: leaf child should see both padding and alignment.
-        let captured: Rc<Cell<Option<LayoutHints>>> = Rc::new(Cell::new(None));
+    fn nested_modifiers_preserve_order() {
+        let captured: Rc<RefCell<Option<ChildLayoutInfo>>> = Rc::new(RefCell::new(None));
         let cap2 = Rc::clone(&captured);
 
         let scope = ReactiveScope::default();
@@ -217,19 +179,30 @@ mod tests {
 
         Box::new(Padding {
             insets: EdgeInsets::all(10),
-            child: move |inner: &mut SetupContext| {
-                Box::new(Center {
-                    child: move |leaf: &mut SetupContext| {
-                        cap2.set(leaf.use_context(&LAYOUT_HINTS).map(|s| s.read()));
-                    },
-                })
-                .setup(inner);
+            child: Center {
+                child: move |leaf: &mut SetupContext| {
+                    *cap2.borrow_mut() = Some(ChildLayoutInfo {
+                        box_modifiers: leaf
+                            .use_context(&BOX_MODIFIERS)
+                            .map(|s| s.read())
+                            .unwrap_or_default(),
+                        flex: leaf
+                            .use_context(&FLEX_PARENT_DATA)
+                            .map(|s| s.read())
+                            .unwrap_or_default(),
+                    });
+                },
             },
         })
         .setup(&mut ctx);
 
-        let h = captured.get().expect("hints not captured");
-        assert_eq!(h.padding.top, 10);
-        assert!(matches!(h.alignment, Some(Alignment::Center)));
+        let info = captured.borrow().clone().expect("layout info not captured");
+        assert_eq!(
+            info.box_modifiers.modifiers,
+            vec![
+                BoxModifier::Padding(EdgeInsets::all(10)),
+                BoxModifier::Align(Alignment::Center),
+            ]
+        );
     }
 }

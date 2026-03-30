@@ -1,6 +1,6 @@
 use reactive_core::{Component, SetupContext, Signal};
 
-use super::{EdgeInsets, with_updated_hints};
+use super::{BoxModifier, EdgeInsets, with_appended_box_modifier};
 
 /// Insets a child by the given edge amounts.
 pub struct Padding<I: Signal<Value = EdgeInsets>, C> {
@@ -11,7 +11,7 @@ pub struct Padding<I: Signal<Value = EdgeInsets>, C> {
 impl<I: Signal<Value = EdgeInsets> + 'static, C: Component + 'static> Component for Padding<I, C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Padding { insets, child } = *self;
-        with_updated_hints(ctx, move |h| h.padding = insets.read());
-        ctx.child(Box::new(child));
+        with_appended_box_modifier(ctx, BoxModifier::Padding(insets.read()));
+        ctx.boxed_child(Box::new(child));
     }
 }
