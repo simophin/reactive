@@ -11,6 +11,10 @@ path = "src/main.rs"
 reactive_core = { path = "../../core", package = "core" }
 appkit = { path = "../../appkit" }
 ui_core = { path = "../../ui-core", package = "ui-core" }
+resources = { path = "../../resources", features = ["reactive"] }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[build-dependencies]
+resources-build = { path = "../../resources-build" }

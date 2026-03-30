@@ -1,10 +1,14 @@
 use appkit::platform::AppKit;
 use appkit::run_app;
 use reactive_core::{Match, ResourceState, SetupContext, SignalExt, extract};
+use resources::ResourceContext;
+use resources::reactive::{provide_resource_context, use_resource_context};
 use std::num::NonZeroUsize;
 use ui_core::layout::types::TextAlignment;
 use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
-use ui_core::widgets::{Button, Column, Label, Platform, ProgressIndicator, Row, Window};
+use ui_core::widgets::{Button, Column, Image, Label, Platform, ProgressIndicator, Row, Window};
+
+include!(concat!(env!("OUT_DIR"), "/resources.rs"));
 
 #[derive(serde::Deserialize)]
 struct CatFact {
@@ -23,9 +27,21 @@ async fn fetch_cat_fact(_count: i32) -> String {
     result.unwrap_or_else(|e| format!("Error: {e}"))
 }
 
-fn app<P: Platform>(ctx: &mut SetupContext) {
+fn app<P: Platform>(ctx: &mut SetupContext)
+where
+    P::Image: 'static,
+{
+    let _resource_context = provide_resource_context(ctx, ResourceContext::default());
+    let resource_ctx = use_resource_context(ctx);
     let count = ctx.create_signal(0);
     let fact = ctx.create_resource(count.clone(), fetch_cat_fact);
+
+    let testing_image = resource_ctx
+        .resolve_asset(ctx, assets::images::TESTING_RESOURCE)
+        .map_value(|data| {
+            <<P as Platform>::Image as Image>::NativeHandle::try_from(data.0.to_vec())
+                .expect("demo image resource must decode")
+        });
     let shared_flex = NonZeroUsize::new(1);
 
     ctx.child(Padding {
@@ -41,6 +57,14 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
             .child(P::Label::new(
                 "The controls below now run through Padding, Center, SizedBox, and Expanded.",
             ))
+            .child(SizedBox {
+                width: Some(96usize),
+                height: Some(96usize),
+                child: P::Image::new(
+                    testing_image,
+                    Some("Bundled checkerboard test image".to_string()),
+                ),
+            })
             .child(SizedBox {
                 width: None::<usize>,
                 height: Some(44usize),

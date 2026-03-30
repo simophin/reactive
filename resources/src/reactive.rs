@@ -2,7 +2,9 @@
 //!
 //! Enabled with the `reactive` feature.
 
-use reactive_core::{ContextKey, ReadStoredSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{
+    ContextKey, ReadStoredSignal, SetupContext, Signal, StoredSignal, TypedBoxedSignal,
+};
 
 use crate::{AssetDescriptor, BinaryData, Message, ResourceContext, TranslationData};
 
@@ -12,7 +14,7 @@ static RESOURCE_CTX_KEY: ContextKey<ResourceContext> = ContextKey::new();
 ///
 /// Returned by [`use_resource_context`].  Methods mirror [`ResourceContext`]'s
 /// own resolve/format API but produce reactive memos instead of plain values.
-pub struct ReactiveResourceContext(Option<ReadStoredSignal<ResourceContext>>);
+pub struct ReactiveResourceContext(Option<TypedBoxedSignal<ResourceContext>>);
 
 impl ReactiveResourceContext {
     /// Memo: resolves a translation template reactively (no parameters).
