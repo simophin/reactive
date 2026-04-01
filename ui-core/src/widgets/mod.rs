@@ -21,5 +21,5 @@ pub use progress_indicator::ProgressIndicator;
 pub use row::Row;
 pub use slider::Slider;
 pub use stack::Stack;
-pub use text_input::TextInput;
+pub use text_input::*;
 pub use window::Window;

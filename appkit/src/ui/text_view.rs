@@ -1,14 +1,15 @@
-use std::cell::RefCell;
-use std::ops::Range;
-
 use super::view_component::AppKitViewBuilder;
 use crate::view_component::{AppKitViewComponent, NoChildView};
 use apple::Prop;
+use derive_more::Display;
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
 use reactive_core::{Signal, SignalExt};
+use std::cell::RefCell;
+use std::ops::Range;
+use ui_core::widgets::{PlatformTextType, TextChange, TextInputState};
 
 pub type TextView = AppKitViewComponent<NSTextView, NoChildView>;
 
@@ -267,12 +268,47 @@ impl TextView {
     }
 }
 
+#[derive(Clone, Display, PartialEq, Eq)]
+pub struct AppKitText(Retained<NSString>);
+
+impl<'a> From<&'a str> for AppKitText {
+    fn from(value: &'a str) -> Self {
+        Self(NSString::from_str(value))
+    }
+}
+unsafe impl Sync for AppKitText {}
+unsafe impl Send for AppKitText {}
+
+impl PlatformTextType for AppKitText {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn replace(&self, range: Range<usize>, with: &Self) -> Self {
+        let new_string = self.0.mutableCopy();
+        new_string.replaceCharactersInRange_withString(
+            NSRange {
+                location: range.start,
+                length: range.len(),
+            },
+            &with.0,
+        );
+        Self(new_string.into_super())
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        None
+    }
+}
+
 impl ui_core::widgets::TextInput for TextView {
+    type PlatformTextType = AppKitText;
+
     fn new(
-        value: impl Signal<Value = String> + 'static,
-        on_change: impl Fn(&str) + 'static,
+        value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
+        on_change: impl Fn(TextChange<Self::PlatformTextType>) + 'static,
     ) -> Self {
-        TextView::input_text(value.boxed().typed(), on_change)
+        todo!()
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
