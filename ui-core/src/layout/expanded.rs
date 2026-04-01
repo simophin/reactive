@@ -1,4 +1,4 @@
-use reactive_core::{Component, IntoSignal, SetupContext, Signal};
+use reactive_core::{Component, SetupContext, Signal, SignalExt};
 use std::num::NonZeroUsize;
 
 use super::{FLEX_PARENT_DATA, FlexParentData};
@@ -17,10 +17,10 @@ where
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Expanded { flex, child } = *self;
-        ctx.set_context(
-            &FLEX_PARENT_DATA,
-            FlexParentData { flex: flex.read() }.into_signal(),
-        );
-        ctx.boxed_child(Box::new(child));
+        ctx.set_context(&FLEX_PARENT_DATA, move || FlexParentData {
+            flex: flex.read(),
+        });
+
+        ctx.child(child);
     }
 }

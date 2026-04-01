@@ -6,9 +6,10 @@ use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::CGImage;
 use objc2_foundation::*;
 use objc2_image_io::CGImageSource;
-use reactive_core::Signal;
+use reactive_core::{Signal, SignalExt};
 use std::error::Error;
 use thiserror::Error;
+use ui_core::widgets::Image;
 
 pub type ImageView = AppKitViewComponent<NSImageView, NoChildView>;
 
@@ -20,6 +21,7 @@ apple::view_props! {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
 pub struct ImageHandle(CFRetained<CGImage>);
 
 static PROP_IMAGE: &Prop<ImageView, NSImageView, ImageHandle> = &Prop::new(|view, handle| {
@@ -45,16 +47,16 @@ enum ImageDecodeError {
     CreateImage,
 }
 
-impl TryFrom<Vec<u8>> for ImageHandle {
-    type Error = Box<dyn Error>;
+impl<'a> TryFrom<&'a [u8]> for ImageHandle {
+    type Error = Box<dyn Error + Send + Sync>;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let source = unsafe { CGImageSource::with_data(&CFData::from_bytes(&value), None) }
-            .ok_or_else(|| Box::new(ImageDecodeError::CreateSource) as Box<dyn Error>)?;
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let source = unsafe { CGImageSource::with_data(&CFData::from_bytes(value), None) }
+            .ok_or_else(|| Box::new(ImageDecodeError::CreateSource) as Box<_>)?;
 
         unsafe {
             Ok(Self(source.image_at_index(0, None).ok_or_else(|| {
-                Box::new(ImageDecodeError::CreateImage) as Box<dyn Error>
+                Box::new(ImageDecodeError::CreateImage) as Box<_>
             })?))
         }
     }
@@ -63,9 +65,9 @@ impl TryFrom<Vec<u8>> for ImageHandle {
 impl ui_core::widgets::Image for ImageView {
     type NativeHandle = ImageHandle;
 
-    fn new(
+    fn new<S: Into<String>>(
         image: impl Signal<Value = Self::NativeHandle> + 'static,
-        desc: Option<impl Signal<Value = String> + 'static>,
+        desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
         Self(
             AppKitViewBuilder::create_no_child(
@@ -73,7 +75,10 @@ impl ui_core::widgets::Image for ImageView {
                 |view| view.into_super().into_super(),
             )
             .bind(PROP_IMAGE, image)
-            .bind(PROP_ACCESSIBILITY_LABEL, desc),
+            .bind(
+                PROP_ACCESSIBILITY_LABEL,
+                desc.map_value(|r| r.map(Into::into)),
+            ),
         )
     }
 }

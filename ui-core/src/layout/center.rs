@@ -12,6 +12,6 @@ pub struct Center<C: Component> {
 impl<C: Component + 'static> Component for Center<C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         with_appended_box_modifier(ctx, BoxModifier::Align(Alignment::Center).into_signal());
-        ctx.boxed_child(Box::new(self.child));
+        ctx.child(self.child);
     }
 }

@@ -1,9 +1,12 @@
 use appkit::platform::AppKit;
 use appkit::run_app;
-use reactive_core::{Match, ResourceState, SetupContext, Signal, SignalExt, extract};
+use futures::{FutureExt, TryFutureExt};
+use reactive_core::{Match, ResourceState, SetupContext, Show, Signal, SignalExt, extract};
 use resources::ResourceContext;
 use resources::reactive::{provide_resource_context, use_resource_context};
 use std::num::NonZeroUsize;
+use std::rc::Rc;
+use tokio::task::spawn_blocking;
 use ui_core::layout::types::TextAlignment;
 use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
 use ui_core::widgets::{Button, Column, Image, Label, Platform, ProgressIndicator, Row, Window};
@@ -27,21 +30,23 @@ async fn fetch_cat_fact(_count: i32) -> String {
     result.unwrap_or_else(|e| format!("Error: {e}"))
 }
 
-fn app<P: Platform>(ctx: &mut SetupContext)
-where
-    P::Image: 'static,
-{
+fn app<P: Platform>(ctx: &mut SetupContext) {
     let _resource_context = provide_resource_context(ctx, ResourceContext::default());
     let resource_ctx = use_resource_context(ctx);
     let count = ctx.create_signal(0);
     let fact = ctx.create_resource(count.clone(), fetch_cat_fact);
 
-    let testing_image = resource_ctx
-        .resolve_asset(ctx, assets::images::TESTING_RESOURCE)
-        .map_value(|data| {
-            <<P as Platform>::Image as Image>::NativeHandle::try_from(data.0.to_vec())
-                .expect("demo image resource must decode")
-        });
+    let testing_image = resource_ctx.resolve_asset(ctx, assets::images::TESTING_RESOURCE);
+    let testing_image = ctx.create_resource(testing_image, move |input| {
+        spawn_blocking(move || <P::Image as Image>::NativeHandle::try_from(input.0)).map(
+            |r| match r {
+                Ok(Ok(image)) => Ok(image),
+                Ok(Err(e)) => Err(format!("Error decoding image: {e:?}")),
+                Err(_) => Err(String::from("Error joining future")),
+            },
+        )
+    });
+
     let shared_flex = NonZeroUsize::new(1);
 
     ctx.child(Padding {
@@ -57,10 +62,17 @@ where
             .child(P::Label::new(
                 "The controls below now run through Padding, Center, SizedBox, and Expanded.",
             ))
-            .child(SizedBox::squared(96usize).child(P::Image::new(
-                testing_image,
-                Some("Bundled checkerboard test image".to_string()),
-            )))
+            .child(
+                SizedBox::squared(96usize).child(
+                    Match::new(testing_image, || P::Label::new("Loading image..."))
+                        .case(extract!(ResourceState::Ready(Ok(img)) => img), |img| {
+                            P::Image::new(img, Some("Bundled checkerboard test image"))
+                        })
+                        .case(extract!(ResourceState::Ready(Err(err)) => err), |err| {
+                            P::Label::new(err)
+                        }),
+                ),
+            )
             .child(
                 SizedBox::height(44usize).child(
                     P::Row::new()
@@ -96,10 +108,7 @@ where
                     child: Match::new(fact, || Center {
                         child: P::ProgressIndicator::new_spinner(),
                     })
-                    .case(
-                        extract!(ResourceState::Ready(v) => std::mem::take(v)),
-                        P::Label::new,
-                    ),
+                    .case(extract!(ResourceState::Ready(v) => v), P::Label::new),
                 },
             }),
     });

@@ -18,8 +18,8 @@ use crate::component::{Component, SetupContext};
 macro_rules! extract {
     ($pattern:pat => $expr:expr) => {
         |v| match v {
-            $pattern => ::std::option::Option::Some($expr),
-            _ => ::std::option::Option::None,
+            $pattern => ::std::result::Result::Ok($expr),
+            v => ::std::result::Result::Err(v),
         }
     };
 }
@@ -38,7 +38,7 @@ use crate::signal::{Signal, StoredSignal};
 /// being rebuilt. The child is only rebuilt when the active case index changes.
 pub struct Match<S: Signal> {
     signal: S,
-    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, &mut S::Value, bool) -> bool>>,
+    cases: Vec<Box<dyn FnMut(&ReactiveScope, ComponentId, S::Value, bool) -> Result<(), S::Value>>>,
     fallback: Box<dyn FnMut(&ReactiveScope, ComponentId)>,
 }
 
@@ -69,15 +69,16 @@ impl<S: Signal> Match<S> {
     /// annotate with [`ReadSignal<E>`] if an explicit type is needed.
     pub fn case<E: PartialEq + 'static, C: Component + 'static>(
         mut self,
-        mut extractor: impl FnMut(&mut S::Value) -> Option<E> + 'static,
+        mut extractor: impl FnMut(S::Value) -> Result<E, S::Value> + 'static,
         mut factory: impl FnMut(ReadStoredSignal<E>) -> C + 'static,
     ) -> Self {
         let mut case_signal: Option<StoredSignal<E>> = None;
 
         self.cases.push(Box::new(
-            move |scope, component_id, value, is_active| -> bool {
-                let Some(e) = extractor(value) else {
-                    return false;
+            move |scope, component_id, value, is_active| -> Result<(), S::Value> {
+                let e = match extractor(value) {
+                    Ok(extracted) => extracted,
+                    Err(value) => return Err(value),
                 };
 
                 match (&case_signal, is_active) {
@@ -101,7 +102,7 @@ impl<S: Signal> Match<S> {
                     }
                 }
 
-                true
+                Ok(())
             },
         ));
 
@@ -117,7 +118,7 @@ enum ActiveBranch {
 impl<S> Component for Match<S>
 where
     S: Signal + 'static,
-    S::Value: Clone + 'static,
+    S::Value: 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let signal = self.signal;
@@ -132,8 +133,9 @@ where
 
                 for (index, case) in cases.iter_mut().enumerate() {
                     let is_active = matches!(active_branch, Some(ActiveBranch::Case(active)) if active == index);
-                    if case(scope, my_id, &mut value, is_active) {
-                        return ActiveBranch::Case(index);
+                    match case(scope, my_id, value, is_active) {
+                        Ok(()) => return ActiveBranch::Case(index),
+                        Err(e) => value = e,
                     }
                 }
 
@@ -170,8 +172,8 @@ mod tests {
             Match::new(signal, || ())
                 .case(
                     |s| match s {
-                        ResourceState::Loading(last) => Some(std::mem::take(last)),
-                        _ => None,
+                        ResourceState::Loading(last) => Ok(last),
+                        other => Err(other),
                     },
                     move |sig: ReadStoredSignal<Option<i32>>| {
                         let log = Arc::clone(&log1);
@@ -186,8 +188,8 @@ mod tests {
                 )
                 .case(
                     |s| match s {
-                        ResourceState::Ready(v) => Some(std::mem::take(v)),
-                        _ => None,
+                        ResourceState::Ready(v) => Ok(v),
+                        other => Err(other),
                     },
                     move |sig: ReadStoredSignal<i32>| {
                         let log = Arc::clone(&log2);
@@ -298,8 +300,8 @@ mod tests {
         let log_clone = Arc::clone(&log);
         Box::new(Match::new(profile.clone(), || ()).case(
             |s| match s {
-                ResourceState::Loading(last) => Some(std::mem::take(last)),
-                _ => None,
+                ResourceState::Loading(last) => Ok(last),
+                other => Err(other),
             },
             move |sig: ReadStoredSignal<Option<i32>>| {
                 let log = Arc::clone(&log_clone);

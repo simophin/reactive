@@ -17,6 +17,6 @@ where
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Padding { insets, child } = *self;
         with_appended_box_modifier(ctx, move || BoxModifier::Padding(insets.read().into()));
-        ctx.boxed_child(Box::new(child));
+        ctx.child(child);
     }
 }
