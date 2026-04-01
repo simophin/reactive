@@ -1,6 +1,6 @@
 use appkit::platform::AppKit;
 use appkit::run_app;
-use reactive_core::{Match, ResourceState, SetupContext, SignalExt, extract};
+use reactive_core::{Match, ResourceState, SetupContext, Signal, SignalExt, extract};
 use resources::ResourceContext;
 use resources::reactive::{provide_resource_context, use_resource_context};
 use std::num::NonZeroUsize;
@@ -57,61 +57,38 @@ where
             .child(P::Label::new(
                 "The controls below now run through Padding, Center, SizedBox, and Expanded.",
             ))
-            .child(SizedBox {
-                width: Some(96usize),
-                height: Some(96usize),
-                child: P::Image::new(
-                    testing_image,
-                    Some("Bundled checkerboard test image".to_string()),
+            .child(SizedBox::squared(96usize).child(P::Image::new(
+                testing_image,
+                Some("Bundled checkerboard test image".to_string()),
+            )))
+            .child(
+                SizedBox::height(44usize).child(
+                    P::Row::new()
+                        .spacing(12usize)
+                        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .child(SizedBox::width(72usize).child(P::Button::new("-", {
+                            let count = count.clone();
+                            move || count.update_if_changes(count.read() - 1)
+                        })))
+                        .child(Expanded {
+                            flex: shared_flex,
+                            child: Center {
+                                child: P::Label::new(
+                                    count.clone().map_value(|c| format!("Count: {c}")),
+                                )
+                                .font_size(18.0),
+                            },
+                        })
+                        .child(SizedBox::width(72usize).child(P::Button::new("+", {
+                            let count = count.clone();
+                            move || count.update_if_changes(count.read() + 1)
+                        })))
+                        .child(
+                            SizedBox::width(92usize)
+                                .child(P::Button::new("Reset", move || count.update_if_changes(0))),
+                        ),
                 ),
-            })
-            .child(SizedBox {
-                width: None::<usize>,
-                height: Some(44usize),
-                child: P::Row::new()
-                    .spacing(12usize)
-                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .child(SizedBox {
-                        width: Some(72usize),
-                        height: None::<usize>,
-                        child: P::Button::new("-", {
-                            let count = count.clone();
-                            move || {
-                                count.update_with(|v| {
-                                    *v -= 1;
-                                    true
-                                })
-                            }
-                        }),
-                    })
-                    .child(Expanded {
-                        flex: shared_flex,
-                        child: Center {
-                            child: P::Label::new(
-                                count.clone().map_value(|c| format!("Count: {c}")),
-                            )
-                            .font_size(18.0),
-                        },
-                    })
-                    .child(SizedBox {
-                        width: Some(72usize),
-                        height: None::<usize>,
-                        child: P::Button::new("+", {
-                            let count = count.clone();
-                            move || {
-                                count.update_with(|v| {
-                                    *v += 1;
-                                    true
-                                })
-                            }
-                        }),
-                    })
-                    .child(SizedBox {
-                        width: Some(92usize),
-                        height: None::<usize>,
-                        child: P::Button::new("Reset", move || count.update_if_changes(0)),
-                    }),
-            })
+            )
             .child(Expanded {
                 flex: shared_flex,
                 child: Padding {

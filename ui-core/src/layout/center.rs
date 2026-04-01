@@ -1,4 +1,4 @@
-use reactive_core::{Component, SetupContext};
+use reactive_core::{Component, IntoSignal, SetupContext};
 
 use super::BoxModifier;
 use super::types::Alignment;
@@ -11,7 +11,7 @@ pub struct Center<C: Component> {
 
 impl<C: Component + 'static> Component for Center<C> {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        with_appended_box_modifier(ctx, BoxModifier::Align(Alignment::Center));
+        with_appended_box_modifier(ctx, BoxModifier::Align(Alignment::Center).into_signal());
         ctx.boxed_child(Box::new(self.child));
     }
 }

@@ -3,47 +3,94 @@ use reactive_core::{Component, SetupContext, Signal};
 use super::{BoxModifier, with_appended_box_modifier};
 
 /// Constrains a child to a fixed width and/or height.
-pub struct SizedBox<
-    W: Signal<Value = Option<usize>>,
-    H: Signal<Value = Option<usize>>,
-    C: Component,
-> {
+pub struct SizedBox<W, H, C> {
     pub width: W,
     pub height: H,
     pub child: C,
 }
 
-impl<S: Signal<Value = Option<usize>> + Clone, C: Component> SizedBox<S, S, C> {
-    pub fn square(size: S, child: C) -> Self {
-        Self {
+pub struct MustHaveChild;
+
+impl SizedBox<(), (), ()> {
+    pub fn width<W>(width: W) -> SizedBox<W, Option<usize>, MustHaveChild>
+    where
+        W: Signal<Value = usize>,
+    {
+        SizedBox {
+            width,
+            height: None,
+            child: MustHaveChild,
+        }
+    }
+
+    pub fn height<H>(height: H) -> SizedBox<Option<usize>, H, MustHaveChild>
+    where
+        H: Signal<Value = usize>,
+    {
+        SizedBox {
+            width: None,
+            height,
+            child: MustHaveChild,
+        }
+    }
+
+    pub fn sized<W, H>(width: W, height: H) -> SizedBox<W, H, MustHaveChild>
+    where
+        W: Signal<Value = usize>,
+        H: Signal<Value = usize>,
+    {
+        SizedBox {
+            width,
+            height,
+            child: MustHaveChild,
+        }
+    }
+
+    pub fn squared<S>(size: S) -> SizedBox<S, S, MustHaveChild>
+    where
+        S: Signal<Value = usize> + Clone,
+    {
+        SizedBox {
             width: size.clone(),
             height: size,
+            child: MustHaveChild,
+        }
+    }
+}
+
+impl<W, H, C> SizedBox<W, H, C> {
+    pub fn child<NC>(self, child: NC) -> SizedBox<W, H, NC>
+    where
+        NC: Component + 'static,
+    {
+        SizedBox {
+            width: self.width,
+            height: self.height,
             child,
         }
     }
 }
 
-impl<
-    W: Signal<Value = Option<usize>> + 'static,
-    H: Signal<Value = Option<usize>> + 'static,
+impl<W, H, C> Component for SizedBox<W, H, C>
+where
+    W: Signal + 'static,
+    H: Signal + 'static,
     C: Component + 'static,
-> Component for SizedBox<W, H, C>
+    <W as Signal>::Value: Into<Option<usize>> + 'static,
+    <H as Signal>::Value: Into<Option<usize>> + 'static,
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let SizedBox {
+        let Self {
             width,
             height,
             child,
         } = *self;
 
-        with_appended_box_modifier(
-            ctx,
-            BoxModifier::SizedBox {
-                width: width.read(),
-                height: height.read(),
-            },
-        );
+        with_appended_box_modifier(ctx, move || BoxModifier::SizedBox {
+            width: width.read().into(),
+            height: height.read().into(),
+        });
 
-        ctx.boxed_child(Box::new(child));
+        ctx.child(child);
     }
 }

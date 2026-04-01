@@ -15,13 +15,16 @@ pub use types::{
     EdgeInsets, FLEX_PARENT_DATA, FlexParentData, MainAxisAlignment,
 };
 
-use reactive_core::{SetupContext, SignalExt};
+use reactive_core::{SetupContext, Signal, SignalExt};
 
-fn with_appended_box_modifier(ctx: &mut SetupContext, modifier: BoxModifier) {
+fn with_appended_box_modifier(
+    ctx: &mut SetupContext,
+    modifier: impl Signal<Value = BoxModifier> + 'static,
+) {
     ctx.set_context(
         &BOX_MODIFIERS,
         ctx.use_context(&BOX_MODIFIERS)
-            .map_value(move |chain| chain.unwrap_or_default().with_appended(modifier.clone())),
+            .map_value(move |chain| chain.unwrap_or_default().with_appended(modifier.read())),
     );
 }
 
