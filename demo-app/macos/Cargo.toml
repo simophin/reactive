@@ -7,6 +7,10 @@ edition = "2024"
 name = "demo-app-macos"
 path = "src/main.rs"
 
+[[bin]]
+name = "text-input-demo"
+path = "src/text_input_demo.rs"
+
 [dependencies]
 reactive_core = { path = "../../core", package = "core" }
 appkit = { path = "../../appkit" }

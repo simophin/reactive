@@ -3,12 +3,14 @@ use crate::view_component::{AppKitViewComponent, NoChildView};
 use apple::Prop;
 use derive_more::Display;
 use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::{Signal, SignalExt};
+use reactive_core::Signal;
 use std::cell::RefCell;
 use std::ops::Range;
+use std::rc::Rc;
 use ui_core::widgets::{PlatformTextType, TextChange, TextInputState};
 
 pub type TextView = AppKitViewComponent<NSTextView, NoChildView>;
@@ -30,27 +32,131 @@ static PROP_STRING: &Prop<TextView, NSTextView, Retained<NSString>> = &Prop::new
 });
 
 // ---------------------------------------------------------------------------
-// ReactiveTextView — NSTextView subclass with true interception points.
+// ReactiveTextStorage — NSTextStorage subclass.
 //
-// Text changes are intercepted via `shouldChangeTextInRange:replacementString:`
-// which fires BEFORE the mutation. We construct the proposed text, call the
-// callback, and return whether the signal accepted the change — naturally
-// breaking the loop without any guard variable.
+// Acts as a pure backing store. The only job of replaceCharactersInRange: is
+// to mutate the string and post the edit notification so NSTextKit redraws.
+// It does NOT call any application callback — that is ReactiveTextView's job.
 //
-// Selection changes are intercepted via `setSelectedRange:affinity:stillSelecting:`,
-// which all selection changes funnel through.
-// No notification center observers are used.
+// set_text() is the programmatic path: wraps the mutation in
+// beginEditing/endEditing so it never goes through shouldChangeTextInRange:.
+// ---------------------------------------------------------------------------
+
+struct TextStorageState {
+    text: Retained<NSMutableString>,
+    empty_attrs: Retained<NSDictionary<NSString, AnyObject>>,
+}
+
+define_class!(
+    #[unsafe(super(NSTextStorage))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = TextStorageState]
+    #[name = "ReactiveTextStorage"]
+    struct TextStorage;
+
+    unsafe impl NSObjectProtocol for TextStorage {}
+
+    impl TextStorage {
+        #[unsafe(method(string))]
+        fn string(&self) -> &NSString {
+            &self.ivars().text
+        }
+
+        #[unsafe(method(attributesAtIndex:effectiveRange:))]
+        fn attributes_at_index(
+            &self,
+            _location: NSUInteger,
+            range: *mut NSRange,
+        ) -> &NSDictionary<NSString, AnyObject> {
+            if !range.is_null() {
+                unsafe {
+                    *range = NSRange {
+                        location: 0,
+                        length: self.ivars().text.length(),
+                    };
+                }
+            }
+            &self.ivars().empty_attrs
+        }
+
+        #[unsafe(method(replaceCharactersInRange:withString:))]
+        fn replace_characters_in_range_with_string(&self, range: NSRange, replacement: &NSString) {
+            let old_length = self.ivars().text.length();
+            self.ivars()
+                .text
+                .replaceCharactersInRange_withString(range, replacement);
+            let delta = self.ivars().text.length() as isize - old_length as isize;
+            self.edited_range_changeInLength(
+                NSTextStorageEditActions::EditedCharacters,
+                range,
+                delta,
+            );
+        }
+
+        #[unsafe(method(setAttributes:range:))]
+        fn set_attributes_range(
+            &self,
+            _attrs: Option<&NSDictionary<NSString, AnyObject>>,
+            range: NSRange,
+        ) {
+            self.edited_range_changeInLength(
+                NSTextStorageEditActions::EditedAttributes,
+                range,
+                0,
+            );
+        }
+    }
+);
+
+impl TextStorage {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let state = TextStorageState {
+            text: NSMutableString::new(),
+            empty_attrs: NSDictionary::new(),
+        };
+        let this = Self::alloc(mtm).set_ivars(state);
+        unsafe { msg_send![super(this), init] }
+    }
+
+    /// Programmatic update from a signal. Wraps in beginEditing/endEditing so
+    /// NSTextKit redraws without going through shouldChangeTextInRange:.
+    fn set_text(&self, new_text: &NSString) {
+        self.beginEditing();
+        let old_length = self.ivars().text.length();
+        let new_length = new_text.length();
+        let full_range = NSRange {
+            location: 0,
+            length: old_length,
+        };
+        self.ivars()
+            .text
+            .replaceCharactersInRange_withString(full_range, new_text);
+        self.edited_range_changeInLength(
+            NSTextStorageEditActions::EditedCharacters,
+            full_range,
+            new_length as isize - old_length as isize,
+        );
+        self.endEditing();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ReactiveTextView — NSTextView subclass.
+//
+// Intercepts shouldChangeTextInRange:replacementString: which fires BEFORE
+// NSTextKit applies the mutation. We call on_change here:
+//
+// - If the caller updates the signal (accepts the change) we return YES and
+//   NSTextKit applies it to the TextStorage.
+// - If the caller does NOT update the signal (rejects the change) we return
+//   NO. NSTextKit discards the change with no mutation at all — no flicker.
+//
+// The programmatic path (signal → set_text) mutates TextStorage directly and
+// never passes through this method, so there is no recursion risk.
 // ---------------------------------------------------------------------------
 
 struct ReactiveTextViewState {
-    /// Returns `true` to approve the proposed text (let NSTextView apply it),
-    /// or `false` to reject it (the effect will correct the view next tick).
-    on_text_change: RefCell<Box<dyn FnMut(Retained<NSString>) -> bool>>,
-    /// Called with the proposed selection; returns the selection the signal
-    /// settled on (may differ if the callback transformed it). NSTextView is
-    /// then instructed to apply the returned range — breaking the loop without
-    /// any guard variable, because we call `super` directly.
-    on_selection_change: RefCell<Box<dyn FnMut(Range<usize>) -> Range<usize>>>,
+    on_change: RefCell<Box<dyn FnMut(NSRange, &NSString) -> bool>>,
 }
 
 define_class!(
@@ -63,210 +169,46 @@ define_class!(
     unsafe impl NSObjectProtocol for ReactiveTextView {}
 
     impl ReactiveTextView {
-        /// Called BEFORE any text mutation. We construct the proposed string,
-        /// call `on_text_change` (which updates the signal), then compare the
-        /// signal's new value to the proposed text:
-        ///
-        /// - Equal → return `true` — NSTextView applies the change as-is.
-        /// - Different → return `false` — NSTextView discards the change; the
-        ///   reactive effect will push the signal's (transformed) value next tick.
+        /// Returns YES to let NSTextKit apply the change, NO to discard it.
         #[unsafe(method(shouldChangeTextInRange:replacementString:))]
         fn should_change_text_in_range(
             &self,
             range: NSRange,
             replacement: Option<&NSString>,
         ) -> objc2::runtime::Bool {
-            // Standard checks: isEditable, delegate, etc.
             let allowed: bool = unsafe {
                 msg_send![super(self), shouldChangeTextInRange: range, replacementString: replacement]
             };
             if !allowed {
                 return objc2::runtime::Bool::NO;
             }
-            let Some(replacement) = replacement else {
-                // Attribute-only change (spans, IME marks) — always approve.
-                return objc2::runtime::Bool::YES;
-            };
-            // Build proposed string by mutably copying the current content and
-            // applying the replacement in-place. This stays entirely in UTF-16
-            // (no Rust String allocations or encoding conversions).
-            let proposed = self.string().mutableCopy();
-            proposed.replaceCharactersInRange_withString(range, replacement);
-            let accepted = self.ivars().on_text_change.borrow_mut()(Retained::into_super(proposed));
-            objc2::runtime::Bool::new(accepted)
-        }
-
-        /// All selection changes funnel through this method — user cursor
-        /// moves, drag selections, and programmatic setSelectedRange: calls.
-        ///
-        /// During a drag (`still_selecting = true`) we let NSTextView apply the
-        /// visual rubber-band selection immediately without notifying the signal,
-        /// since intermediate drag positions are noise.
-        ///
-        /// When the selection settles (`still_selecting = false`) we call the
-        /// callback with the proposed range and apply whatever range the signal
-        /// returns. Calling `super` directly bypasses this override, so there
-        /// is no recursion risk even if the signal transforms the range.
-        #[unsafe(method(setSelectedRange:affinity:stillSelecting:))]
-        fn set_selected_range_affinity_still_selecting(
-            &self,
-            range: NSRange,
-            affinity: NSSelectionAffinity,
-            still_selecting: bool,
-        ) {
-            if still_selecting {
-                // Just track visual feedback during the drag; no signal update.
-                let _: () = unsafe {
-                    msg_send![
-                        super(self),
-                        setSelectedRange: range,
-                        affinity: affinity,
-                        stillSelecting: true
-                    ]
-                };
-                return;
+            match replacement {
+                Some(replacement) => {
+                    let accepted = self.ivars().on_change.borrow_mut()(range, replacement);
+                    objc2::runtime::Bool::from(accepted)
+                }
+                None => objc2::runtime::Bool::YES,
             }
-            let proposed = range.location..range.location + range.length;
-            let accepted = (self.ivars().on_selection_change.borrow_mut())(proposed);
-            let accepted_range = NSRange {
-                location: accepted.start,
-                length: accepted.len(),
-            };
-            let _: () = unsafe {
-                msg_send![
-                    super(self),
-                    setSelectedRange: accepted_range,
-                    affinity: affinity,
-                    stillSelecting: false
-                ]
-            };
         }
     }
 );
 
 impl ReactiveTextView {
     fn new(
-        on_text_change: impl FnMut(Retained<NSString>) -> bool + 'static,
-        on_selection_change: impl FnMut(Range<usize>) -> Range<usize> + 'static,
+        on_change: impl FnMut(NSRange, &NSString) -> bool + 'static,
         mtm: MainThreadMarker,
     ) -> Retained<Self> {
         let state = ReactiveTextViewState {
-            on_text_change: RefCell::new(Box::new(on_text_change)),
-            on_selection_change: RefCell::new(Box::new(on_selection_change)),
+            on_change: RefCell::new(Box::new(on_change)),
         };
         let this = Self::alloc(mtm).set_ivars(state);
         unsafe { msg_send![super(this), initWithFrame: NSRect::ZERO] }
     }
 }
 
-pub(super) fn make_reactive_text_view(
-    on_text_change: impl FnMut(Retained<NSString>) -> bool + 'static,
-    on_selection_change: impl FnMut(Range<usize>) -> Range<usize> + 'static,
-    mtm: MainThreadMarker,
-) -> Retained<NSTextView> {
-    ReactiveTextView::new(on_text_change, on_selection_change, mtm).into_super()
-}
-
-fn into_nsview(view: Retained<NSTextView>) -> Retained<NSView> {
-    view.into_super().into_super()
-}
-
 // ---------------------------------------------------------------------------
-// TextView factories
+// AppKitText — the platform text type for AppKit text inputs.
 // ---------------------------------------------------------------------------
-
-impl TextView {
-    /// A non-editable, non-selectable text label backed by NSTextView.
-    pub fn label(text: impl Signal<Value = String> + 'static) -> Self {
-        Self(
-            AppKitViewBuilder::create_no_child(
-                |_| {
-                    let mtm = MainThreadMarker::new().expect("must be on main thread");
-                    let tv = NSTextView::initWithFrame(NSTextView::alloc(mtm), NSRect::ZERO);
-                    tv.setEditable(false);
-                    tv.setDrawsBackground(false);
-                    tv
-                },
-                into_nsview,
-            )
-            .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s))),
-        )
-    }
-
-    /// A fully reactive text input backed by ReactiveTextStorage (backing
-    /// store) and ReactiveTextView (interception).
-    ///
-    /// - `text` / `on_text_change`: the string is the source of truth;
-    ///   `on_text_change` fires on every user edit (before layout).
-    /// - `selection` / `on_selection_change`: UTF-16 code unit range, maps
-    ///   directly to NSRange; `on_selection_change` fires when the selection
-    ///   settles (not on every drag frame).
-    pub fn input(
-        text: impl Signal<Value = Retained<NSString>> + Clone + 'static,
-        on_text_change: impl for<'a> FnMut(&'a Retained<NSString>) + 'static,
-        selection: impl Signal<Value = Range<usize>> + Clone + 'static,
-        on_selection_change: impl FnMut(Range<usize>) + 'static,
-    ) -> Self {
-        let text_for_check = text.clone();
-        let mut on_text_change = on_text_change;
-        let text_change_cb = move |proposed: Retained<NSString>| -> bool {
-            on_text_change(&proposed);
-            text_for_check.read().isEqualToString(&proposed)
-        };
-        let selection_for_check = selection.clone();
-        let mut on_selection_change = on_selection_change;
-        let selection_change_cb = move |proposed: Range<usize>| -> Range<usize> {
-            on_selection_change(proposed.clone());
-            selection_for_check.read()
-        };
-        Self(
-            AppKitViewBuilder::create_no_child(
-                move |_| {
-                    let mtm = MainThreadMarker::new().expect("must be on main thread");
-                    let tv = make_reactive_text_view(text_change_cb, selection_change_cb, mtm);
-                    tv.setEditable(true);
-                    tv
-                },
-                into_nsview,
-            )
-            .bind(PROP_STRING, text)
-            .bind(
-                PROP_SELECTEDRANGE,
-                selection.map_value(|r| NSRange {
-                    location: r.start,
-                    length: r.len(),
-                }),
-            ),
-        )
-    }
-
-    /// Convenience wrapper for callers that only care about the plain string
-    /// and not selection. Selection changes from the view are ignored.
-    pub fn input_text(
-        text: impl Signal<Value = String> + Clone + 'static,
-        on_change: impl for<'a> FnMut(&'a str) + 'static,
-    ) -> Self {
-        let text_for_check = text.clone();
-        let mut on_change = on_change;
-        let text_change_cb = move |proposed: Retained<NSString>| -> bool {
-            let proposed_str = proposed.to_string();
-            on_change(&proposed.to_string());
-            text_for_check.read() == proposed_str
-        };
-        Self(
-            AppKitViewBuilder::create_no_child(
-                move |_| {
-                    let mtm = MainThreadMarker::new().expect("must be on main thread");
-                    let tv = make_reactive_text_view(text_change_cb, |r| r, mtm);
-                    tv.setEditable(true);
-                    tv
-                },
-                into_nsview,
-            )
-            .bind(PROP_STRING, text.map_value(|s| NSString::from_str(&s))),
-        )
-    }
-}
 
 #[derive(Clone, Display, PartialEq, Eq)]
 pub struct AppKitText(Retained<NSString>);
@@ -280,18 +222,20 @@ unsafe impl Sync for AppKitText {}
 unsafe impl Send for AppKitText {}
 
 impl PlatformTextType for AppKitText {
+    type RefType<'a> = &'a NSString;
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
-    fn replace(&self, range: Range<usize>, with: &Self) -> Self {
+    fn replace(&self, range: Range<usize>, with: &Self::RefType<'_>) -> Self {
         let new_string = self.0.mutableCopy();
         new_string.replaceCharactersInRange_withString(
             NSRange {
                 location: range.start,
                 length: range.len(),
             },
-            &with.0,
+            *with,
         );
         Self(new_string.into_super())
     }
@@ -301,14 +245,71 @@ impl PlatformTextType for AppKitText {
     }
 }
 
+// ---------------------------------------------------------------------------
+// TextInput trait implementation
+// ---------------------------------------------------------------------------
+
 impl ui_core::widgets::TextInput for TextView {
     type PlatformTextType = AppKitText;
 
     fn new(
         value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
-        on_change: impl Fn(TextChange<Self::PlatformTextType>) + 'static,
+        on_change: impl for<'a> FnMut(
+            TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>,
+        ) + 'static,
     ) -> Self {
-        todo!()
+        let on_change = Rc::new(RefCell::new(on_change));
+        Self(AppKitViewBuilder::create_no_child(
+            move |ctx| {
+                let mtm = MainThreadMarker::new().unwrap();
+                let on_change = on_change.clone();
+
+                // Box the signal so it can be shared between the callback and
+                // the effect without requiring Signal: Clone.
+                let value: Rc<dyn Signal<Value = TextInputState<AppKitText>>> = Rc::new(value);
+                let value_for_effect = value.clone();
+
+                let storage = TextStorage::new(mtm);
+
+                let layout_manager = NSLayoutManager::new();
+                let container = NSTextContainer::initWithSize(
+                    mtm.alloc::<NSTextContainer>(),
+                    NSSize {
+                        width: f64::MAX,
+                        height: f64::MAX,
+                    },
+                );
+                layout_manager.addTextContainer(&container);
+                storage.addLayoutManager(&layout_manager);
+
+                let text_view = ReactiveTextView::new(
+                    move |range, replacement| {
+                        let initial = value.read().text.clone();
+                        on_change.borrow_mut()(TextChange::Replacement {
+                            replace: range.location..range.location + range.length,
+                            with: replacement,
+                        });
+                        // Return true (YES) if the caller updated the signal,
+                        // meaning the change is accepted as-is.
+                        value.read().text != initial
+                    },
+                    mtm,
+                );
+
+                // Connect ReactiveTextView to our custom storage by replacing
+                // the default text container with ours.
+                unsafe { text_view.setTextContainer(Some(&container)) };
+
+                // Effect: signal → storage (programmatic path).
+                let storage = storage.clone();
+                ctx.create_effect(move |_, _| {
+                    storage.set_text(&value_for_effect.read().text.0);
+                });
+
+                text_view.into_super()
+            },
+            |t| t.into_super().into_super(),
+        ))
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {

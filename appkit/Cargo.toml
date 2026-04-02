@@ -58,6 +58,8 @@ tokio-stream = { version = "0.1", features = ["time"] }
 
 [[example]]
 name = "pokedex"
+path = "examples/pokedex.rs"
 
 [[example]]
 name = "posts"
+path = "examples/posts.rs"

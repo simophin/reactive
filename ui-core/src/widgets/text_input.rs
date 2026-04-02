@@ -9,8 +9,10 @@ pub struct TextInputState<S> {
 }
 
 pub trait PlatformTextType: Display + for<'a> From<&'a str> + Send + Sync + Eq + 'static {
+    type RefType<'a>;
+
     fn len(&self) -> usize;
-    fn replace(&self, range: Range<usize>, with: &Self) -> Self;
+    fn replace(&self, range: Range<usize>, with: &Self::RefType<'_>) -> Self;
     fn as_str(&self) -> Option<&str>;
 }
 
@@ -24,14 +26,16 @@ pub trait TextInput: Component + Sized + 'static {
 
     fn new(
         value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
-        on_change: impl Fn(TextChange<Self::PlatformTextType>) + 'static,
+        on_change: impl for<'a> FnMut(
+            TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>,
+        ) + 'static,
     ) -> Self;
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self;
 }
 
 impl<S> TextInputState<S> {
-    pub fn apply_change(&mut self, c: &TextChange<S>)
+    pub fn apply_change(&mut self, c: &TextChange<S::RefType<'_>>)
     where
         S: PlatformTextType,
     {
