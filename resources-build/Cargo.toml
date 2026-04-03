@@ -3,7 +3,5 @@ name = "resources-build"
 version = "0.1.0"
 edition = "2024"
 
-# No extra dependencies — std filesystem ops and manual .ftl scanning are
-# sufficient.  Keeping this crate dependency-free makes it fast to compile
-# as a build dependency.
 [dependencies]
+imagesize = "0.13"

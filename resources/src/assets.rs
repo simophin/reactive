@@ -1,10 +1,27 @@
-use std::borrow::Cow;
-
 use crate::qualifier::{QualifierSet, ResourceContext, best_match};
+use std::borrow::Cow;
 
 /// Embedded binary data for a static asset.
 #[derive(Copy, Clone)]
-pub struct BinaryData(pub &'static [u8]);
+pub enum BinaryData {
+    /// An image asset with known dimensions.
+    Image {
+        data: &'static [u8],
+        width: u32,
+        height: u32,
+    },
+    /// A binary asset with no additional metadata.
+    Unknown(&'static [u8]),
+}
+
+impl BinaryData {
+    pub fn data(&self) -> &'static [u8] {
+        match self {
+            BinaryData::Image { data, .. } => data,
+            BinaryData::Unknown(data) => data,
+        }
+    }
+}
 
 /// One variant of a resource — a qualifier set paired with a value of type `T`.
 pub struct AssetVariant<T> {

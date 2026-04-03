@@ -1,13 +1,15 @@
 use super::{
-    Button, Column, Image, Label, ProgressIndicator, Row, Slider, Stack, TextInput, Window,
+    Button, Column, Image, ImageCodec, Label, ProgressIndicator, Row, Slider, Stack, TextInput,
+    Window,
 };
 use crate::widgets::list::List;
 use reactive_core::SetupContext;
 
 pub trait Platform {
+    type ImageCodec: ImageCodec;
     type Button: Button;
     type Label: Label;
-    type Image: Image;
+    type Image: Image<NativeHandle = <Self::ImageCodec as ImageCodec>::NativeHandle>;
     type ProgressIndicator: ProgressIndicator;
     type TextInput: TextInput;
     type Slider: Slider;

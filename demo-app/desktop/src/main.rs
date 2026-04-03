@@ -6,14 +6,16 @@ use std::num::NonZeroUsize;
 use tokio::task::spawn_blocking;
 use ui_core::layout::types::TextAlignment;
 use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
-use ui_core::widgets::{Button, Column, Image, Label, Platform, ProgressIndicator, Row, Window};
+use ui_core::widgets::{
+    Button, Column, Image, ImageCodec, Label, Platform, ProgressIndicator, Row, Window,
+};
 
 include!(concat!(env!("OUT_DIR"), "/resources.rs"));
 
 // Platform selection: the only two lines that differ between macOS and Linux.
-#[cfg(target_os = "macos")]
-type AppPlatform = appkit::platform::AppKit;
-#[cfg(target_os = "linux")]
+// #[cfg(target_os = "macos")]
+// type AppPlatform = appkit::platform::AppKit;
+// #[cfg(target_os = "linux")]
 type AppPlatform = gtk::platform::Gtk;
 
 // ---------------------------------------------------------------------------
@@ -45,13 +47,11 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
 
     let testing_image = resource_ctx.resolve_asset(ctx, assets::images::TESTING_RESOURCE);
     let testing_image = ctx.create_resource(testing_image, move |input| {
-        spawn_blocking(move || <P::Image as Image>::NativeHandle::try_from(input.0)).map(
-            |r| match r {
-                Ok(Ok(image)) => Ok(image),
-                Ok(Err(e)) => Err(format!("Error decoding image: {e:?}")),
-                Err(_) => Err(String::from("Error joining future")),
-            },
-        )
+        spawn_blocking(move || P::ImageCodec::decode_static(input.data())).map(|r| match r {
+            Ok(Ok(image)) => Ok(image),
+            Ok(Err(e)) => Err(format!("Error decoding image: {e:?}")),
+            Err(_) => Err(String::from("Error joining future")),
+        })
     });
 
     let shared_flex = NonZeroUsize::new(1);

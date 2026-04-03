@@ -1,31 +1,37 @@
 use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
-use crate::{TypeErasedSignal, ReactiveScope};
+use crate::{ReactiveScope, Signal, TypeErasedSignal};
 use slotmap::new_key_type;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::mem::transmute;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock};
 
 new_key_type! {
     pub struct ComponentId;
 }
 
-pub(crate) type ContextKeyId = &'static ;
+pub(crate) type ContextKeyId = usize;
 
-pub struct ContextKey<T>(PhantomData<fn() -> T>);
+pub struct ContextKey<T> {
+    id: LazyLock<ContextKeyId>,
+    _marker: PhantomData<fn() -> T>,
+}
 
 impl<T> ContextKey<T> {
     pub const fn new() -> Self {
-        Self(PhantomData)
+        Self {
+            id: LazyLock::new(|| {
+                static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+                NEXT_ID.fetch_add(1, Ordering::SeqCst)
+            }),
+            _marker: PhantomData,
+        }
     }
 
-    pub(crate) const fn id(&'static self) -> ContextKeyId {
-        unsafe {
-            transmute(self as *const Self)    
-        }
+    pub(crate) fn id(&'static self) -> ContextKeyId {
+        self.id.read()
     }
 }
 

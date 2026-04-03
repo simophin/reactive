@@ -1,6 +1,7 @@
 mod button;
 mod column;
 mod image;
+mod image_codec;
 mod label;
 mod list;
 mod platform;
@@ -14,6 +15,7 @@ mod window;
 pub use button::Button;
 pub use column::Column;
 pub use image::Image;
+pub use image_codec::ImageCodec;
 pub use label::Label;
 pub use list::*;
 pub use platform::Platform;

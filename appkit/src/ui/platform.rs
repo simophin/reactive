@@ -1,4 +1,5 @@
 use super::button::Button;
+use super::image_codec::AppKitImageCodec;
 use super::image_view::ImageView;
 use super::label::Label;
 use super::progress_indicator::ProgressIndicator;
@@ -14,6 +15,7 @@ use ui_core::widgets::Platform;
 pub struct AppKit;
 
 impl Platform for AppKit {
+    type ImageCodec = AppKitImageCodec;
     type Button = Button;
     type Label = Label;
     type Image = ImageView;

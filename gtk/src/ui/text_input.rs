@@ -1,7 +1,7 @@
 use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
 use gtk4::prelude::*;
 use reactive_core::Signal;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::ops::Range;
 use std::rc::Rc;
@@ -28,11 +28,13 @@ impl From<&str> for GtkTextType {
 }
 
 impl PlatformTextType for GtkTextType {
+    type RefType<'a> = &'a str;
+
     fn len(&self) -> usize {
         self.0.chars().count()
     }
 
-    fn replace(&self, range: Range<usize>, with: &Self) -> Self {
+    fn replace(&self, range: Range<usize>, with: &Self::RefType<'_>) -> Self {
         let byte_start = self
             .0
             .char_indices()
@@ -46,7 +48,7 @@ impl PlatformTextType for GtkTextType {
             .map(|(i, _)| i)
             .unwrap_or(self.0.len());
         let mut s = self.0.clone();
-        s.replace_range(byte_start..byte_end, &with.0);
+        s.replace_range(byte_start..byte_end, *with);
         GtkTextType(s)
     }
 
@@ -68,10 +70,12 @@ impl TextInput for GtkTextInputWidget {
     type PlatformTextType = GtkTextType;
 
     fn new(
-        value: impl Signal<Value = TextInputState<GtkTextType>> + 'static,
-        on_change: impl Fn(TextChange<GtkTextType>) + 'static,
+        value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
+        on_change: impl for<'a> FnMut(
+            TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>,
+        ) + 'static,
     ) -> Self {
-        let on_change = Rc::new(on_change);
+        let on_change = Rc::new(RefCell::new(on_change));
         let on_change2 = Rc::clone(&on_change);
 
         // Guard flag: prevents re-entrant signal→buffer→callback loops.
@@ -106,9 +110,9 @@ impl TextInput for GtkTextInputWidget {
                         let old_len = prev_len2.get();
                         let new_len = text.chars().count();
                         prev_len2.set(new_len);
-                        (on_change2)(TextChange::Replacement {
+                        (on_change2.borrow_mut())(TextChange::Replacement {
                             replace: 0..old_len,
-                            with: GtkTextType(text),
+                            with: &text,
                         });
                     }
                 });
@@ -126,7 +130,7 @@ impl TextInput for GtkTextInputWidget {
                         }
                         let start = iter.offset() as usize;
                         let end = start;
-                        (on_change3)(TextChange::SetSelection {
+                        (on_change3.borrow_mut())(TextChange::SetSelection {
                             selection: start..end,
                         });
                         let _ = buf;

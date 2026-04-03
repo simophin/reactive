@@ -3,6 +3,7 @@ pub mod checkbox;
 pub mod collection_view;
 pub mod context;
 pub mod flex;
+pub mod image_codec;
 pub mod image_view;
 pub mod label;
 mod layout;

@@ -1,6 +1,7 @@
 pub mod button;
 pub mod context;
 pub mod flex;
+pub mod image_codec;
 pub mod image_view;
 pub mod label;
 mod layout;

@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
 ui-core = { path = "../ui-core" }
-gtk4 = { version = "0.9", features = ["v4_6"] }
+gtk4 = { version = "0", features = ["v4_6"] }
