@@ -1,39 +1,27 @@
-use crate::{Signal, SignalExt};
+use crate::Signal;
 use std::any::Any;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct BoxedSignal(Rc<dyn Signal<Value = Box<dyn Any>>>);
+pub struct TypeErasedSignal(Rc<dyn Any>, &'static str);
 
-impl BoxedSignal {
-    pub fn typed<T: Clone + 'static>(self) -> TypedBoxedSignal<T> {
-        TypedBoxedSignal(self, PhantomData)
+impl TypeErasedSignal {
+    pub fn typed<T: Clone + 'static>(&self) -> Rc<dyn Signal<Value = T>> {
+        if let Some(value) = self.0.downcast_ref::<Rc<dyn Signal<Value = T>>>() {
+            value.clone()
+        } else {
+            panic!(
+                "Unable to extract erased signal to type: {}, actual value is: {:?}",
+                std::any::type_name::<T>(),
+                self.1
+            )
+        }
     }
 }
 
-impl<S: Signal + 'static> From<S> for BoxedSignal {
+impl<S: Signal + 'static> From<S> for TypeErasedSignal {
     fn from(value: S) -> Self {
-        BoxedSignal(Rc::new(value.map_value(|v| Box::new(v) as Box<dyn Any>)))
-    }
-}
-
-pub struct TypedBoxedSignal<T>(BoxedSignal, PhantomData<T>);
-
-impl<T> Clone for TypedBoxedSignal<T> {
-    fn clone(&self) -> Self {
-        TypedBoxedSignal(self.0.clone(), PhantomData)
-    }
-}
-
-impl<T: Clone + 'static> Signal for TypedBoxedSignal<T> {
-    type Value = T;
-
-    fn read(&self) -> T {
-        let value = self.0.0.read();
-        value
-            .downcast_ref::<T>()
-            .cloned()
-            .expect("Boxed signal value was not of the expected type")
+        let signal: Rc<dyn Signal<Value = S::Value>> = Rc::new(value);
+        TypeErasedSignal(Rc::new(signal), std::any::type_name::<S::Value>())
     }
 }

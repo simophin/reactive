@@ -139,7 +139,7 @@ fn mount_flex_children(
     let entries: Vec<ChildViewEntry> = child_views
         .iter()
         .filter_map(|child_view| child_view.read())
-        .filter(|c| unsafe { c.view.superview() }.is_none())
+        .filter(|c| unsafe { c.native.superview() }.is_none())
         .collect();
 
     if entries.is_empty() {
@@ -158,9 +158,9 @@ fn mount_flex_children(
     let children = entries
         .into_iter()
         .map(|entry| {
-            configure_main_axis_sizing(&entry.view, vertical, entry.layout.flex.flex.is_some());
-            parent.addSubview(&entry.view);
-            compile_child_layout(&parent, entry.view, &entry.layout.box_modifiers)
+            configure_main_axis_sizing(&entry.native, vertical, entry.layout.flex.flex.is_some());
+            parent.addSubview(&entry.native);
+            compile_child_layout(&parent, entry.native, &entry.layout.box_modifiers)
         })
         .collect::<Vec<_>>();
 

@@ -1,17 +1,24 @@
-use appkit::platform::AppKit;
-use appkit::run_app;
-use futures::{FutureExt, TryFutureExt};
-use reactive_core::{Match, ResourceState, SetupContext, Show, Signal, SignalExt, extract};
+use futures::FutureExt;
+use reactive_core::{Match, ResourceState, SetupContext, Signal, SignalExt, extract};
 use resources::ResourceContext;
 use resources::reactive::{provide_resource_context, use_resource_context};
 use std::num::NonZeroUsize;
-use std::rc::Rc;
 use tokio::task::spawn_blocking;
 use ui_core::layout::types::TextAlignment;
 use ui_core::layout::{Center, CrossAxisAlignment, EdgeInsets, Expanded, Padding, SizedBox};
 use ui_core::widgets::{Button, Column, Image, Label, Platform, ProgressIndicator, Row, Window};
 
 include!(concat!(env!("OUT_DIR"), "/resources.rs"));
+
+// Platform selection: the only two lines that differ between macOS and Linux.
+#[cfg(target_os = "macos")]
+type AppPlatform = appkit::platform::AppKit;
+#[cfg(target_os = "linux")]
+type AppPlatform = gtk::platform::Gtk;
+
+// ---------------------------------------------------------------------------
+// Application UI — generic over any Platform, compiled once.
+// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct CatFact {
@@ -122,10 +129,10 @@ fn main() {
         .unwrap();
     let _guard = rt.enter();
 
-    run_app(|ctx| {
-        ctx.child(appkit::window::Window::new(
+    AppPlatform::run_app(|ctx| {
+        ctx.child(<AppPlatform as Platform>::Window::new(
             "Reactive Demo",
-            app::<AppKit>,
+            app::<AppPlatform>,
             500.0,
             500.0,
         ));

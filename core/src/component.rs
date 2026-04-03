@@ -1,7 +1,8 @@
+use std::rc::Rc;
 use crate::component_scope::ComponentId;
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
-use crate::{ContextKey, ReactiveScope, ResourceState, Signal, TypedBoxedSignal};
+use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
 use futures::Stream;
 
 pub trait Component {
@@ -121,7 +122,7 @@ impl SetupContext {
     pub fn use_context<T: Clone + 'static>(
         &self,
         key: &'static ContextKey<T>,
-    ) -> Option<TypedBoxedSignal<T>> {
+    ) -> Option<Rc<dyn Signal<Value = T>>> {
         self.scope.use_context(self.component_id, key)
     }
 

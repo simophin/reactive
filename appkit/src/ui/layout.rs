@@ -117,9 +117,9 @@ pub(crate) fn pin_edges<Inner: LayoutItem, Outer: LayoutItem>(
 }
 
 pub(crate) fn mount_child_to_parent(parent: &NSView, entry: ChildViewEntry) -> MountedChild {
-    parent.addSubview(&entry.view);
+    parent.addSubview(&entry.native);
 
-    let mut mounted = compile_child_layout(parent, entry.view.clone(), &entry.layout.box_modifiers);
+    let mut mounted = compile_child_layout(parent, entry.native.clone(), &entry.layout.box_modifiers);
     mounted
         .constraints
         .extend(pin_edges(mounted.root(), parent));

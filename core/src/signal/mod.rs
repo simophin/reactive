@@ -5,6 +5,7 @@ pub(crate) mod primitives;
 pub(crate) mod stored;
 mod wrapper;
 
+use std::rc::Rc;
 pub use constant::*;
 pub use dynamic::*;
 pub use ext::{SignalExt, SignalMapper};
@@ -27,6 +28,14 @@ impl Signal for () {
 }
 
 impl<T> Signal for Box<dyn Signal<Value = T>> {
+    type Value = T;
+
+    fn read(&self) -> Self::Value {
+        self.as_ref().read()
+    }
+}
+
+impl<T> Signal for Rc<dyn Signal<Value = T>> {
     type Value = T;
 
     fn read(&self) -> Self::Value {
