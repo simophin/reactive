@@ -31,12 +31,20 @@ impl Image for ImageView {
         desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
         Self(
-            GtkViewBuilder::create_no_child(|_| gtk4::Picture::new(), |p| p.upcast())
-                .bind(PROP_IMAGE, image)
-                .bind(
-                    PROP_ACCESSIBILITY_LABEL,
-                    desc.map_value(|r| r.map(Into::into)),
-                ),
+            GtkViewBuilder::create_no_child(
+                |_| {
+                    let picture = gtk4::Picture::new();
+                    picture.set_can_shrink(true);
+                    picture.set_content_fit(gtk4::ContentFit::ScaleDown);
+                    picture
+                },
+                |p| p.upcast(),
+            )
+            .bind(PROP_IMAGE, image)
+            .bind(
+                PROP_ACCESSIBILITY_LABEL,
+                desc.map_value(|r| r.map(Into::into)),
+            ),
         )
     }
 }

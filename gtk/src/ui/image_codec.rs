@@ -1,11 +1,13 @@
 use super::image_view::ImageHandle;
-use gtk4::glib::Bytes;
 use gtk4::gdk::Texture;
+use gtk4::glib::Bytes;
 use std::error::Error;
 use ui_core::widgets::ImageCodec;
 
 fn decode_bytes(bytes: Bytes) -> Result<ImageHandle, Box<dyn Error + Send + Sync>> {
-    Texture::from_bytes(&bytes).map(ImageHandle).map_err(|e| Box::new(e) as Box<_>)
+    Texture::from_bytes(&bytes)
+        .map(ImageHandle)
+        .map_err(|e| Box::new(e) as Box<_>)
 }
 
 pub struct GtkImageCodec;
@@ -13,7 +15,9 @@ pub struct GtkImageCodec;
 impl ImageCodec for GtkImageCodec {
     type NativeHandle = ImageHandle;
 
-    fn decode_static(data: &'static [u8]) -> Result<Self::NativeHandle, Box<dyn Error + Send + Sync>> {
+    fn decode_static(
+        data: &'static [u8],
+    ) -> Result<Self::NativeHandle, Box<dyn Error + Send + Sync>> {
         decode_bytes(Bytes::from_static(data))
     }
 

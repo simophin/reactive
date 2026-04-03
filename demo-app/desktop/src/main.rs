@@ -122,6 +122,8 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
 }
 
 fn main() {
+    let _ = dotenvy::dotenv();
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(2)
@@ -133,8 +135,8 @@ fn main() {
         ctx.child(<AppPlatform as Platform>::Window::new(
             "Reactive Demo",
             app::<AppPlatform>,
-            500.0,
-            500.0,
+            600.0,
+            600.0,
         ));
     });
 }

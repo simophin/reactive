@@ -17,18 +17,11 @@ pub fn apply_child_layout(
     if vertical_parent {
         widget.set_halign(cross_axis_to_halign(cross_axis));
         widget.set_hexpand(matches!(cross_axis, CrossAxisAlignment::Stretch));
+        widget.set_vexpand(layout.flex.flex.is_some());
     } else {
         widget.set_valign(cross_axis_to_valign(cross_axis));
         widget.set_vexpand(matches!(cross_axis, CrossAxisAlignment::Stretch));
-    }
-
-    // Flex expansion along the main axis.
-    if layout.flex.flex.is_some() {
-        if vertical_parent {
-            widget.set_vexpand(true);
-        } else {
-            widget.set_hexpand(true);
-        }
+        widget.set_hexpand(layout.flex.flex.is_some());
     }
 
     // Box modifiers: accumulate padding, apply align / sized-box in order.
@@ -52,9 +45,19 @@ pub fn apply_child_layout(
             BoxModifier::SizedBox { width, height } => {
                 if let Some(w) = width {
                     widget.set_width_request(*w as i32);
+                    widget.set_hexpand(false);
+                    // Only coerce Fill on the cross-axis; on the main axis it
+                    // changes where any extra Box allocation is shown.
+                    if vertical_parent && widget.halign() == gtk4::Align::Fill {
+                        widget.set_halign(gtk4::Align::Center);
+                    }
                 }
                 if let Some(h) = height {
                     widget.set_height_request(*h as i32);
+                    widget.set_vexpand(false);
+                    if !vertical_parent && widget.valign() == gtk4::Align::Fill {
+                        widget.set_valign(gtk4::Align::Center);
+                    }
                 }
             }
         }
