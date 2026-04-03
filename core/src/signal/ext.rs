@@ -1,4 +1,4 @@
-use crate::BoxedSignal;
+use crate::TypeErasedSignal;
 
 pub trait SignalExt: super::Signal {
     /// Create a derived signal by applying `map_fn` to the value.
@@ -15,7 +15,7 @@ pub trait SignalExt: super::Signal {
         }
     }
 
-    fn boxed(self) -> BoxedSignal
+    fn boxed(self) -> TypeErasedSignal
     where
         Self: Sized + 'static,
         Self::Value: 'static,

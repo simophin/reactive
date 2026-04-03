@@ -1,9 +1,10 @@
 use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
-use crate::{BoxedSignal, ReactiveScope};
+use crate::{TypeErasedSignal, ReactiveScope};
 use slotmap::new_key_type;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::mem::transmute;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -12,7 +13,7 @@ new_key_type! {
     pub struct ComponentId;
 }
 
-pub(crate) type ContextKeyId = *const ();
+pub(crate) type ContextKeyId = &'static ;
 
 pub struct ContextKey<T>(PhantomData<fn() -> T>);
 
@@ -22,7 +23,9 @@ impl<T> ContextKey<T> {
     }
 
     pub(crate) const fn id(&'static self) -> ContextKeyId {
-        self as *const ContextKey<T> as *const ()
+        unsafe {
+            transmute(self as *const Self)    
+        }
     }
 }
 
@@ -58,6 +61,6 @@ pub struct ComponentScope {
     /// kept only so their captured state lives as long as the component.
     pub(crate) inert_effects: Vec<BoxedEffectFn>,
     pub(crate) cleanup: Vec<Box<dyn FnOnce()>>,
-    pub(crate) context: HashMap<ContextKeyId, BoxedSignal>,
+    pub(crate) context: HashMap<ContextKeyId, TypeErasedSignal>,
     pub(crate) children: Vec<ComponentId>,
 }

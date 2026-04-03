@@ -1,30 +1,30 @@
 use super::button::Button;
+use super::flex::Flex;
 use super::image_view::ImageView;
 use super::label::Label;
+use super::list_view::ListView;
 use super::progress_indicator::ProgressIndicator;
 use super::slider::Slider;
-use super::stack::Stack as AppKitStack;
+use super::stack::GtkStack;
+use super::text_input::GtkTextInputWidget;
 use super::window::Window;
-use crate::collection_view::CollectionView;
-use crate::flex::Flex;
-use crate::text_view::TextView;
 use reactive_core::SetupContext;
 use ui_core::widgets::Platform;
 
-pub struct AppKit;
+pub struct Gtk;
 
-impl Platform for AppKit {
+impl Platform for Gtk {
     type Button = Button;
     type Label = Label;
     type Image = ImageView;
     type ProgressIndicator = ProgressIndicator;
-    type TextInput = TextView;
+    type TextInput = GtkTextInputWidget;
     type Slider = Slider;
     type Row = Flex;
     type Column = Flex;
-    type Stack = AppKitStack;
+    type Stack = GtkStack;
     type Window = Window;
-    type List = CollectionView;
+    type List = ListView;
 
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static) {
         crate::run_app(setup);

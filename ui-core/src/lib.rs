@@ -17,7 +17,12 @@ pub mod encoding;
 pub mod layout;
 pub mod prop;
 pub mod view_builder;
+pub mod view_component;
 pub mod widgets;
 
 pub use prop::Prop;
 pub use view_builder::ViewBuilder;
+pub use view_component::{
+    AtMostOneChild, ChildEntry, ChildStrategy, MultipleChildren, NoChild,
+    PlatformViewBuilder, PlatformViewComponent, SingleChild,
+};

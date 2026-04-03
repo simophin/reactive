@@ -5,9 +5,10 @@ members = [
     "ui-core",
     "apple",
     "appkit",
+    "gtk",
     "resources",
     "resources-build",
     "android",
-    "android-macros"
-, "ui-core"]
+    "android-macros",
+]
 

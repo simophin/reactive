@@ -1,7 +1,8 @@
+use std::rc::Rc;
 use super::ReactiveScope;
 use crate::component_scope::{ComponentId, ContextKey};
 use crate::signal::StoredSignal;
-use crate::{Signal, SignalExt, TypedBoxedSignal};
+use crate::{Signal, SignalExt};
 
 impl ReactiveScope {
     pub(crate) fn provide_context<T: Clone + 'static>(
@@ -32,7 +33,7 @@ impl ReactiveScope {
         &self,
         component_id: ComponentId,
         key: &'static ContextKey<T>,
-    ) -> Option<TypedBoxedSignal<T>> {
+    ) -> Option<Rc<dyn Signal<Value = T>>> {
         let data = self.0.borrow();
         let mut scope = data.components.get(component_id);
 
@@ -50,7 +51,6 @@ impl ReactiveScope {
 #[cfg(test)]
 mod tests {
     use crate::component_scope::ContextKey;
-    use crate::signal::Signal;
 
     use super::ReactiveScope;
 
