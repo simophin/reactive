@@ -75,7 +75,11 @@ pub fn gen_i18n(strings_path: &Path, _strings_dir: &str) -> io::Result<String> {
             continue;
         }
 
-        let msg_type = if params.is_empty() { "()" } else { struct_name.as_str() };
+        let msg_type = if params.is_empty() {
+            "()"
+        } else {
+            struct_name.as_str()
+        };
         writeln!(
             out,
             "    pub static {const_name}: &::resources::AssetDescriptor<::resources::TranslationData<{msg_type}>> = \
@@ -91,10 +95,18 @@ pub fn gen_i18n(strings_path: &Path, _strings_dir: &str) -> io::Result<String> {
              locale: Some({default_locale:?}), density: None, color_scheme: None }},"
         )
         .unwrap();
-        writeln!(out, "            value: ::resources::TranslationData::new({default_value:?}),").unwrap();
+        writeln!(
+            out,
+            "            value: ::resources::TranslationData::new({default_value:?}),"
+        )
+        .unwrap();
         writeln!(out, "        }},").unwrap();
 
-        writeln!(out, "        other_variants: ::std::borrow::Cow::Borrowed(&[").unwrap();
+        writeln!(
+            out,
+            "        other_variants: ::std::borrow::Cow::Borrowed(&["
+        )
+        .unwrap();
         for (locale, value) in &locale_variants[1..] {
             writeln!(out, "            ::resources::AssetVariant {{").unwrap();
             writeln!(
@@ -103,7 +115,11 @@ pub fn gen_i18n(strings_path: &Path, _strings_dir: &str) -> io::Result<String> {
                  locale: Some({locale:?}), density: None, color_scheme: None }},"
             )
             .unwrap();
-            writeln!(out, "                value: ::resources::TranslationData::new({value:?}),").unwrap();
+            writeln!(
+                out,
+                "                value: ::resources::TranslationData::new({value:?}),"
+            )
+            .unwrap();
             writeln!(out, "            }},").unwrap();
         }
         writeln!(out, "        ]),").unwrap();
@@ -118,7 +134,11 @@ pub fn gen_i18n(strings_path: &Path, _strings_dir: &str) -> io::Result<String> {
             }
             writeln!(out, "    }}").unwrap();
             writeln!(out, "    impl ::resources::Message for {struct_name} {{").unwrap();
-            writeln!(out, "        fn apply(&self, template: &str) -> ::std::string::String {{").unwrap();
+            writeln!(
+                out,
+                "        fn apply(&self, template: &str) -> ::std::string::String {{"
+            )
+            .unwrap();
             writeln!(out, "            let s = template.to_owned();").unwrap();
             for param in params {
                 let field = to_snake_case(param);

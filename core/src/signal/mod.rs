@@ -5,10 +5,10 @@ pub(crate) mod primitives;
 pub(crate) mod stored;
 mod wrapper;
 
-use std::rc::Rc;
 pub use constant::*;
 pub use dynamic::*;
 pub use ext::{SignalExt, SignalMapper};
+use std::rc::Rc;
 pub use stored::{ReadStoredSignal, StoredSignal};
 pub use wrapper::SignalWrapper;
 

@@ -23,6 +23,6 @@ pub mod widgets;
 pub use prop::Prop;
 pub use view_builder::ViewBuilder;
 pub use view_component::{
-    AtMostOneChild, ChildEntry, ChildStrategy, MultipleChildren, NoChild,
-    PlatformViewBuilder, PlatformViewComponent, SingleChild,
+    AtMostOneChild, ChildEntry, ChildStrategy, MultipleChildren, NoChild, PlatformViewBuilder,
+    PlatformViewComponent, SingleChild,
 };

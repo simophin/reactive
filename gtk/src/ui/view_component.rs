@@ -1,4 +1,4 @@
-use crate::context::{CHILD_WIDGET, CHILDREN_WIDGETS};
+use crate::context::{CHILDREN_WIDGETS, CHILD_WIDGET};
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
 use ui_core::Prop;
 use ui_core::{MultipleChildren, NoChild, PlatformViewBuilder, SingleChild};
@@ -84,7 +84,11 @@ impl<W: Clone + PartialEq + Eq + 'static, C> GtkViewBuilder<W, C> {
     where
         C: ChildWidgetStrategy,
     {
-        self.inner.setup(ctx, |_| {})
+        self.inner.setup(
+            ctx,
+            |_| {},
+            |native, layout| ui_core::ChildEntry { native, layout },
+        )
     }
 }
 

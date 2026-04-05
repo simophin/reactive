@@ -2,8 +2,8 @@ use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
 use gtk4::gdk::Texture;
 use gtk4::prelude::*;
 use reactive_core::{Signal, SignalExt};
-use ui_core::Prop;
 use ui_core::widgets::Image;
+use ui_core::Prop;
 
 pub type ImageView = GtkViewComponent<gtk4::Picture, NoChildWidget>;
 

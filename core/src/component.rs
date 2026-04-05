@@ -1,9 +1,9 @@
-use std::rc::Rc;
 use crate::component_scope::ComponentId;
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
 use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
 use futures::Stream;
+use std::rc::Rc;
 
 pub trait Component {
     fn setup(self: Box<Self>, ctx: &mut SetupContext);

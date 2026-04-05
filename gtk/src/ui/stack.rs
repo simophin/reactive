@@ -1,10 +1,10 @@
 use super::context::CHILDREN_WIDGETS;
-use super::layout::apply_child_layout;
+use super::layout::apply_parent_layout;
 use super::view_component::GtkViewBuilder;
 use gtk4::prelude::*;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::layout::CrossAxisAlignment;
 use ui_core::layout::types::Alignment;
+use ui_core::layout::CrossAxisAlignment;
 use ui_core::widgets::Stack;
 
 pub struct GtkStack {
@@ -65,26 +65,47 @@ impl Component for GtkStack {
                 for (index, entry) in entries.iter().enumerate() {
                     // First child is the base; rest are overlays.
                     let align = alignment.as_ref().map(|a| a.read()).unwrap_or_default();
-                    apply_child_layout(
-                        &entry.native,
-                        &entry.layout,
-                        true,
-                        CrossAxisAlignment::Stretch,
-                    );
                     if index == 0 {
+                        apply_parent_layout(
+                            &entry.native,
+                            &entry.layout,
+                            true,
+                            CrossAxisAlignment::Stretch,
+                        );
                         overlay.set_child(Some(&entry.native));
+                        mounted.push(entry.native.clone());
                     } else {
-                        // Align the overlay child according to the alignment signal.
-                        use super::layout::apply_child_layout as _apply;
-                        let mut synthetic = entry.layout.clone();
-                        use ui_core::layout::types::{BoxModifier, BoxModifierChain};
-                        synthetic.box_modifiers = BoxModifierChain {
-                            modifiers: vec![BoxModifier::Align(align)],
-                        };
-                        _apply(&entry.native, &synthetic, true, CrossAxisAlignment::Stretch);
+                        apply_parent_layout(
+                            &entry.native,
+                            &entry.layout,
+                            true,
+                            CrossAxisAlignment::Stretch,
+                        );
+                        entry.native.set_halign(match align {
+                            Alignment::TopLeading
+                            | Alignment::Leading
+                            | Alignment::BottomLeading => gtk4::Align::Start,
+                            Alignment::Top | Alignment::Center | Alignment::Bottom => {
+                                gtk4::Align::Center
+                            }
+                            Alignment::TopTrailing
+                            | Alignment::Trailing
+                            | Alignment::BottomTrailing => gtk4::Align::End,
+                        });
+                        entry.native.set_valign(match align {
+                            Alignment::TopLeading | Alignment::Top | Alignment::TopTrailing => {
+                                gtk4::Align::Start
+                            }
+                            Alignment::Leading | Alignment::Center | Alignment::Trailing => {
+                                gtk4::Align::Center
+                            }
+                            Alignment::BottomLeading
+                            | Alignment::Bottom
+                            | Alignment::BottomTrailing => gtk4::Align::End,
+                        });
                         overlay.add_overlay(&entry.native);
+                        mounted.push(entry.native.clone());
                     }
-                    mounted.push(entry.native.clone());
                 }
 
                 mounted

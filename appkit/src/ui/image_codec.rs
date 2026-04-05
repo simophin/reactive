@@ -16,11 +16,7 @@ enum ImageDecodeError {
     CreateImage,
 }
 
-unsafe extern "C-unwind" fn release_vec(
-    info: *mut c_void,
-    _data: NonNull<c_void>,
-    _size: usize,
-) {
+unsafe extern "C-unwind" fn release_vec(info: *mut c_void, _data: NonNull<c_void>, _size: usize) {
     drop(Box::from_raw(info as *mut Vec<u8>));
 }
 
@@ -42,7 +38,9 @@ pub struct AppKitImageCodec;
 impl ImageCodec for AppKitImageCodec {
     type NativeHandle = ImageHandle;
 
-    fn decode_static(data: &'static [u8]) -> Result<Self::NativeHandle, Box<dyn Error + Send + Sync>> {
+    fn decode_static(
+        data: &'static [u8],
+    ) -> Result<Self::NativeHandle, Box<dyn Error + Send + Sync>> {
         let provider = unsafe {
             CGDataProvider::with_data(std::ptr::null_mut(), data.as_ptr().cast(), data.len(), None)
         }
@@ -54,10 +52,10 @@ impl ImageCodec for AppKitImageCodec {
         let ptr = data.as_ptr().cast::<c_void>();
         let len = data.len();
         let info = Box::into_raw(Box::new(data)).cast::<c_void>();
-        let provider = unsafe {
-            CGDataProvider::with_data(info, ptr, len, Some(release_vec))
-        }
-        .ok_or_else(|| Box::<dyn Error + Send + Sync>::from("failed to create CGDataProvider"))?;
+        let provider = unsafe { CGDataProvider::with_data(info, ptr, len, Some(release_vec)) }
+            .ok_or_else(|| {
+                Box::<dyn Error + Send + Sync>::from("failed to create CGDataProvider")
+            })?;
         decode_with_provider(provider)
     }
 }

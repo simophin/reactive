@@ -1,15 +1,17 @@
-use crate::context::{CHILD_VIEW, CHILDREN_VIEWS};
+use crate::context::{CHILDREN_VIEWS, CHILD_VIEW};
 use apple::Prop;
-use objc2::Message;
 use objc2::rc::Retained;
+use objc2::Message;
 use objc2_app_kit::{NSUserInterfaceItemIdentification, NSView};
 use objc2_foundation::NSString;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
 use std::any::type_name;
 use ui_core::{AtMostOneChild, MultipleChildren, NoChild, PlatformViewBuilder, SingleChild};
 
-pub use ui_core::{AtMostOneChild as AtMostOneChildView, ChildStrategy as ChildViewStrategy,
-    MultipleChildren as MultipleChildView, NoChild as NoChildView, SingleChild as SingleChildView};
+pub use ui_core::{
+    AtMostOneChild as AtMostOneChildView, ChildStrategy as ChildViewStrategy,
+    MultipleChildren as MultipleChildView, NoChild as NoChildView, SingleChild as SingleChildView,
+};
 
 pub struct AppKitViewBuilder<V, C> {
     inner: PlatformViewBuilder<Retained<V>, Retained<NSView>, C>,
@@ -121,15 +123,18 @@ impl<V: 'static, C> AppKitViewBuilder<V, C> {
             inner,
             debug_identifier,
         } = self;
-        inner.setup(ctx, |nsview| {
-            nsview.setTranslatesAutoresizingMaskIntoConstraints(false);
-            let name = debug_identifier
-                .unwrap_or_else(|| short_type_name::<V>().to_string());
-            NSUserInterfaceItemIdentification::setIdentifier(
-                &**nsview,
-                Some(&NSString::from_str(&name)),
-            );
-        })
+        inner.setup(
+            ctx,
+            |nsview| {
+                nsview.setTranslatesAutoresizingMaskIntoConstraints(false);
+                let name = debug_identifier.unwrap_or_else(|| short_type_name::<V>().to_string());
+                NSUserInterfaceItemIdentification::setIdentifier(
+                    &**nsview,
+                    Some(&NSString::from_str(&name)),
+                );
+            },
+            |native, layout| ui_core::ChildEntry { native, layout },
+        )
     }
 }
 

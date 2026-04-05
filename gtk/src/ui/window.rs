@@ -1,11 +1,11 @@
 use super::context::CHILDREN_WIDGETS;
-use super::layout::apply_child_layout;
+use super::layout::apply_parent_layout;
 use super::view_component::GtkViewBuilder;
 use gtk4::prelude::*;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::Prop;
 use ui_core::layout::CrossAxisAlignment;
 use ui_core::widgets;
+use ui_core::Prop;
 
 pub struct Window {
     child: BoxedComponent,
@@ -65,7 +65,7 @@ impl Component for Window {
         if let Some(children_widgets) = ctx.use_context(&CHILDREN_WIDGETS) {
             ctx.create_effect(move |_, _| {
                 if let Some(entry) = children_widgets.read().first().and_then(|s| s.read()) {
-                    apply_child_layout(
+                    apply_parent_layout(
                         &entry.native,
                         &entry.layout,
                         true,

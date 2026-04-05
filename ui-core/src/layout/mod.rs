@@ -1,3 +1,4 @@
+pub mod algorithm;
 mod align;
 mod center;
 mod expanded;
@@ -5,6 +6,10 @@ mod padding;
 mod sized_box;
 pub mod types;
 
+pub use algorithm::{
+    AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint, compute_flex_layout,
+    measure_flex_container,
+};
 pub use align::Align;
 pub use center::Center;
 pub use expanded::Expanded;

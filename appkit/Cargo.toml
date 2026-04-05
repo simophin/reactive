@@ -55,11 +55,3 @@ reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tokio-stream = { version = "0.1", features = ["time"] }
-
-[[example]]
-name = "pokedex"
-path = "examples/pokedex.rs"
-
-[[example]]
-name = "posts"
-path = "examples/posts.rs"

@@ -13,15 +13,14 @@ use ui_core::widgets::{
 include!(concat!(env!("OUT_DIR"), "/resources.rs"));
 
 // Platform selection: the only two lines that differ between macOS and Linux.
-// #[cfg(target_os = "macos")]
-// type AppPlatform = appkit::platform::AppKit;
+#[cfg(target_os = "macos")]
+type AppPlatform = appkit::platform::AppKit;
 // #[cfg(target_os = "linux")]
-type AppPlatform = gtk::platform::Gtk;
+// type AppPlatform = gtk::platform::Gtk;
 
 // ---------------------------------------------------------------------------
 // Application UI — generic over any Platform, compiled once.
 // ---------------------------------------------------------------------------
-
 #[derive(serde::Deserialize)]
 struct CatFact {
     fact: String,
@@ -70,15 +69,15 @@ fn app<P: Platform>(ctx: &mut SetupContext) {
                 "The controls below now run through Padding, Center, SizedBox, and Expanded.",
             ))
             .child(
-                SizedBox::squared(96usize).child(
-                    Match::new(testing_image, || P::Label::new("Loading image..."))
+                SizedBox::squared(96usize).child(Center {
+                    child: Match::new(testing_image, || P::Label::new("Loading image..."))
                         .case(extract!(ResourceState::Ready(Ok(img)) => img), |img| {
                             P::Image::new(img, Some("Bundled checkerboard test image"))
                         })
                         .case(extract!(ResourceState::Ready(Err(err)) => err), |err| {
                             P::Label::new(err)
                         }),
-                ),
+                }),
             )
             .child(
                 SizedBox::height(44usize).child(

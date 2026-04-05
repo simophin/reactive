@@ -1,8 +1,8 @@
-use std::rc::Rc;
 use super::ReactiveScope;
 use crate::component_scope::{ComponentId, ContextKey};
 use crate::signal::StoredSignal;
 use crate::{Signal, SignalExt};
+use std::rc::Rc;
 
 impl ReactiveScope {
     pub(crate) fn provide_context<T: Clone + 'static>(

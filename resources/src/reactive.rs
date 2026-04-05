@@ -2,10 +2,8 @@
 //!
 //! Enabled with the `reactive` feature.
 
+use reactive_core::{ContextKey, ReadStoredSignal, SetupContext, Signal, StoredSignal};
 use std::rc::Rc;
-use reactive_core::{
-    ContextKey, ReadStoredSignal, SetupContext, Signal, StoredSignal,
-};
 
 use crate::{AssetDescriptor, BinaryData, Message, ResourceContext, TranslationData};
 

@@ -7,6 +7,7 @@ pub mod image_codec;
 pub mod image_view;
 pub mod label;
 mod layout;
+pub mod layout_view;
 pub mod platform;
 pub mod progress_indicator;
 pub mod slider;

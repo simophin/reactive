@@ -148,14 +148,24 @@ fn emit_asset_const(name: &str, variants: &[Variant], out: &mut String, depth: u
 
     writeln!(out, "{i2}default_variant: ::resources::AssetVariant {{").unwrap();
     writeln!(out, "{i3}qualifiers: {},", default.qualifier_expr).unwrap();
-    writeln!(out, "{i3}value: {},", binary_data_expr(&default.include_path, default.dimensions)).unwrap();
+    writeln!(
+        out,
+        "{i3}value: {},",
+        binary_data_expr(&default.include_path, default.dimensions)
+    )
+    .unwrap();
     writeln!(out, "{i2}}},").unwrap();
 
     writeln!(out, "{i2}other_variants: ::std::borrow::Cow::Borrowed(&[").unwrap();
     for v in rest {
         writeln!(out, "{i3}::resources::AssetVariant {{").unwrap();
         writeln!(out, "{i3}    qualifiers: {},", v.qualifier_expr).unwrap();
-        writeln!(out, "{i3}    value: {},", binary_data_expr(&v.include_path, v.dimensions)).unwrap();
+        writeln!(
+            out,
+            "{i3}    value: {},",
+            binary_data_expr(&v.include_path, v.dimensions)
+        )
+        .unwrap();
         writeln!(out, "{i3}}},").unwrap();
     }
     writeln!(out, "{i2}]),").unwrap();
@@ -164,13 +174,12 @@ fn emit_asset_const(name: &str, variants: &[Variant], out: &mut String, depth: u
 
 /// Build a `::resources::BinaryData` expression for a given asset.
 fn binary_data_expr(include_path: &str, dimensions: Option<(u32, u32)>) -> String {
-    let bytes = format!(
-        "include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{include_path}\"))"
-    );
+    let bytes =
+        format!("include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{include_path}\"))");
     match dimensions {
-        Some((w, h)) => format!(
-            "::resources::BinaryData::Image {{ data: {bytes}, width: {w}, height: {h} }}"
-        ),
+        Some((w, h)) => {
+            format!("::resources::BinaryData::Image {{ data: {bytes}, width: {w}, height: {h} }}")
+        }
         None => format!("::resources::BinaryData::Unknown({bytes})"),
     }
 }
@@ -203,18 +212,38 @@ fn parse_qualifier_expr(dir_name: &str) -> Option<String> {
 
     for token in dir_name.split('-') {
         match token {
-            "ldpi" => { density = "Some(::resources::Density::Ldpi)".into(); matched = true; }
-            "mdpi" => { density = "Some(::resources::Density::Mdpi)".into(); matched = true; }
-            "hdpi" => { density = "Some(::resources::Density::Hdpi)".into(); matched = true; }
-            "xhdpi" => { density = "Some(::resources::Density::Xhdpi)".into(); matched = true; }
-            "xxhdpi" => { density = "Some(::resources::Density::Xxhdpi)".into(); matched = true; }
-            "xxxhdpi" => { density = "Some(::resources::Density::Xxxhdpi)".into(); matched = true; }
-            "night" => { color_scheme = "Some(::resources::ColorScheme::Dark)".into(); matched = true; }
+            "ldpi" => {
+                density = "Some(::resources::Density::Ldpi)".into();
+                matched = true;
+            }
+            "mdpi" => {
+                density = "Some(::resources::Density::Mdpi)".into();
+                matched = true;
+            }
+            "hdpi" => {
+                density = "Some(::resources::Density::Hdpi)".into();
+                matched = true;
+            }
+            "xhdpi" => {
+                density = "Some(::resources::Density::Xhdpi)".into();
+                matched = true;
+            }
+            "xxhdpi" => {
+                density = "Some(::resources::Density::Xxhdpi)".into();
+                matched = true;
+            }
+            "xxxhdpi" => {
+                density = "Some(::resources::Density::Xxxhdpi)".into();
+                matched = true;
+            }
+            "night" => {
+                color_scheme = "Some(::resources::ColorScheme::Dark)".into();
+                matched = true;
+            }
             t => {
                 if locale_parts.is_empty() {
-                    let is_lang = t.len() >= 2
-                        && t.len() <= 3
-                        && t.chars().all(|c| c.is_ascii_lowercase());
+                    let is_lang =
+                        t.len() >= 2 && t.len() <= 3 && t.chars().all(|c| c.is_ascii_lowercase());
                     if !is_lang {
                         return None;
                     }

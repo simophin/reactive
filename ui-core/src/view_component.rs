@@ -1,8 +1,10 @@
 use crate::layout::{
-    BOX_MODIFIERS, BoxModifierChain, ChildLayoutInfo, FLEX_PARENT_DATA, FlexParentData,
+    BoxModifierChain, ChildLayoutInfo, FlexParentData, BOX_MODIFIERS, FLEX_PARENT_DATA,
 };
 use crate::{Prop, ViewBuilder};
-use reactive_core::{BoxedComponent, Component, ContextKey, IntoSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{
+    BoxedComponent, Component, ContextKey, IntoSignal, SetupContext, Signal, StoredSignal,
+};
 
 /// Describes how many child components a view has.
 pub trait ChildStrategy {
@@ -188,6 +190,7 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C>
         self,
         ctx: &mut SetupContext,
         on_native_view: impl FnOnce(&NativeView),
+        make_child_entry: impl Fn(NativeView, ChildLayoutInfo) -> ChildEntry<NativeView> + 'static,
     ) -> Target
     where
         C: ChildStrategy,
@@ -209,16 +212,15 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C>
             let native = native.clone();
             let box_modifiers = ctx.use_context(&BOX_MODIFIERS);
             let flex_parent_data = ctx.use_context(&FLEX_PARENT_DATA);
+            let make_child_entry = make_child_entry;
             ctx.create_effect(move |_, _| {
+                let layout = ChildLayoutInfo {
+                    box_modifiers: box_modifiers.read().unwrap_or_default(),
+                    flex: flex_parent_data.read().unwrap_or_default(),
+                };
                 child_entry_signal
                     .read()
-                    .update_if_changes(Some(ChildEntry {
-                        native: native.clone(),
-                        layout: ChildLayoutInfo {
-                            box_modifiers: box_modifiers.read().unwrap_or_default(),
-                            flex: flex_parent_data.read().unwrap_or_default(),
-                        },
-                    }));
+                    .update_if_changes(Some(make_child_entry(native.clone(), layout)));
             });
         }
 
@@ -258,6 +260,7 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C: C
     Component for PlatformViewComponent<Target, NativeView, C>
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        self.0.setup(ctx, |_| {});
+        self.0
+            .setup(ctx, |_| {}, |native, layout| ChildEntry { native, layout });
     }
 }

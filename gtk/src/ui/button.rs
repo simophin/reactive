@@ -1,8 +1,8 @@
 use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
 use gtk4::prelude::*;
 use reactive_core::Signal;
-use ui_core::Prop;
 use ui_core::widgets;
+use ui_core::Prop;
 
 pub type Button = GtkViewComponent<gtk4::Button, NoChildWidget>;
 

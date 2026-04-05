@@ -1,17 +1,21 @@
 use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
+use gtk4::prelude::WidgetExt;
 use gtk4::prelude::*;
 use reactive_core::{Signal, SignalExt};
-use ui_core::Prop;
 use ui_core::layout::types::TextAlignment;
 use ui_core::widgets;
+use ui_core::Prop;
 
 pub type Label = GtkViewComponent<gtk4::Label, NoChildWidget>;
 
 pub static PROP_TEXT: &Prop<Label, gtk4::Label, String> =
     &Prop::new(|label, text| label.set_text(&text));
 
-pub static PROP_JUSTIFY: &Prop<Label, gtk4::Label, gtk4::Justification> =
-    &Prop::new(|label, j| label.set_justify(j));
+pub static PROP_HALIGN: &Prop<Label, gtk4::Label, gtk4::Align> =
+    &Prop::new(|label, value| label.set_halign(value));
+
+pub static PROP_XALIGN: &Prop<Label, gtk4::Label, f32> =
+    &Prop::new(|label, value| label.set_xalign(value));
 
 pub static PROP_FONT_SIZE: &Prop<Label, gtk4::Label, f64> = &Prop::new(|label, size| {
     use gtk4::pango;
@@ -29,6 +33,7 @@ impl widgets::Label for Label {
                     let label = gtk4::Label::new(None);
                     label.set_wrap(true);
                     label.set_xalign(0.0);
+                    label.set_yalign(0.0);
                     label
                 },
                 |l| l.upcast(),
@@ -43,11 +48,11 @@ impl widgets::Label for Label {
 
     fn alignment(self, alignment: impl Signal<Value = TextAlignment> + 'static) -> Self {
         Self(self.0.bind(
-            PROP_JUSTIFY,
+            PROP_XALIGN,
             alignment.map_value(|a| match a {
-                TextAlignment::Leading => gtk4::Justification::Left,
-                TextAlignment::Center => gtk4::Justification::Center,
-                TextAlignment::Trailing => gtk4::Justification::Right,
+                TextAlignment::Leading => 0.0,
+                TextAlignment::Center => 0.5,
+                TextAlignment::Trailing => 1.0,
             }),
         ))
     }
