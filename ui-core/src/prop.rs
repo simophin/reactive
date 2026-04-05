@@ -24,6 +24,10 @@ impl<FrameworkType, Target, ValueType> Prop<FrameworkType, Target, ValueType> {
             phantom: PhantomData,
         }
     }
+
+    pub fn call(&self, target: &Target, value: ValueType) {
+        (self.setter)(target, value)
+    }
 }
 
 impl<FrameworkType, Target: 'static, ValueType: 'static> Prop<FrameworkType, Target, ValueType> {

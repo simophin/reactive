@@ -5,8 +5,8 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::ops::Range;
 use std::rc::Rc;
-use ui_core::widgets::{PlatformTextType, TextChange, TextInput, TextInputState};
 use ui_core::Prop;
+use ui_core::widgets::{PlatformTextType, TextChange, TextInput, TextInputState};
 
 pub type GtkTextInputWidget = GtkViewComponent<gtk4::TextView, NoChildWidget>;
 
@@ -71,8 +71,9 @@ impl TextInput for GtkTextInputWidget {
 
     fn new(
         value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
-        on_change: impl for<'a> FnMut(TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>)
-            + 'static,
+        on_change: impl for<'a> FnMut(
+            TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>,
+        ) + 'static,
     ) -> Self {
         let on_change = Rc::new(RefCell::new(on_change));
         let on_change2 = Rc::clone(&on_change);

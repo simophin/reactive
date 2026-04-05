@@ -3,7 +3,9 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
-use ui_core::layout::algorithm::{AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint};
+use ui_core::layout::algorithm::{
+    AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
+};
 use ui_core::layout::{
     ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
 };
@@ -55,11 +57,7 @@ mod imp {
     }
 
     impl WidgetImpl for ConstraintHost {
-        fn measure(
-            &self,
-            orientation: gtk4::Orientation,
-            _for_size: i32,
-        ) -> (i32, i32, i32, i32) {
+        fn measure(&self, orientation: gtk4::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
             let data = self.flex_data.borrow();
             if data.children.is_empty() {
                 return (0, 0, -1, -1);
@@ -73,12 +71,8 @@ mod imp {
             let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
 
             let (min, natural) = match orientation {
-                gtk4::Orientation::Horizontal => {
-                    (m.min.width as i32, m.natural.width as i32)
-                }
-                gtk4::Orientation::Vertical => {
-                    (m.min.height as i32, m.natural.height as i32)
-                }
+                gtk4::Orientation::Horizontal => (m.min.width as i32, m.natural.width as i32),
+                gtk4::Orientation::Vertical => (m.min.height as i32, m.natural.height as i32),
                 _ => (0, 0),
             };
             (min.max(0), natural.max(min.max(0)), -1, -1)

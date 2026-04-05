@@ -1,8 +1,7 @@
 use crate::context::ChildViewEntry;
 use objc2::rc::Retained;
 use objc2_app_kit::{
-    NSLayoutConstraint, NSLayoutDimension, NSLayoutGuide, NSLayoutXAxisAnchor, NSLayoutYAxisAnchor,
-    NSView,
+    NSLayoutConstraint, NSLayoutGuide, NSLayoutXAxisAnchor, NSLayoutYAxisAnchor, NSView,
 };
 use objc2_foundation::{NSArray, NSString};
 use ui_core::layout::{Alignment, BoxModifier, BoxModifierChain, CrossAxisAlignment};
@@ -14,14 +13,6 @@ pub(crate) struct MountedChild {
 }
 
 impl MountedChild {
-    pub(crate) fn activate(&self) {
-        activate_constraints(&self.constraints);
-    }
-
-    pub(crate) fn set_root_identifier(&self, identifier: &str) {
-        self.root().setIdentifier(&NSString::from_str(identifier));
-    }
-
     pub(crate) fn unmount(self, parent: &NSView) {
         deactivate_constraints(&self.constraints);
         for guide in self.guides {
@@ -168,84 +159,6 @@ pub(crate) fn deactivate_constraints(constraints: &[Retained<NSLayoutConstraint>
     }
 
     NSLayoutConstraint::deactivateConstraints(&NSArray::from_retained_slice(constraints));
-}
-
-pub(crate) fn root_cross_axis_constraints(
-    parent: &NSView,
-    root: &NSLayoutGuide,
-    vertical: bool,
-    alignment: CrossAxisAlignment,
-) -> Vec<Retained<NSLayoutConstraint>> {
-    if vertical {
-        match alignment {
-            CrossAxisAlignment::Stretch => vec![
-                root.leadingAnchor()
-                    .constraintEqualToAnchor(&parent.leadingAnchor()),
-                root.trailingAnchor()
-                    .constraintEqualToAnchor(&parent.trailingAnchor()),
-            ],
-            CrossAxisAlignment::Start => vec![
-                root.leadingAnchor()
-                    .constraintEqualToAnchor(&parent.leadingAnchor()),
-                root.trailingAnchor()
-                    .constraintLessThanOrEqualToAnchor(&parent.trailingAnchor()),
-            ],
-            CrossAxisAlignment::Center => vec![
-                root.centerXAnchor()
-                    .constraintEqualToAnchor(&parent.centerXAnchor()),
-                root.leadingAnchor()
-                    .constraintGreaterThanOrEqualToAnchor(&parent.leadingAnchor()),
-                root.trailingAnchor()
-                    .constraintLessThanOrEqualToAnchor(&parent.trailingAnchor()),
-            ],
-            CrossAxisAlignment::End => vec![
-                root.leadingAnchor()
-                    .constraintGreaterThanOrEqualToAnchor(&parent.leadingAnchor()),
-                root.trailingAnchor()
-                    .constraintEqualToAnchor(&parent.trailingAnchor()),
-            ],
-        }
-    } else {
-        match alignment {
-            CrossAxisAlignment::Stretch => vec![
-                root.topAnchor()
-                    .constraintEqualToAnchor(&parent.topAnchor()),
-                root.bottomAnchor()
-                    .constraintEqualToAnchor(&parent.bottomAnchor()),
-            ],
-            CrossAxisAlignment::Start => vec![
-                root.topAnchor()
-                    .constraintEqualToAnchor(&parent.topAnchor()),
-                root.bottomAnchor()
-                    .constraintLessThanOrEqualToAnchor(&parent.bottomAnchor()),
-            ],
-            CrossAxisAlignment::Center => vec![
-                root.centerYAnchor()
-                    .constraintEqualToAnchor(&parent.centerYAnchor()),
-                root.topAnchor()
-                    .constraintGreaterThanOrEqualToAnchor(&parent.topAnchor()),
-                root.bottomAnchor()
-                    .constraintLessThanOrEqualToAnchor(&parent.bottomAnchor()),
-            ],
-            CrossAxisAlignment::End => vec![
-                root.topAnchor()
-                    .constraintGreaterThanOrEqualToAnchor(&parent.topAnchor()),
-                root.bottomAnchor()
-                    .constraintEqualToAnchor(&parent.bottomAnchor()),
-            ],
-        }
-    }
-}
-
-pub(crate) fn main_axis_dimension(
-    guide: &NSLayoutGuide,
-    vertical: bool,
-) -> Retained<NSLayoutDimension> {
-    if vertical {
-        guide.heightAnchor()
-    } else {
-        guide.widthAnchor()
-    }
 }
 
 fn compile_box(

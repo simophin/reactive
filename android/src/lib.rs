@@ -1,35 +1,18 @@
+pub mod desc;
+
 extern crate self as android;
 
-use std::marker::PhantomData;
 use std::task::{Context, Waker};
 
-pub use android_macros::view_props;
+pub use android_macros::declare_jni_binding;
+pub use desc::{
+    JavaClassDescriptor, JavaFieldDescriptor, JavaFieldType, JavaMethodDescriptor,
+    JavaPrimitiveType, JavaReturnType,
+};
 use jni::objects::JClass;
 use jni::sys::jlong;
 use jni::JNIEnv;
 use reactive_core::ReactiveScope;
-
-/// A static descriptor for a Java setter method, parameterised by the JNI type
-/// of the argument.  Holds only `&'static str` data; no allocation, no
-/// reflection.  A separate call-site API can use these descriptors to issue
-/// type-checked JNI calls.
-pub struct PropDescriptor<T> {
-    pub class: &'static str,
-    pub method: &'static str,
-    pub signature: &'static str,
-    _marker: PhantomData<fn() -> T>,
-}
-
-impl<T> PropDescriptor<T> {
-    pub const fn new(class: &'static str, method: &'static str, signature: &'static str) -> Self {
-        Self {
-            class,
-            method,
-            signature,
-            _marker: PhantomData,
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // JNI entrypoints — called by com.reactive.ReactiveScope (Kotlin)
@@ -74,32 +57,119 @@ pub extern "C" fn Java_com_reactive_ReactiveScope_nativeTick(
 #[cfg(test)]
 mod tests {
     use super::*;
-    view_props! {
-        class "XXX" {
-            text: jstring,
-            textColor: jint,
-            myObj: jobject,
+    use jni::sys::{jbyteArray, jint, jstring};
+
+    declare_jni_binding! {
+        class com.mypackage.MyClass {
+            int age;
+            String label;
+            byte[] payload;
+            String getText();
+            char getInitial();
+            byte getTag();
+            void setAge(int);
+            void setAge(int, int);
         }
     }
 
     #[test]
-    fn descriptor_class() {
-        assert_eq!(TEXT.class, "XXX");
-        assert_eq!(TEXT_COLOR.class, "XXX");
-        assert_eq!(MY_OBJ.class, "XXX");
+    fn declared_jni_binding_class_descriptor() {
+        assert_eq!(
+            <MyClass as JavaClassDescriptor>::FQ_NAME,
+            "com/mypackage/MyClass"
+        );
     }
 
     #[test]
-    fn descriptor_methods() {
-        assert_eq!(TEXT.method, "setText");
-        assert_eq!(TEXT_COLOR.method, "setTextColor");
-        assert_eq!(MY_OBJ.method, "setMyObj");
+    fn declared_jni_binding_method_signatures() {
+        assert_eq!(
+            <getText as JavaMethodDescriptor<()>>::SIGNATURE,
+            "()Ljava/lang/String;"
+        );
+        assert_eq!(<getInitial as JavaMethodDescriptor<()>>::SIGNATURE, "()C");
+        assert_eq!(<getTag as JavaMethodDescriptor<()>>::SIGNATURE, "()B");
+        assert_eq!(<setAge as JavaMethodDescriptor<(jint,)>>::SIGNATURE, "(I)V");
+        assert_eq!(
+            <setAge as JavaMethodDescriptor<(jint, jint)>>::SIGNATURE,
+            "(II)V"
+        );
     }
 
     #[test]
-    fn descriptor_signatures() {
-        assert_eq!(TEXT.signature, "(Ljava/lang/String;)V");
-        assert_eq!(TEXT_COLOR.signature, "(I)V");
-        assert_eq!(MY_OBJ.signature, "(Ljava/lang/Object;)V");
+    fn declared_jni_binding_method_class_descriptors() {
+        fn assert_method_class_descriptor<M, Args>()
+        where
+            M: JavaMethodDescriptor<Args, ClassDescriptor = MyClass>,
+        {
+        }
+
+        assert_method_class_descriptor::<getText, ()>();
+        assert_method_class_descriptor::<getInitial, ()>();
+        assert_method_class_descriptor::<getTag, ()>();
+        assert_method_class_descriptor::<setAge, (jint,)>();
+        assert_method_class_descriptor::<setAge, (jint, jint)>();
+    }
+
+    #[test]
+    fn declared_jni_binding_method_return_types() {
+        assert!(matches!(
+            <getText as JavaMethodDescriptor<()>>::RETURN_TYPE,
+            JavaReturnType::String
+        ));
+        assert!(matches!(
+            <getInitial as JavaMethodDescriptor<()>>::RETURN_TYPE,
+            JavaReturnType::Primitive(JavaPrimitiveType::Char)
+        ));
+        assert!(matches!(
+            <getTag as JavaMethodDescriptor<()>>::RETURN_TYPE,
+            JavaReturnType::Primitive(JavaPrimitiveType::Byte)
+        ));
+        assert!(matches!(
+            <setAge as JavaMethodDescriptor<(jint,)>>::RETURN_TYPE,
+            JavaReturnType::Primitive(JavaPrimitiveType::Void)
+        ));
+        assert!(matches!(
+            <setAge as JavaMethodDescriptor<(jint, jint)>>::RETURN_TYPE,
+            JavaReturnType::Primitive(JavaPrimitiveType::Void)
+        ));
+    }
+
+    #[test]
+    fn declared_jni_binding_field_signatures() {
+        assert_eq!(<age as JavaFieldDescriptor>::SIGNATURE, "I");
+        assert_eq!(
+            <label as JavaFieldDescriptor>::SIGNATURE,
+            "Ljava/lang/String;"
+        );
+        assert_eq!(<payload as JavaFieldDescriptor>::SIGNATURE, "[B");
+    }
+
+    #[test]
+    fn declared_jni_binding_field_types() {
+        assert!(matches!(
+            <age as JavaFieldDescriptor>::FIELD_TYPE,
+            JavaFieldType::Primitive(JavaPrimitiveType::Int)
+        ));
+        assert!(matches!(
+            <label as JavaFieldDescriptor>::FIELD_TYPE,
+            JavaFieldType::String
+        ));
+        assert!(matches!(
+            <payload as JavaFieldDescriptor>::FIELD_TYPE,
+            JavaFieldType::PrimitiveArray(JavaPrimitiveType::Byte)
+        ));
+    }
+
+    #[test]
+    fn declared_jni_binding_field_class_descriptors_and_rust_types() {
+        fn assert_field_descriptor<F, T>()
+        where
+            F: JavaFieldDescriptor<ClassDescriptor = MyClass, RustType = T>,
+        {
+        }
+
+        assert_field_descriptor::<age, jint>();
+        assert_field_descriptor::<label, jstring>();
+        assert_field_descriptor::<payload, jbyteArray>();
     }
 }

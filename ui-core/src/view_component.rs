@@ -1,5 +1,5 @@
 use crate::layout::{
-    BoxModifierChain, ChildLayoutInfo, FlexParentData, BOX_MODIFIERS, FLEX_PARENT_DATA,
+    BOX_MODIFIERS, BoxModifierChain, ChildLayoutInfo, FLEX_PARENT_DATA, FlexParentData,
 };
 use crate::{Prop, ViewBuilder};
 use reactive_core::{
@@ -169,6 +169,11 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static>
 impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C>
     PlatformViewBuilder<Target, NativeView, C>
 {
+    /// See [`ViewBuilder::set_after_set`]. Must be called before any [`bind`][Self::bind] calls.
+    pub fn set_after_set(&mut self, f: impl Fn(&Target) + 'static) {
+        self.builder.set_after_set(f);
+    }
+
     pub fn bind<FrameworkType, ValueType>(
         mut self,
         prop: &'static Prop<FrameworkType, Target, ValueType>,

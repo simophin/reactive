@@ -129,8 +129,7 @@ pub fn compute_flex_layout(
     }
 
     // Distribute remaining space to flex children, respecting their minimum sizes.
-    let remaining =
-        (main_component(available, vertical) - non_flex_main - spacing_total).max(0.0);
+    let remaining = (main_component(available, vertical) - non_flex_main - spacing_total).max(0.0);
     if flex_total > 0 {
         for (i, info) in child_infos.iter().enumerate() {
             if let Some(flex) = info.flex.flex {
@@ -349,8 +348,7 @@ fn place_with_modifiers(
         }
         Some((BoxModifier::Align(alignment), rest)) => {
             let inner_size =
-                measure_with_modifiers(host, index, rest, SizeConstraint::unconstrained())
-                    .natural;
+                measure_with_modifiers(host, index, rest, SizeConstraint::unconstrained()).natural;
             let inner = align_in(inner_size, slot, *alignment);
             place_with_modifiers(host, index, rest, inner);
         }

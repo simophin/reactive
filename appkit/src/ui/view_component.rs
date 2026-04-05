@@ -1,7 +1,7 @@
-use crate::context::{CHILDREN_VIEWS, CHILD_VIEW};
+use crate::context::{CHILD_VIEW, CHILDREN_VIEWS};
 use apple::Prop;
 use objc2::rc::Retained;
-use objc2::Message;
+use objc2::{Message, msg_send};
 use objc2_app_kit::{NSUserInterfaceItemIdentification, NSView};
 use objc2_foundation::NSString;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
@@ -23,13 +23,15 @@ impl<V: Message + 'static> AppKitViewBuilder<V, NoChild> {
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
     ) -> Self {
+        let mut inner = PlatformViewBuilder::create_no_child(
+            creator,
+            into_nsview,
+            &CHILD_VIEW,
+            &CHILDREN_VIEWS,
+        );
+        set_layout_after_set(&mut inner, into_nsview);
         Self {
-            inner: PlatformViewBuilder::create_no_child(
-                creator,
-                into_nsview,
-                &CHILD_VIEW,
-                &CHILDREN_VIEWS,
-            ),
+            inner,
             debug_identifier: None,
         }
     }
@@ -41,14 +43,16 @@ impl<V: Message + 'static> AppKitViewBuilder<V, SingleChild> {
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
         child: BoxedComponent,
     ) -> Self {
+        let mut inner = PlatformViewBuilder::create_with_child(
+            creator,
+            into_nsview,
+            &CHILD_VIEW,
+            &CHILDREN_VIEWS,
+            child,
+        );
+        set_layout_after_set(&mut inner, into_nsview);
         Self {
-            inner: PlatformViewBuilder::create_with_child(
-                creator,
-                into_nsview,
-                &CHILD_VIEW,
-                &CHILDREN_VIEWS,
-                child,
-            ),
+            inner,
             debug_identifier: None,
         }
     }
@@ -59,13 +63,15 @@ impl<V: Message + 'static> AppKitViewBuilder<V, MultipleChildren> {
         creator: impl FnOnce(&mut SetupContext) -> Retained<V> + 'static,
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
     ) -> Self {
+        let mut inner = PlatformViewBuilder::create_multiple_child(
+            creator,
+            into_nsview,
+            &CHILD_VIEW,
+            &CHILDREN_VIEWS,
+        );
+        set_layout_after_set(&mut inner, into_nsview);
         Self {
-            inner: PlatformViewBuilder::create_multiple_child(
-                creator,
-                into_nsview,
-                &CHILD_VIEW,
-                &CHILDREN_VIEWS,
-            ),
+            inner,
             debug_identifier: None,
         }
     }
@@ -82,14 +88,16 @@ impl<V: Message + 'static> AppKitViewBuilder<V, AtMostOneChild> {
         into_nsview: fn(Retained<V>) -> Retained<NSView>,
         child: Option<BoxedComponent>,
     ) -> Self {
+        let mut inner = PlatformViewBuilder::create_with_optional_child(
+            creator,
+            into_nsview,
+            &CHILD_VIEW,
+            &CHILDREN_VIEWS,
+            child,
+        );
+        set_layout_after_set(&mut inner, into_nsview);
         Self {
-            inner: PlatformViewBuilder::create_with_optional_child(
-                creator,
-                into_nsview,
-                &CHILD_VIEW,
-                &CHILDREN_VIEWS,
-                child,
-            ),
+            inner,
             debug_identifier: None,
         }
     }
@@ -140,6 +148,27 @@ impl<V: 'static, C> AppKitViewBuilder<V, C> {
 
 fn short_type_name<T>() -> &'static str {
     type_name::<T>().rsplit("::").next().unwrap_or("NSView")
+}
+
+/// Installs an after-set hook that calls `setNeedsLayout(true)` on the
+/// view's superview after every property update.
+///
+/// This is needed because children inside `ReactiveLayoutView` use
+/// `translatesAutoresizingMaskIntoConstraints = true` (so manually computed
+/// frames stick), which prevents AppKit's Auto Layout cascade from propagating
+/// `invalidateIntrinsicContentSize()` up to the parent container.
+fn set_layout_after_set<V: Message + 'static, C>(
+    inner: &mut PlatformViewBuilder<Retained<V>, Retained<NSView>, C>,
+    into_nsview: fn(Retained<V>) -> Retained<NSView>,
+) {
+    inner.set_after_set(move |view: &Retained<V>| {
+        let nsview = into_nsview(view.clone());
+        unsafe {
+            if let Some(sv) = nsview.superview() {
+                let _: () = msg_send![&*sv, setNeedsLayout: true];
+            }
+        }
+    });
 }
 
 pub struct AppKitViewComponent<V, C>(pub AppKitViewBuilder<V, C>);

@@ -3,8 +3,8 @@ use super::layout::apply_parent_layout;
 use super::view_component::GtkViewBuilder;
 use gtk4::prelude::*;
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::layout::types::Alignment;
 use ui_core::layout::CrossAxisAlignment;
+use ui_core::layout::types::Alignment;
 use ui_core::widgets::Stack;
 
 pub struct GtkStack {

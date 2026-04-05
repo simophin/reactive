@@ -4,11 +4,13 @@ use objc2_app_kit::NSView;
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use std::cell::RefCell;
-use ui_core::layout::algorithm::{AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint};
+use ui_core::ChildEntry;
+use ui_core::layout::algorithm::{
+    AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
+};
 use ui_core::layout::{
     ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
 };
-use ui_core::ChildEntry;
 
 pub(crate) type ChildViewEntry = ChildEntry<Retained<NSView>>;
 
@@ -160,10 +162,8 @@ impl ReactiveLayoutView {
 
         // Always update layout metadata and request a new layout pass.
         self.ivars().borrow_mut().children = entries;
-        unsafe {
-            self.invalidateIntrinsicContentSize();
-            self.setNeedsLayout(true);
-        }
+        self.invalidateIntrinsicContentSize();
+        self.setNeedsLayout(true);
     }
 }
 
@@ -204,17 +204,15 @@ impl LayoutHost for AppKitFlexHost<'_> {
 
     fn place_child(&self, index: usize, frame: Rect) {
         let view = &self.children[index].native;
-        unsafe {
-            view.setFrame(NSRect {
-                origin: NSPoint {
-                    x: frame.x as CGFloat,
-                    y: frame.y as CGFloat,
-                },
-                size: NSSize {
-                    width: frame.width as CGFloat,
-                    height: frame.height as CGFloat,
-                },
-            });
-        }
+        view.setFrame(NSRect {
+            origin: NSPoint {
+                x: frame.x as CGFloat,
+                y: frame.y as CGFloat,
+            },
+            size: NSSize {
+                width: frame.width as CGFloat,
+                height: frame.height as CGFloat,
+            },
+        });
     }
 }

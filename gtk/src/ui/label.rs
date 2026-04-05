@@ -2,9 +2,9 @@ use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
 use gtk4::prelude::WidgetExt;
 use gtk4::prelude::*;
 use reactive_core::{Signal, SignalExt};
+use ui_core::Prop;
 use ui_core::layout::types::TextAlignment;
 use ui_core::widgets;
-use ui_core::Prop;
 
 pub type Label = GtkViewComponent<gtk4::Label, NoChildWidget>;
 

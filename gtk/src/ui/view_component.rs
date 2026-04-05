@@ -1,4 +1,4 @@
-use crate::context::{CHILDREN_WIDGETS, CHILD_WIDGET};
+use crate::context::{CHILD_WIDGET, CHILDREN_WIDGETS};
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
 use ui_core::Prop;
 use ui_core::{MultipleChildren, NoChild, PlatformViewBuilder, SingleChild};

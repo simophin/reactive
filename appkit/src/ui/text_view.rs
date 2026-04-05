@@ -27,10 +27,6 @@ pub static PROP_FONT_SIZE: &Prop<TextView, NSTextView, f64> = &Prop::new(|view, 
     view.setFont(Some(&font));
 });
 
-static PROP_STRING: &Prop<TextView, NSTextView, Retained<NSString>> = &Prop::new(|view, value| {
-    view.setString(&value);
-});
-
 // ---------------------------------------------------------------------------
 // ReactiveTextStorage — NSTextStorage subclass.
 //
