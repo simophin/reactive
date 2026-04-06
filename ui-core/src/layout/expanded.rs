@@ -1,4 +1,4 @@
-use reactive_core::{Component, SetupContext, Signal, SignalExt};
+use reactive_core::{Component, SetupContext, Signal};
 use std::num::NonZeroUsize;
 
 use super::{FLEX_PARENT_DATA, FlexParentData};

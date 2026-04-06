@@ -4,7 +4,7 @@ use objc2_app_kit::NSView;
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use std::cell::RefCell;
-use ui_core::ChildEntry;
+use ui_core::{ChildEntry, ChildrenHost, sync_children};
 use ui_core::layout::algorithm::{
     AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
 };
@@ -59,7 +59,7 @@ define_class!(
                 return;
             }
 
-            let frame = unsafe { self.frame() };
+            let frame = self.frame();
             let available = Size {
                 width: frame.size.width as f32,
                 height: frame.size.height as f32,
@@ -118,50 +118,55 @@ impl ReactiveLayoutView {
         data.cross_axis = cross_axis;
     }
 
-    /// Update the child list and trigger a layout pass.
-    ///
-    /// Only removes/re-adds subviews when the set of native views actually
-    /// changes (children added or removed).  When only modifier values changed
-    /// (e.g. a reactive `SizedBox` width) the view hierarchy is left alone and
-    /// only the stored layout metadata + a layout-invalidation call are issued.
     pub fn update_children(&self, entries: Vec<ChildViewEntry>) {
-        let needs_remount = {
-            let old = self.ivars().borrow();
-            old.children.len() != entries.len()
-                || old
-                    .children
-                    .iter()
-                    .zip(entries.iter())
-                    .any(|(o, n)| o.native != n.native)
-        };
+        sync_children(self, &mut self.ivars().borrow_mut().children, entries);
+        // borrow_mut released — safe to borrow() now
+        self.update_window_min_size();
+    }
 
-        if needs_remount {
-            // Detach old subviews.
-            let old_natives: Vec<_> = self
-                .ivars()
-                .borrow()
-                .children
-                .iter()
-                .map(|e| e.native.clone())
-                .collect();
-            for view in &old_natives {
-                unsafe { view.removeFromSuperview() };
-            }
-
-            // Attach new subviews.  They will be manually framed by layout(),
-            // so turn off Auto Layout for the parent-child relationship.
-            for entry in &entries {
-                unsafe {
-                    entry
-                        .native
-                        .setTranslatesAutoresizingMaskIntoConstraints(true);
-                    self.addSubview(&entry.native);
+    fn update_window_min_size(&self) {
+        let Some(window) = self.window() else { return };
+        let data = self.ivars().borrow();
+        if data.children.is_empty() { return; }
+        let child_infos: Vec<ChildLayoutInfo> =
+            data.children.iter().map(|e| e.layout.clone()).collect();
+        let host = AppKitFlexHost { children: &data.children };
+        // Measure unconstrained so the minimum is stable and independent of
+        // the current window width (avoids feedback loops during resize).
+        let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
+        drop(data);
+        // Add the gap between our frame and the content view's frame, which
+        // accounts for any outer padding applied via Auto Layout layout guides.
+        let extra = unsafe { self.superview() }
+            .map(|sv| {
+                let sv = sv.frame();
+                let us = self.frame();
+                NSSize {
+                    width: (sv.size.width - us.size.width).max(0.0),
+                    height: (sv.size.height - us.size.height).max(0.0),
                 }
-            }
-        }
+            })
+            .unwrap_or(NSSize { width: 0.0, height: 0.0 });
+        window.setContentMinSize(NSSize {
+            width: m.min.width as CGFloat + extra.width,
+            height: m.min.height as CGFloat + extra.height,
+        });
+    }
+}
 
-        // Always update layout metadata and request a new layout pass.
-        self.ivars().borrow_mut().children = entries;
+impl ChildrenHost<Retained<NSView>> for ReactiveLayoutView {
+    fn remove_child(&self, child: &Retained<NSView>) {
+        child.removeFromSuperview();
+    }
+
+    fn add_child(&self, child: &Retained<NSView>, _after: Option<&Retained<NSView>>) {
+        // Children are manually framed by layout(), so disable Auto Layout
+        // for this parent-child relationship.
+        child.setTranslatesAutoresizingMaskIntoConstraints(true);
+        self.addSubview(child);
+    }
+
+    fn invalidate_layout(&self) {
         self.invalidateIntrinsicContentSize();
         self.setNeedsLayout(true);
     }
@@ -182,7 +187,7 @@ impl LayoutHost for AppKitFlexHost<'_> {
         let view = &self.children[index].native;
         // `fittingSize` returns the smallest size that satisfies all Auto-Layout
         // constraints — it serves as both the minimum and the natural size.
-        let fitting = unsafe { view.fittingSize() };
+        let fitting = view.fittingSize();
         let min = Size {
             width: fitting.width as f32,
             height: fitting.height as f32,

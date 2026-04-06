@@ -100,9 +100,9 @@ pub fn compute_flex_layout(
     spacing: f32,
     cross_axis: CrossAxisAlignment,
     available: Size,
-) -> Size {
+) -> Measurement {
     if child_infos.is_empty() {
-        return Size::default();
+        return Measurement::default();
     }
 
     let count = child_infos.len();
@@ -114,6 +114,8 @@ pub fn compute_flex_layout(
     let mut measurements = vec![Measurement::default(); count];
     let mut non_flex_main = 0.0f32;
     let mut flex_total = 0usize;
+    let mut min_main = 0.0f32;
+    let mut min_cross = 0.0f32;
 
     for (i, info) in child_infos.iter().enumerate() {
         let constraint = main_measure_constraint(cross_avail, cross_axis, vertical);
@@ -121,11 +123,15 @@ pub fn compute_flex_layout(
         measurements[i] = m;
         if let Some(flex) = info.flex.flex {
             flex_total += flex.get();
+            // Flex children use their natural size as their min contribution.
+            min_main += main_component(m.natural, vertical);
         } else {
             let main = main_component(m.natural, vertical);
             main_sizes[i] = main;
             non_flex_main += main;
+            min_main += main_component(m.min, vertical);
         }
+        min_cross = min_cross.max(cross_component(m.min, vertical));
     }
 
     // Distribute remaining space to flex children, respecting their minimum sizes.
@@ -188,23 +194,24 @@ pub fn compute_flex_layout(
     }
 
     let natural_main = if flex_total > 0 {
-        // When flex children are present, fill the available space
         main_component(available, vertical)
     } else {
         cursor
     };
 
-    if vertical {
-        Size {
-            width: max_cross,
-            height: natural_main,
-        }
+    let (natural, min) = if vertical {
+        (
+            Size { width: max_cross, height: natural_main },
+            Size { width: min_cross, height: min_main + spacing_total },
+        )
     } else {
-        Size {
-            width: natural_main,
-            height: max_cross,
-        }
-    }
+        (
+            Size { width: natural_main, height: max_cross },
+            Size { width: min_main + spacing_total, height: min_cross },
+        )
+    };
+
+    Measurement { min, natural }
 }
 
 /// Compute the container's minimum and preferred sizes without a concrete allocation.
@@ -229,7 +236,16 @@ pub fn measure_flex_container(
             &info.box_modifiers.modifiers,
             SizeConstraint::unconstrained(),
         );
-        min_main += main_component(m.min, vertical);
+        // Non-flex children are rigid: their true minimum contributes to the
+        // container minimum.  Flex children are elastic: they can shrink below
+        // their natural size, so we use natural (not platform-min) as their
+        // contribution — giving the container a meaningful minimum without
+        // forcing the worst-case wrapped height.
+        if info.flex.flex.is_none() {
+            min_main += main_component(m.min, vertical);
+        } else {
+            min_main += main_component(m.natural, vertical);
+        }
         nat_main += main_component(m.natural, vertical);
         min_cross = min_cross.max(cross_component(m.min, vertical));
         nat_cross = nat_cross.max(cross_component(m.natural, vertical));

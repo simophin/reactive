@@ -3,7 +3,7 @@ use std::ffi::c_void;
 
 use crate::view_component::AppKitViewBuilder;
 use objc2::rc::Retained;
-use objc2::{ClassType, DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSCollectionView, NSCollectionViewDataSource, NSCollectionViewItem,
     NSIndexPathNSCollectionViewAdditions,
@@ -18,15 +18,15 @@ pub struct CollectionView {
 }
 
 impl Component for CollectionView {
-    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+    fn setup(self: Box<Self>, _ctx: &mut SetupContext) {
         todo!()
     }
 }
 
 impl ui_core::widgets::List for CollectionView {
     fn new<L, I, C>(
-        list_data: impl Signal<Value = L> + 'static,
-        component_factory: impl FnMut(ReadStoredSignal<I>) -> C + 'static,
+        _list_data: impl Signal<Value = L> + 'static,
+        _component_factory: impl FnMut(ReadStoredSignal<I>) -> C + 'static,
     ) -> Self
     where
         L: ListData<I> + 'static,
@@ -36,7 +36,7 @@ impl ui_core::widgets::List for CollectionView {
         todo!()
     }
 
-    fn orientation(self, orientation: ListOrientation) -> Self {
+    fn orientation(self, _orientation: ListOrientation) -> Self {
         todo!()
     }
 }

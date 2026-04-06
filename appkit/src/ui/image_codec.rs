@@ -1,6 +1,6 @@
 use super::image_view::ImageHandle;
 use objc2_core_foundation::CFRetained;
-use objc2_core_graphics::{CGDataProvider, CGImage};
+use objc2_core_graphics::CGDataProvider;
 use objc2_image_io::CGImageSource;
 use std::error::Error;
 use std::ffi::c_void;
@@ -17,7 +17,7 @@ enum ImageDecodeError {
 }
 
 unsafe extern "C-unwind" fn release_vec(info: *mut c_void, _data: NonNull<c_void>, _size: usize) {
-    drop(Box::from_raw(info as *mut Vec<u8>));
+    unsafe { drop(Box::from_raw(info as *mut Vec<u8>)) };
 }
 
 fn decode_with_provider(

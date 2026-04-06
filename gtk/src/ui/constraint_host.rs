@@ -9,6 +9,7 @@ use ui_core::layout::algorithm::{
 use ui_core::layout::{
     ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
 };
+use ui_core::{ChildrenHost, sync_children};
 
 pub(crate) struct FlexData {
     pub children: Vec<ChildWidgetEntry>,
@@ -33,7 +34,7 @@ mod imp {
 
     #[derive(Default)]
     pub struct ConstraintHost {
-        pub flex_data: RefCell<FlexData>,
+        pub(crate) flex_data: RefCell<FlexData>,
     }
 
     #[glib::object_subclass]
@@ -125,47 +126,25 @@ impl ConstraintHost {
         data.cross_axis = cross_axis;
     }
 
-    /// Update the child list and schedule a layout pass.
-    ///
-    /// Only unparents/reparents widgets when the set of native widgets actually
-    /// changes.  Modifier-only updates (e.g. a reactive `SizedBox` width) skip
-    /// the parenting work and only refresh the stored layout metadata before
-    /// queueing an allocation.
     pub fn update_children(&self, entries: Vec<ChildWidgetEntry>) {
-        let needs_remount = {
-            let old = self.imp().flex_data.borrow();
-            old.children.len() != entries.len()
-                || old
-                    .children
-                    .iter()
-                    .zip(entries.iter())
-                    .any(|(o, n)| o.native != n.native)
-        };
+        sync_children(
+            self,
+            &mut self.imp().flex_data.borrow_mut().children,
+            entries,
+        );
+    }
+}
 
-        if needs_remount {
-            // Detach previous widgets.
-            let old_natives: Vec<_> = self
-                .imp()
-                .flex_data
-                .borrow()
-                .children
-                .iter()
-                .map(|e| e.native.clone())
-                .collect();
-            for widget in &old_natives {
-                widget.unparent();
-            }
+impl ChildrenHost<gtk4::Widget> for ConstraintHost {
+    fn remove_child(&self, child: &gtk4::Widget) {
+        child.unparent();
+    }
 
-            // Attach new widgets.
-            let mut prev: Option<gtk4::Widget> = None;
-            for entry in &entries {
-                entry.native.insert_after(self, prev.as_ref());
-                prev = Some(entry.native.clone());
-            }
-        }
+    fn add_child(&self, child: &gtk4::Widget, after: Option<&gtk4::Widget>) {
+        child.insert_after(self, after);
+    }
 
-        // Always refresh layout metadata and queue an allocation pass.
-        self.imp().flex_data.borrow_mut().children = entries;
+    fn invalidate_layout(&self) {
         self.queue_allocate();
     }
 }

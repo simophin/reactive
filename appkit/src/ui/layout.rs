@@ -4,7 +4,7 @@ use objc2_app_kit::{
     NSLayoutConstraint, NSLayoutGuide, NSLayoutXAxisAnchor, NSLayoutYAxisAnchor, NSView,
 };
 use objc2_foundation::{NSArray, NSString};
-use ui_core::layout::{Alignment, BoxModifier, BoxModifierChain, CrossAxisAlignment};
+use ui_core::layout::{Alignment, BoxModifier, BoxModifierChain};
 
 pub(crate) struct MountedChild {
     view: Retained<NSView>,

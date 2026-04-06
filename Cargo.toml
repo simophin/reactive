@@ -10,5 +10,7 @@ members = [
     "resources-build",
     "android",
     "android-macros",
+    "dexer",
+    "dexer-macros",
 ]
 

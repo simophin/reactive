@@ -334,6 +334,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dexer"
+version = "0.1.0"
+dependencies = [
+ "dexer-macros",
+ "jni",
+]
+
+[[package]]
+name = "dexer-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "dispatch2"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

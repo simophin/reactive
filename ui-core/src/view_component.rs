@@ -269,3 +269,55 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C: C
             .setup(ctx, |_| {}, |native, layout| ChildEntry { native, layout });
     }
 }
+
+/// Platform-specific operations for managing a container's child views.
+///
+/// Mirrors the [`LayoutHost`][crate::layout::LayoutHost] pattern: the
+/// reconciliation algorithm lives in `ui-core` ([`sync_children`]); each
+/// platform supplies the real API calls by implementing this trait.
+pub trait ChildrenHost<NativeView> {
+    /// Detach `child` from this container.
+    fn remove_child(&self, child: &NativeView);
+    /// Attach `child` to this container, inserted after `after` (or at the
+    /// front when `after` is `None`).
+    fn add_child(&self, child: &NativeView, after: Option<&NativeView>);
+    /// Signal to the platform that a new layout pass is required.
+    fn invalidate_layout(&self);
+}
+
+/// Reconcile a container's child list against a new snapshot.
+///
+/// Native views are remounted only when the set of view handles actually
+/// changes (children added, removed, or reordered). When only layout metadata
+/// (modifiers, flex weights, …) changes the view hierarchy is left untouched.
+/// [`ChildrenHost::invalidate_layout`] is always called so the container
+/// re-measures with the updated data.
+pub fn sync_children<H, NativeView>(
+    host: &H,
+    current: &mut Vec<ChildEntry<NativeView>>,
+    next: Vec<ChildEntry<NativeView>>,
+) where
+    H: ChildrenHost<NativeView>,
+    NativeView: Clone + PartialEq + Eq,
+{
+    let needs_remount = current.len() != next.len()
+        || current
+            .iter()
+            .zip(next.iter())
+            .any(|(o, n)| o.native != n.native);
+
+    if needs_remount {
+        let old_natives: Vec<NativeView> = current.iter().map(|e| e.native.clone()).collect();
+        for native in &old_natives {
+            host.remove_child(native);
+        }
+        let mut prev: Option<NativeView> = None;
+        for entry in &next {
+            host.add_child(&entry.native, prev.as_ref());
+            prev = Some(entry.native.clone());
+        }
+    }
+
+    *current = next;
+    host.invalidate_layout();
+}
