@@ -54,7 +54,9 @@ pub fn parse_param_descriptors(descriptor: &str) -> Vec<String> {
                 let mut cls = String::from("L");
                 for ch in chars.by_ref() {
                     cls.push(ch);
-                    if ch == ';' { break; }
+                    if ch == ';' {
+                        break;
+                    }
                 }
                 params.push(cls);
             }
@@ -67,7 +69,9 @@ pub fn parse_param_descriptors(descriptor: &str) -> Vec<String> {
                         arr.push('L');
                         for ch in chars.by_ref() {
                             arr.push(ch);
-                            if ch == ';' { break; }
+                            if ch == ';' {
+                                break;
+                            }
                         }
                     } else {
                         arr.push(chars.next().unwrap());

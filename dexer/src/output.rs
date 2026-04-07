@@ -6,7 +6,10 @@ pub struct DexOutput {
 
 impl DexOutput {
     pub(crate) fn new(bytes: Vec<u8>, registrations: NativeRegistrations) -> Self {
-        Self { bytes, registrations }
+        Self {
+            bytes,
+            registrations,
+        }
     }
 
     /// Raw DEX bytes — pass to `DexClassLoader`.

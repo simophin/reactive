@@ -14,18 +14,18 @@ const HEADER_SIZE: u32 = 112;
 const NO_INDEX: u32 = 0xFFFFFFFF;
 
 // Map-list type codes
-const TYPE_HEADER_ITEM: u16        = 0x0000;
-const TYPE_STRING_ID_ITEM: u16     = 0x0001;
-const TYPE_TYPE_ID_ITEM: u16       = 0x0002;
-const TYPE_PROTO_ID_ITEM: u16      = 0x0003;
-const TYPE_FIELD_ID_ITEM: u16      = 0x0004;
-const TYPE_METHOD_ID_ITEM: u16     = 0x0005;
-const TYPE_CLASS_DEF_ITEM: u16     = 0x0006;
-const TYPE_TYPE_LIST: u16          = 0x1001;
-const TYPE_STRING_DATA_ITEM: u16   = 0x2002;
-const TYPE_CODE_ITEM: u16          = 0x2001;
-const TYPE_CLASS_DATA_ITEM: u16    = 0x2000;
-const TYPE_MAP_LIST: u16           = 0x1000;
+const TYPE_HEADER_ITEM: u16 = 0x0000;
+const TYPE_STRING_ID_ITEM: u16 = 0x0001;
+const TYPE_TYPE_ID_ITEM: u16 = 0x0002;
+const TYPE_PROTO_ID_ITEM: u16 = 0x0003;
+const TYPE_FIELD_ID_ITEM: u16 = 0x0004;
+const TYPE_METHOD_ID_ITEM: u16 = 0x0005;
+const TYPE_CLASS_DEF_ITEM: u16 = 0x0006;
+const TYPE_TYPE_LIST: u16 = 0x1001;
+const TYPE_STRING_DATA_ITEM: u16 = 0x2002;
+const TYPE_CODE_ITEM: u16 = 0x2001;
+const TYPE_CLASS_DATA_ITEM: u16 = 0x2000;
+const TYPE_MAP_LIST: u16 = 0x1000;
 
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -49,10 +49,14 @@ impl<'a> Strings<'a> {
 // ─────────────────────────────────────────── collected ID tables ──────────
 
 /// A resolved type, proto, field or method index.
-#[allow(dead_code)] type TypeIdx   = u32;
-#[allow(dead_code)] type ProtoIdx  = u32;
-#[allow(dead_code)] type FieldIdx  = u32;
-#[allow(dead_code)] type MethodIdx = u32;
+#[allow(dead_code)]
+type TypeIdx = u32;
+#[allow(dead_code)]
+type ProtoIdx = u32;
+#[allow(dead_code)]
+type FieldIdx = u32;
+#[allow(dead_code)]
+type MethodIdx = u32;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct TypeEntry {
@@ -73,7 +77,8 @@ impl PartialOrd for ProtoEntry {
 }
 impl Ord for ProtoEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.return_type.cmp(&other.return_type)
+        self.return_type
+            .cmp(&other.return_type)
             .then(self.params.cmp(&other.params))
     }
 }
@@ -119,7 +124,13 @@ impl Builder {
             .methods
             .iter()
             .filter_map(|m| {
-                if let MethodEntry::Native { name, descriptor, fn_ptr, .. } = m {
+                if let MethodEntry::Native {
+                    name,
+                    descriptor,
+                    fn_ptr,
+                    ..
+                } = m
+                {
                     Some(NativeMethod {
                         name: name.clone(),
                         descriptor: descriptor.clone(),
@@ -139,9 +150,9 @@ impl Builder {
             _marker: std::marker::PhantomData,
         };
 
-        let types   = self.collect_types(&strings);
-        let protos  = self.collect_protos(&strings);
-        let fields  = self.collect_fields(&strings);
+        let types = self.collect_types(&strings);
+        let protos = self.collect_protos(&strings);
+        let fields = self.collect_fields(&strings);
         let methods = self.collect_methods(&strings, &protos);
 
         // ── 3. Serialise ──────────────────────────────────────────────────
@@ -171,8 +182,8 @@ impl Builder {
         sp.intern("$$destroy");
         sp.intern("finalize");
         sp.intern("nativePtr");
-        sp.intern("J");       // long type descriptor
-        sp.intern("V");       // void
+        sp.intern("J"); // long type descriptor
+        sp.intern("V"); // void
         sp.intern("Ljava/lang/Object;");
 
         // Fields
@@ -184,8 +195,12 @@ impl Builder {
         // Methods
         for m in &def.methods {
             match m {
-                MethodEntry::Native { name, descriptor, .. }
-                | MethodEntry::Coded { name, descriptor, .. } => {
+                MethodEntry::Native {
+                    name, descriptor, ..
+                }
+                | MethodEntry::Coded {
+                    name, descriptor, ..
+                } => {
                     sp.intern(name.as_str());
                     self.intern_descriptor(sp, descriptor);
                 }
@@ -193,8 +208,14 @@ impl Builder {
             // Extra strings from code patterns
             if let MethodEntry::Coded { code, .. } = m {
                 match code {
-                    MethodCode::Constructor { superclass, super_descriptor }
-                    | MethodCode::ByoConstructor { superclass, super_descriptor } => {
+                    MethodCode::Constructor {
+                        superclass,
+                        super_descriptor,
+                    }
+                    | MethodCode::ByoConstructor {
+                        superclass,
+                        super_descriptor,
+                    } => {
                         sp.intern(class_desc(superclass));
                         self.intern_descriptor(sp, super_descriptor);
                         if matches!(code, MethodCode::ByoConstructor { .. }) {
@@ -202,7 +223,11 @@ impl Builder {
                             self.intern_descriptor(sp, &byo);
                         }
                     }
-                    MethodCode::SuperAccessor { superclass, method_name, descriptor } => {
+                    MethodCode::SuperAccessor {
+                        superclass,
+                        method_name,
+                        descriptor,
+                    } => {
                         sp.intern(class_desc(superclass));
                         sp.intern(method_name.as_str());
                         self.intern_descriptor(sp, descriptor);
@@ -241,7 +266,9 @@ impl Builder {
             .0
             .iter()
             .filter(|s| is_type_descriptor(s))
-            .map(|s| TypeEntry { descriptor: s.clone() })
+            .map(|s| TypeEntry {
+                descriptor: s.clone(),
+            })
             .collect();
         types.sort();
         types
@@ -258,15 +285,27 @@ impl Builder {
     fn collect_protos(&self, strings: &Strings<'_>) -> Vec<ProtoEntry> {
         let _ = strings;
         let mut seen: Vec<ProtoEntry> = Vec::new();
-        let descriptors: Vec<&str> = self.def.methods.iter().map(|m| match m {
-            MethodEntry::Native { descriptor, .. } => descriptor.as_str(),
-            MethodEntry::Coded { descriptor, .. } => descriptor.as_str(),
-        }).collect();
+        let descriptors: Vec<&str> = self
+            .def
+            .methods
+            .iter()
+            .map(|m| match m {
+                MethodEntry::Native { descriptor, .. } => descriptor.as_str(),
+                MethodEntry::Coded { descriptor, .. } => descriptor.as_str(),
+            })
+            .collect();
 
         let mut all_descs: Vec<String> = descriptors.iter().map(|s| s.to_string()).collect();
         // Also BYO constructors have a synthetic descriptor
         for m in &self.def.methods {
-            if let MethodEntry::Coded { code: MethodCode::ByoConstructor { super_descriptor, .. }, .. } = m {
+            if let MethodEntry::Coded {
+                code:
+                    MethodCode::ByoConstructor {
+                        super_descriptor, ..
+                    },
+                ..
+            } = m
+            {
                 all_descs.push(byo_descriptor(super_descriptor));
             }
         }
@@ -357,23 +396,43 @@ impl Builder {
 
         for m in &self.def.methods {
             let (name, desc) = match m {
-                MethodEntry::Native { name, descriptor, .. } => (name.as_str(), descriptor.as_str()),
-                MethodEntry::Coded { name, descriptor, .. } => (name.as_str(), descriptor.as_str()),
+                MethodEntry::Native {
+                    name, descriptor, ..
+                } => (name.as_str(), descriptor.as_str()),
+                MethodEntry::Coded {
+                    name, descriptor, ..
+                } => (name.as_str(), descriptor.as_str()),
             };
             add(&mut methods, &class, name, desc);
 
             if let MethodEntry::Coded { code, .. } = m {
                 match code {
-                    MethodCode::Constructor { super_descriptor, .. }
-                    | MethodCode::ByoConstructor { super_descriptor, .. } => {
+                    MethodCode::Constructor {
+                        super_descriptor, ..
+                    }
+                    | MethodCode::ByoConstructor {
+                        super_descriptor, ..
+                    } => {
                         add(&mut methods, &super_, "<init>", super_descriptor);
-                        if let MethodCode::ByoConstructor { super_descriptor, .. } = code {
+                        if let MethodCode::ByoConstructor {
+                            super_descriptor, ..
+                        } = code
+                        {
                             let byo = byo_descriptor(super_descriptor);
                             add(&mut methods, &class, "<init>", &byo);
                         }
                     }
-                    MethodCode::SuperAccessor { superclass, method_name, descriptor } => {
-                        add(&mut methods, &class_desc(superclass), method_name, descriptor);
+                    MethodCode::SuperAccessor {
+                        superclass,
+                        method_name,
+                        descriptor,
+                    } => {
+                        add(
+                            &mut methods,
+                            &class_desc(superclass),
+                            method_name,
+                            descriptor,
+                        );
                     }
                     MethodCode::Finalize => {}
                 }
@@ -416,7 +475,7 @@ impl Builder {
         buf.extend_from_slice(DEX_MAGIC);
         buf.extend_from_slice(&[0u8; 4]); // checksum placeholder
         buf.extend_from_slice(&[0u8; 20]); // SHA-1 placeholder
-        // file_size placeholder
+                                           // file_size placeholder
         write_u32_le(&mut buf, 0);
         write_u32_le(&mut buf, HEADER_SIZE);
         write_u32_le(&mut buf, ENDIAN_CONSTANT);
@@ -479,8 +538,8 @@ impl Builder {
         // ── Field ID section ──────────────────────────────────────────────
         for f in fields {
             let class_idx = Self::type_idx(types, &f.class) as u16;
-            let type_idx  = Self::type_idx(types, &f.type_) as u16;
-            let name_idx  = strings.idx(&f.name);
+            let type_idx = Self::type_idx(types, &f.type_) as u16;
+            let name_idx = strings.idx(&f.name);
             write_u16_le(&mut buf, class_idx);
             write_u16_le(&mut buf, type_idx);
             write_u32_le(&mut buf, name_idx);
@@ -489,11 +548,14 @@ impl Builder {
         // ── Method ID section ─────────────────────────────────────────────
         for m in methods {
             let class_idx = Self::type_idx(types, &m.class) as u16;
-            let proto_idx = protos.iter().position(|p| {
-                p.shorty == m.proto.shorty
-                    && p.return_type == m.proto.return_type
-                    && p.params == m.proto.params
-            }).unwrap() as u16;
+            let proto_idx = protos
+                .iter()
+                .position(|p| {
+                    p.shorty == m.proto.shorty
+                        && p.return_type == m.proto.return_type
+                        && p.params == m.proto.params
+                })
+                .unwrap() as u16;
             let name_idx = strings.idx(&m.name);
             write_u16_le(&mut buf, class_idx);
             write_u16_le(&mut buf, proto_idx);
@@ -503,8 +565,8 @@ impl Builder {
         // ── Class def section (1 entry, 32 bytes) ─────────────────────────
         let class_def_start = buf.len();
         assert_eq!(class_def_start as u32, class_defs_off);
-        let class_type_idx  = Self::type_idx(types, &class_desc(&self.def.class_name));
-        let super_type_idx  = Self::type_idx(types, &class_desc(&self.def.superclass));
+        let class_type_idx = Self::type_idx(types, &class_desc(&self.def.class_name));
+        let super_type_idx = Self::type_idx(types, &class_desc(&self.def.superclass));
         write_u32_le(&mut buf, class_type_idx);
         write_u32_le(&mut buf, AccessFlags::PUBLIC.0);
         write_u32_le(&mut buf, super_type_idx);
@@ -512,8 +574,8 @@ impl Builder {
         let interfaces_off_pos = buf.len();
         write_u32_le(&mut buf, 0);
         write_u32_le(&mut buf, NO_INDEX); // source_file_idx
-        write_u32_le(&mut buf, 0);        // annotations_off
-        // class_data_off placeholder
+        write_u32_le(&mut buf, 0); // annotations_off
+                                   // class_data_off placeholder
         let class_data_off_pos = buf.len();
         write_u32_le(&mut buf, 0);
         write_u32_le(&mut buf, 0); // static_values_off
@@ -600,15 +662,15 @@ impl Builder {
         let mut code_items: Vec<CodeGen> = Vec::new();
 
         for m in &self.def.methods {
-            if let MethodEntry::Coded { name, descriptor, code, .. } = m {
-                let insns = self.emit_bytecode(
-                    code,
-                    descriptor,
-                    methods,
-                    fields,
-                    &my_class,
-                    &my_super,
-                );
+            if let MethodEntry::Coded {
+                name,
+                descriptor,
+                code,
+                ..
+            } = m
+            {
+                let insns =
+                    self.emit_bytecode(code, descriptor, methods, fields, &my_class, &my_super);
                 let (regs, ins, outs) = self.register_counts(code, descriptor);
                 code_items.push(CodeGen {
                     method_name: name.clone(),
@@ -697,22 +759,38 @@ impl Builder {
         let map_off = buf.len() as u32;
 
         let map_entries: Vec<(u16, u32, u32)> = vec![
-            (TYPE_HEADER_ITEM,      1,                      0),
-            (TYPE_STRING_ID_ITEM,   strings.len(),          HEADER_SIZE),
-            (TYPE_TYPE_ID_ITEM,     types.len() as u32,     type_ids_off),
-            (TYPE_PROTO_ID_ITEM,    protos.len() as u32,    proto_ids_off),
-            (TYPE_FIELD_ID_ITEM,    fields.len() as u32,    field_ids_off),
-            (TYPE_METHOD_ID_ITEM,   methods.len() as u32,   method_ids_off),
-            (TYPE_CLASS_DEF_ITEM,   1,                      class_defs_off),
-            (TYPE_STRING_DATA_ITEM, strings.len(),          *string_offsets.first().unwrap_or(&data_start)),
-            (TYPE_TYPE_LIST,        (proto_param_offsets.iter().filter(|&&x| x != 0).count() + if self.def.interfaces.is_empty() { 0 } else { 1 }) as u32, 0),
-            (TYPE_CODE_ITEM,        code_items.len() as u32, code_offsets.first().map(|c| c.off).unwrap_or(0)),
-            (TYPE_CLASS_DATA_ITEM,  1,                      class_data_off),
-            (TYPE_MAP_LIST,         1,                      map_off),
+            (TYPE_HEADER_ITEM, 1, 0),
+            (TYPE_STRING_ID_ITEM, strings.len(), HEADER_SIZE),
+            (TYPE_TYPE_ID_ITEM, types.len() as u32, type_ids_off),
+            (TYPE_PROTO_ID_ITEM, protos.len() as u32, proto_ids_off),
+            (TYPE_FIELD_ID_ITEM, fields.len() as u32, field_ids_off),
+            (TYPE_METHOD_ID_ITEM, methods.len() as u32, method_ids_off),
+            (TYPE_CLASS_DEF_ITEM, 1, class_defs_off),
+            (
+                TYPE_STRING_DATA_ITEM,
+                strings.len(),
+                *string_offsets.first().unwrap_or(&data_start),
+            ),
+            (
+                TYPE_TYPE_LIST,
+                (proto_param_offsets.iter().filter(|&&x| x != 0).count()
+                    + if self.def.interfaces.is_empty() { 0 } else { 1 }) as u32,
+                0,
+            ),
+            (
+                TYPE_CODE_ITEM,
+                code_items.len() as u32,
+                code_offsets.first().map(|c| c.off).unwrap_or(0),
+            ),
+            (TYPE_CLASS_DATA_ITEM, 1, class_data_off),
+            (TYPE_MAP_LIST, 1, map_off),
         ];
 
         // Filter out zero-count entries
-        let map_entries: Vec<_> = map_entries.into_iter().filter(|(_, cnt, _)| *cnt > 0).collect();
+        let map_entries: Vec<_> = map_entries
+            .into_iter()
+            .filter(|(_, cnt, _)| *cnt > 0)
+            .collect();
 
         write_u32_le(&mut buf, map_entries.len() as u32);
         for (type_code, count, off) in &map_entries {
@@ -752,33 +830,45 @@ impl Builder {
         // (registers_size, ins_size, outs_size)
         let params = parse_param_descriptors(descriptor);
         // Count wide (long/double) params — each takes 2 register slots
-        let param_slots: u16 = params.iter().map(|p| {
-            if p == "J" || p == "D" { 2 } else { 1 }
-        }).sum::<u16>() + 1; // +1 for `this`
+        let param_slots: u16 = params
+            .iter()
+            .map(|p| if p == "J" || p == "D" { 2 } else { 1 })
+            .sum::<u16>()
+            + 1; // +1 for `this`
 
         match code {
-            MethodCode::Constructor { super_descriptor, .. } => {
+            MethodCode::Constructor {
+                super_descriptor, ..
+            } => {
                 let sp = parse_param_descriptors(super_descriptor);
-                let out_slots: u16 = sp.iter().map(|p| {
-                    if p == "J" || p == "D" { 2 } else { 1 }
-                }).sum::<u16>() + 1;
+                let out_slots: u16 = sp
+                    .iter()
+                    .map(|p| if p == "J" || p == "D" { 2 } else { 1 })
+                    .sum::<u16>()
+                    + 1;
                 (param_slots, param_slots, out_slots.max(param_slots))
             }
-            MethodCode::ByoConstructor { super_descriptor, .. } => {
+            MethodCode::ByoConstructor {
+                super_descriptor, ..
+            } => {
                 // extra long param
                 let sp = parse_param_descriptors(super_descriptor);
-                let out_slots: u16 = sp.iter().map(|p| {
-                    if p == "J" || p == "D" { 2 } else { 1 }
-                }).sum::<u16>() + 1;
+                let out_slots: u16 = sp
+                    .iter()
+                    .map(|p| if p == "J" || p == "D" { 2 } else { 1 })
+                    .sum::<u16>()
+                    + 1;
                 // ins includes the extra long (2 regs)
                 let ins = param_slots + 2;
                 (ins, ins, out_slots.max(ins))
             }
             MethodCode::SuperAccessor { descriptor, .. } => {
                 let sp = parse_param_descriptors(descriptor);
-                let out_slots: u16 = sp.iter().map(|p| {
-                    if p == "J" || p == "D" { 2 } else { 1 }
-                }).sum::<u16>() + 1;
+                let out_slots: u16 = sp
+                    .iter()
+                    .map(|p| if p == "J" || p == "D" { 2 } else { 1 })
+                    .sum::<u16>()
+                    + 1;
                 (out_slots, out_slots, out_slots)
             }
             MethodCode::Finalize => (1, 1, 1),
@@ -795,12 +885,16 @@ impl Builder {
         _my_super: &str,
     ) -> Vec<u16> {
         match code {
-            MethodCode::Constructor { superclass, super_descriptor } => {
+            MethodCode::Constructor {
+                superclass,
+                super_descriptor,
+            } => {
                 // invoke-direct {p0..pN}, super.<init>(args)
                 // invoke-direct {p0..pN}, this.$$init(args)
                 // return-void
-                let super_midx = Self::method_idx(methods, &class_desc(superclass), "<init>", super_descriptor);
-                let init_midx  = Self::method_idx(methods, my_class, "$$init", super_descriptor);
+                let super_midx =
+                    Self::method_idx(methods, &class_desc(superclass), "<init>", super_descriptor);
+                let init_midx = Self::method_idx(methods, my_class, "$$init", super_descriptor);
                 let params = parse_param_descriptors(super_descriptor);
                 let arg_regs: Vec<u8> = self.param_regs(&params, 1);
                 let mut insns = Vec::new();
@@ -809,11 +903,15 @@ impl Builder {
                 insns.push(0x000e); // return-void
                 insns
             }
-            MethodCode::ByoConstructor { superclass, super_descriptor } => {
+            MethodCode::ByoConstructor {
+                superclass,
+                super_descriptor,
+            } => {
                 // invoke-direct {p0..pN}, super.<init>(args)
                 // iput-wide p_last, p0, nativePtr
                 // return-void
-                let super_midx = Self::method_idx(methods, &class_desc(superclass), "<init>", super_descriptor);
+                let super_midx =
+                    Self::method_idx(methods, &class_desc(superclass), "<init>", super_descriptor);
                 let params = parse_param_descriptors(super_descriptor);
                 let arg_regs: Vec<u8> = self.param_regs(&params, 1);
                 // native ptr long starts right after the normal args
@@ -827,10 +925,15 @@ impl Builder {
                 insns.push(0x000e);
                 insns
             }
-            MethodCode::SuperAccessor { superclass, method_name, descriptor } => {
+            MethodCode::SuperAccessor {
+                superclass,
+                method_name,
+                descriptor,
+            } => {
                 // invoke-super {p0..pN}, super.method(args)
                 // return-void  (or return appropriate type)
-                let super_midx = Self::method_idx(methods, &class_desc(superclass), method_name, descriptor);
+                let super_midx =
+                    Self::method_idx(methods, &class_desc(superclass), method_name, descriptor);
                 let params = parse_param_descriptors(descriptor);
                 let arg_regs: Vec<u8> = self.param_regs(&params, 1);
                 let mut insns = Vec::new();
@@ -844,7 +947,8 @@ impl Builder {
                 // invoke-super  {p0}, Object.finalize()V
                 // return-void
                 let destroy_midx = Self::method_idx(methods, my_class, "$$destroy", "()V");
-                let finalize_midx = Self::method_idx(methods, "Ljava/lang/Object;", "finalize", "()V");
+                let finalize_midx =
+                    Self::method_idx(methods, "Ljava/lang/Object;", "finalize", "()V");
                 let mut insns = Vec::new();
                 emit_invoke(&mut insns, 0x70, destroy_midx, &[0]);
                 emit_invoke(&mut insns, 0x6f, finalize_midx, &[0]);
@@ -871,16 +975,28 @@ impl Builder {
         &self,
         methods: &[MethodIdEntry],
         my_class: &str,
-    ) -> (Vec<(u32, String, String, AccessFlags)>, Vec<(u32, String, String, AccessFlags)>) {
+    ) -> (
+        Vec<(u32, String, String, AccessFlags)>,
+        Vec<(u32, String, String, AccessFlags)>,
+    ) {
         let mut direct: Vec<(u32, String, String, AccessFlags)> = Vec::new();
-        let mut virt:   Vec<(u32, String, String, AccessFlags)> = Vec::new();
+        let mut virt: Vec<(u32, String, String, AccessFlags)> = Vec::new();
 
         let lookup_flags = |name: &str, desc: &str| -> AccessFlags {
             for m in &self.def.methods {
                 match m {
-                    MethodEntry::Native { name: n, descriptor: d, access, .. }
-                    | MethodEntry::Coded { name: n, descriptor: d, access, .. }
-                        if n == name && d == desc => return *access,
+                    MethodEntry::Native {
+                        name: n,
+                        descriptor: d,
+                        access,
+                        ..
+                    }
+                    | MethodEntry::Coded {
+                        name: n,
+                        descriptor: d,
+                        access,
+                        ..
+                    } if n == name && d == desc => return *access,
                     _ => {}
                 }
             }
@@ -895,11 +1011,12 @@ impl Builder {
         };
 
         for (idx, m) in methods.iter().enumerate() {
-            if m.class != my_class { continue; }
+            if m.class != my_class {
+                continue;
+            }
             let flags = lookup_flags(&m.name, &self.proto_to_desc(&m.proto));
-            let is_direct = m.name == "<init>"
-                || m.name == "<clinit>"
-                || flags.contains(AccessFlags::PRIVATE);
+            let is_direct =
+                m.name == "<init>" || m.name == "<clinit>" || flags.contains(AccessFlags::PRIVATE);
             let midx = idx as u32;
             let desc = self.proto_to_desc(&m.proto);
             if is_direct {
@@ -935,7 +1052,9 @@ pub fn class_desc(name: &str) -> String {
 
 /// True if the string looks like a valid JNI type descriptor.
 fn is_type_descriptor(s: &str) -> bool {
-    if s.is_empty() { return false; }
+    if s.is_empty() {
+        return false;
+    }
     match s.chars().next().unwrap() {
         'V' | 'Z' | 'B' | 'S' | 'C' | 'I' | 'J' | 'F' | 'D' => s.len() == 1,
         'L' => s.ends_with(';'),
@@ -975,9 +1094,9 @@ fn emit_invoke(insns: &mut Vec<u16>, opcode: u8, method_idx: u32, regs: &[u8]) {
 
 fn return_opcode(ret_desc: &str) -> u16 {
     match ret_desc.chars().next().unwrap_or('V') {
-        'V'             => 0x000e, // return-void
-        'L' | '['       => 0x0011, // return-object
-        'J' | 'D'       => 0x0010, // return-wide
-        _               => 0x000f, // return (primitive)
+        'V' => 0x000e,       // return-void
+        'L' | '[' => 0x0011, // return-object
+        'J' | 'D' => 0x0010, // return-wide
+        _ => 0x000f,         // return (primitive)
     }
 }

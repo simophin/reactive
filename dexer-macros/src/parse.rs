@@ -85,7 +85,13 @@ impl Parse for DexClass {
 
         // ── implements "..." ; (zero or more) ─────────────────────────────
         let mut implements = Vec::new();
-        while input.peek(Ident) && input.fork().parse::<Ident>().map(|i| i == "implements").unwrap_or(false) {
+        while input.peek(Ident)
+            && input
+                .fork()
+                .parse::<Ident>()
+                .map(|i| i == "implements")
+                .unwrap_or(false)
+        {
             let _: Ident = input.parse()?; // "implements"
             let iface: LitStr = input.parse()?;
             let _: Token![;] = input.parse()?;
@@ -98,7 +104,15 @@ impl Parse for DexClass {
             methods.push(input.parse()?);
         }
 
-        Ok(DexClass { java_class, vis, name, fields, extends, implements, methods })
+        Ok(DexClass {
+            java_class,
+            vis,
+            name,
+            fields,
+            extends,
+            implements,
+            methods,
+        })
     }
 }
 
@@ -109,7 +123,10 @@ fn extract_java_class(attrs: &[Attribute]) -> Result<LitStr> {
             return Ok(lit);
         }
     }
-    Err(Error::new(Span::call_site(), "missing #[java_class = \"...\"] attribute"))
+    Err(Error::new(
+        Span::call_site(),
+        "missing #[java_class = \"...\"] attribute",
+    ))
 }
 
 fn parse_rust_fields(input: ParseStream<'_>) -> Result<Vec<RustField>> {
@@ -149,7 +166,13 @@ impl Parse for DexMethod {
 
         let jni_params = extract_jni_params(raw_params, &kind)?;
 
-        Ok(DexMethod { kind, rust_name, jni_params, return_ty, body })
+        Ok(DexMethod {
+            kind,
+            rust_name,
+            jni_params,
+            return_ty,
+            body,
+        })
     }
 }
 
@@ -201,7 +224,10 @@ fn extract_jni_params(
         Some(other) => {
             // constructor has no self
             if !matches!(kind, MethodKind::Constructor) {
-                return Err(Error::new_spanned(other, "expected `&mut self` as first parameter"));
+                return Err(Error::new_spanned(
+                    other,
+                    "expected `&mut self` as first parameter",
+                ));
             }
             // For constructor, the first param IS a jni param — re-process it
             if let FnArg::Typed(pt) = other {
@@ -231,7 +257,10 @@ fn extract_jni_params(
     if let Some(arg) = iter.next() {
         if let FnArg::Typed(pt) = arg {
             if !is_env_param(&pt) {
-                return Err(Error::new_spanned(pt.ty, "second parameter must be `env: &mut jni::JNIEnv`"));
+                return Err(Error::new_spanned(
+                    pt.ty,
+                    "second parameter must be `env: &mut jni::JNIEnv`",
+                ));
             }
         }
     }
@@ -255,7 +284,10 @@ fn extract_jni_params(
         match arg {
             FnArg::Typed(pt) => params.push(make_jni_param(pt)?),
             FnArg::Receiver(r) => {
-                return Err(Error::new_spanned(r, "unexpected receiver in JNI param list"))
+                return Err(Error::new_spanned(
+                    r,
+                    "unexpected receiver in JNI param list",
+                ))
             }
         }
     }
@@ -266,7 +298,9 @@ fn extract_jni_params(
 fn is_env_param(pt: &PatType) -> bool {
     // Matches `env: &mut jni::JNIEnv` or `env: &jni::JNIEnv`
     if let syn::Pat::Ident(pi) = pt.pat.as_ref() {
-        if pi.ident != "env" { return false; }
+        if pi.ident != "env" {
+            return false;
+        }
     }
     // Accept any reference type as the env
     matches!(pt.ty.as_ref(), Type::Reference(_))
@@ -283,13 +317,22 @@ fn is_super_caller_param(pt: &PatType) -> bool {
 fn make_jni_param(pt: PatType) -> Result<JniParam> {
     let name = match pt.pat.as_ref() {
         syn::Pat::Ident(pi) => pi.ident.clone(),
-        other => return Err(Error::new_spanned(other, "JNI parameter must be a simple identifier")),
+        other => {
+            return Err(Error::new_spanned(
+                other,
+                "JNI parameter must be a simple identifier",
+            ))
+        }
     };
 
     // Extract `#[class = "..."]` from param attrs
     let class_attr = extract_class_attr(&pt.attrs)?;
 
-    Ok(JniParam { name, ty: *pt.ty, class_attr })
+    Ok(JniParam {
+        name,
+        ty: *pt.ty,
+        class_attr,
+    })
 }
 
 fn extract_class_attr(attrs: &[Attribute]) -> Result<Option<LitStr>> {

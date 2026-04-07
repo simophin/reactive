@@ -3,9 +3,13 @@ pub fn write_uleb128(buf: &mut Vec<u8>, mut v: u32) {
     loop {
         let mut byte = (v & 0x7f) as u8;
         v >>= 7;
-        if v != 0 { byte |= 0x80; }
+        if v != 0 {
+            byte |= 0x80;
+        }
         buf.push(byte);
-        if v == 0 { break; }
+        if v == 0 {
+            break;
+        }
     }
 }
 
@@ -39,9 +43,8 @@ pub fn adler32(data: &[u8]) -> u32 {
 }
 
 pub fn sha1(data: &[u8]) -> [u8; 20] {
-    let (mut h0, mut h1, mut h2, mut h3, mut h4): (u32, u32, u32, u32, u32) = (
-        0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0,
-    );
+    let (mut h0, mut h1, mut h2, mut h3, mut h4): (u32, u32, u32, u32, u32) =
+        (0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0);
 
     let bit_len = (data.len() as u64).wrapping_mul(8);
     let mut msg = data.to_vec();
@@ -63,17 +66,22 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
         let (mut a, mut b, mut c, mut d, mut e) = (h0, h1, h2, h3, h4);
         for i in 0..80 {
             let (f, k): (u32, u32) = match i {
-                0..=19  => ((b & c) | (!b & d),              0x5A827999),
-                20..=39 => (b ^ c ^ d,                        0x6ED9EBA1),
-                40..=59 => ((b & c) | (b & d) | (c & d),     0x8F1BBCDC),
-                _       => (b ^ c ^ d,                        0xCA62C1D6),
+                0..=19 => ((b & c) | (!b & d), 0x5A827999),
+                20..=39 => (b ^ c ^ d, 0x6ED9EBA1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDC),
+                _ => (b ^ c ^ d, 0xCA62C1D6),
             };
-            let temp = a.rotate_left(5)
+            let temp = a
+                .rotate_left(5)
                 .wrapping_add(f)
                 .wrapping_add(e)
                 .wrapping_add(k)
                 .wrapping_add(w[i]);
-            e = d; d = c; c = b.rotate_left(30); b = a; a = temp;
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
         }
         h0 = h0.wrapping_add(a);
         h1 = h1.wrapping_add(b);

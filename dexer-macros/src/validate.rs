@@ -14,7 +14,14 @@ const VALID_PRIMITIVES: &[&str] = &[
     "jni :: sys :: jfloat",
     "jni :: sys :: jdouble",
     // Allow bare aliases too
-    "jboolean", "jbyte", "jchar", "jshort", "jint", "jlong", "jfloat", "jdouble",
+    "jboolean",
+    "jbyte",
+    "jchar",
+    "jshort",
+    "jint",
+    "jlong",
+    "jfloat",
+    "jdouble",
 ];
 
 /// Valid return types (in addition to `()` / no annotation for void).
@@ -29,7 +36,14 @@ const VALID_RETURNS: &[&str] = &[
     "jni :: sys :: jfloat",
     "jni :: sys :: jdouble",
     "JObject",
-    "jboolean", "jbyte", "jchar", "jshort", "jint", "jlong", "jfloat", "jdouble",
+    "jboolean",
+    "jbyte",
+    "jchar",
+    "jshort",
+    "jint",
+    "jlong",
+    "jfloat",
+    "jdouble",
 ];
 
 pub fn validate(class: &DexClass) -> Result<()> {
@@ -42,7 +56,11 @@ pub fn validate(class: &DexClass) -> Result<()> {
     }
 
     // Exactly one constructor
-    let ctor_count = class.methods.iter().filter(|m| matches!(m.kind, MethodKind::Constructor)).count();
+    let ctor_count = class
+        .methods
+        .iter()
+        .filter(|m| matches!(m.kind, MethodKind::Constructor))
+        .count();
     if ctor_count != 1 {
         errors.push(Error::new(
             Span::call_site(),
@@ -62,10 +80,7 @@ fn validate_method(method: &DexMethod) -> Result<()> {
             syn::ReturnType::Type(_, ty) => {
                 let s = type_to_string(ty);
                 if s != "Self" {
-                    errors.push(Error::new_spanned(
-                        ty,
-                        "#[constructor] must return `Self`",
-                    ));
+                    errors.push(Error::new_spanned(ty, "#[constructor] must return `Self`"));
                 }
             }
             syn::ReturnType::Default => {
@@ -141,8 +156,7 @@ fn validate_param(param: &JniParam, kind: &MethodKind) -> Result<()> {
 fn validate_return_type(ty: &Type) -> Result<()> {
     let ty_str = type_to_string(ty);
     let valid = VALID_RETURNS.iter().any(|r| {
-        ty_str == *r
-            || ty_str.ends_with(&format!("::{}", r.split("::").last().unwrap_or("")))
+        ty_str == *r || ty_str.ends_with(&format!("::{}", r.split("::").last().unwrap_or("")))
     });
     if !valid {
         return Err(Error::new_spanned(
@@ -173,7 +187,9 @@ fn combine_errors(errors: Vec<Error>) -> Result<()> {
     match iter.next() {
         None => Ok(()),
         Some(mut first) => {
-            for e in iter { first.combine(e); }
+            for e in iter {
+                first.combine(e);
+            }
             Err(first)
         }
     }

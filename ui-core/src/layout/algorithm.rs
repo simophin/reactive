@@ -201,13 +201,25 @@ pub fn compute_flex_layout(
 
     let (natural, min) = if vertical {
         (
-            Size { width: max_cross, height: natural_main },
-            Size { width: min_cross, height: min_main + spacing_total },
+            Size {
+                width: max_cross,
+                height: natural_main,
+            },
+            Size {
+                width: min_cross,
+                height: min_main + spacing_total,
+            },
         )
     } else {
         (
-            Size { width: natural_main, height: max_cross },
-            Size { width: min_main + spacing_total, height: min_cross },
+            Size {
+                width: natural_main,
+                height: max_cross,
+            },
+            Size {
+                width: min_main + spacing_total,
+                height: min_cross,
+            },
         )
     };
 

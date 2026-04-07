@@ -6,9 +6,9 @@ use crate::parse::{DexClass, DexMethod, JniParam, MethodKind};
 use crate::validate::type_to_string;
 
 pub fn generate(class: DexClass) -> TokenStream {
-    let struct_def   = gen_struct(&class);
-    let impl_block   = gen_impl(&class);
-    let bridge_fns   = gen_bridges(&class);
+    let struct_def = gen_struct(&class);
+    let impl_block = gen_impl(&class);
+    let bridge_fns = gen_bridges(&class);
 
     quote! {
         #struct_def
@@ -20,11 +20,11 @@ pub fn generate(class: DexClass) -> TokenStream {
 // ─────────────────────────── struct ──────────────────────────────────────
 
 fn gen_struct(class: &DexClass) -> TokenStream {
-    let vis  = &class.vis;
+    let vis = &class.vis;
     let name = &class.name;
     let fields = class.fields.iter().map(|f| {
         let fname = &f.name;
-        let fty   = &f.ty;
+        let fty = &f.ty;
         quote! { pub #fname: #fty, }
     });
     quote! {
@@ -40,8 +40,8 @@ fn gen_impl(class: &DexClass) -> TokenStream {
     let name = &class.name;
 
     let user_methods = class.methods.iter().map(|m| gen_user_method(m));
-    let into_java    = gen_into_java(class);
-    let dex_output   = gen_dex_output_fn(class);
+    let into_java = gen_into_java(class);
+    let dex_output = gen_dex_output_fn(class);
 
     quote! {
         impl #name {
@@ -56,7 +56,7 @@ fn gen_impl(class: &DexClass) -> TokenStream {
 fn gen_user_method(method: &DexMethod) -> TokenStream {
     let name = &method.rust_name;
     let body = &method.body;
-    let ret  = &method.return_ty;
+    let ret = &method.return_ty;
 
     let self_param = if matches!(method.kind, MethodKind::Constructor) {
         quote! {}
@@ -74,7 +74,7 @@ fn gen_user_method(method: &DexMethod) -> TokenStream {
 
     let jni_params = method.jni_params.iter().map(|p| {
         let pname = &p.name;
-        let pty   = &p.ty;
+        let pty = &p.ty;
         quote! { #pname: #pty, }
     });
 
@@ -88,7 +88,10 @@ fn gen_user_method(method: &DexMethod) -> TokenStream {
 /// Uses the BYO constructor `<init>(args..., long)`.
 fn gen_into_java(class: &DexClass) -> TokenStream {
     let java_class_str = &class.java_class;
-    let ctor = class.methods.iter().find(|m| matches!(m.kind, MethodKind::Constructor))
+    let ctor = class
+        .methods
+        .iter()
+        .find(|m| matches!(m.kind, MethodKind::Constructor))
         .expect("validated: exactly one constructor");
 
     let arg_params = ctor.jni_params.iter().map(|p| {
@@ -141,8 +144,12 @@ fn gen_dex_output_fn(class: &DexClass) -> TokenStream {
 /// Build the `dexer::ClassDef { ... }` expression.
 fn gen_class_def(class: &DexClass) -> TokenStream {
     let java_class = class.java_class.value();
-    let extends    = class.extends.value();
-    let implements = class.implements.iter().map(|i| i.value()).collect::<Vec<_>>();
+    let extends = class.extends.value();
+    let implements = class
+        .implements
+        .iter()
+        .map(|i| i.value())
+        .collect::<Vec<_>>();
 
     // Always-present nativePtr field
     let fields_expr = quote! {
@@ -172,7 +179,11 @@ fn gen_method_entries(class: &DexClass) -> TokenStream {
     let name = &class.name;
     let mut entries: Vec<TokenStream> = Vec::new();
 
-    let ctor = class.methods.iter().find(|m| matches!(m.kind, MethodKind::Constructor)).unwrap();
+    let ctor = class
+        .methods
+        .iter()
+        .find(|m| matches!(m.kind, MethodKind::Constructor))
+        .unwrap();
     let extends = class.extends.value();
     let ctor_descriptor = jni_descriptor_for(ctor);
     let byo_desc = byo_descriptor_for(ctor);
@@ -241,7 +252,7 @@ fn gen_method_entries(class: &DexClass) -> TokenStream {
             MethodKind::Constructor => {} // handled above
             MethodKind::Override { java_name } => {
                 let jname = java_name.value();
-                let desc  = jni_descriptor_for(method);
+                let desc = jni_descriptor_for(method);
                 let super_name = format!("{jname}$$super");
                 let bridge_fn = bridge_ident(name, &method.rust_name.to_string());
 
@@ -270,7 +281,7 @@ fn gen_method_entries(class: &DexClass) -> TokenStream {
             }
             MethodKind::Method { java_name } => {
                 let jname = java_name.value();
-                let desc  = jni_descriptor_for(method);
+                let desc = jni_descriptor_for(method);
                 let bridge_fn = bridge_ident(name, &method.rust_name.to_string());
 
                 entries.push(quote! {
@@ -308,7 +319,9 @@ fn gen_bridges(class: &DexClass) -> TokenStream {
     for method in &class.methods {
         match &method.kind {
             MethodKind::Constructor => {}
-            MethodKind::Override { java_name } => bridges.push(gen_method_bridge(name, method, Some(java_name))),
+            MethodKind::Override { java_name } => {
+                bridges.push(gen_method_bridge(name, method, Some(java_name)))
+            }
             MethodKind::Method { .. } => bridges.push(gen_method_bridge(name, method, None)),
         }
     }
@@ -317,9 +330,13 @@ fn gen_bridges(class: &DexClass) -> TokenStream {
 }
 
 fn gen_init_bridge(class: &DexClass) -> TokenStream {
-    let name  = &class.name;
+    let name = &class.name;
     let fn_id = bridge_ident(name, "init");
-    let ctor  = class.methods.iter().find(|m| matches!(m.kind, MethodKind::Constructor)).unwrap();
+    let ctor = class
+        .methods
+        .iter()
+        .find(|m| matches!(m.kind, MethodKind::Constructor))
+        .unwrap();
 
     let param_decls = ctor.jni_params.iter().map(|p| {
         let pn = &p.name;
@@ -351,7 +368,7 @@ fn gen_init_bridge(class: &DexClass) -> TokenStream {
 }
 
 fn gen_destroy_bridge(class: &DexClass) -> TokenStream {
-    let name  = &class.name;
+    let name = &class.name;
     let fn_id = bridge_ident(name, "destroy");
     quote! {
         #[allow(non_snake_case)]
@@ -374,7 +391,7 @@ fn gen_method_bridge(
     method: &DexMethod,
     super_java_name: Option<&LitStr>,
 ) -> TokenStream {
-    let fn_id    = bridge_ident(struct_name, &method.rust_name.to_string());
+    let fn_id = bridge_ident(struct_name, &method.rust_name.to_string());
     let rust_name = &method.rust_name;
 
     let param_decls = method.jni_params.iter().map(|p| {
@@ -449,16 +466,16 @@ fn primitive_descriptor(ty: &Type) -> String {
     let s = type_to_string(ty);
     let last = s.split("::").last().unwrap_or(&s);
     match last.trim() {
-        "jboolean"  => "Z".into(),
-        "jbyte"     => "B".into(),
-        "jchar"     => "C".into(),
-        "jshort"    => "S".into(),
-        "jint"      => "I".into(),
-        "jlong"     => "J".into(),
-        "jfloat"    => "F".into(),
-        "jdouble"   => "D".into(),
-        "JObject"   => "Ljava/lang/Object;".into(),
-        _           => "Ljava/lang/Object;".into(),
+        "jboolean" => "Z".into(),
+        "jbyte" => "B".into(),
+        "jchar" => "C".into(),
+        "jshort" => "S".into(),
+        "jint" => "I".into(),
+        "jlong" => "J".into(),
+        "jfloat" => "F".into(),
+        "jdouble" => "D".into(),
+        "JObject" => "Ljava/lang/Object;".into(),
+        _ => "Ljava/lang/Object;".into(),
     }
 }
 
@@ -467,7 +484,9 @@ fn return_descriptor_for(ret: &ReturnType) -> String {
         ReturnType::Default => "V".into(),
         ReturnType::Type(_, ty) => {
             let s = type_to_string(ty);
-            if s == "Self" { return "V".into(); }
+            if s == "Self" {
+                return "V".into();
+            }
             primitive_descriptor(ty)
         }
     }
@@ -477,7 +496,12 @@ fn return_descriptor_for(ret: &ReturnType) -> String {
 fn byo_descriptor_for(ctor: &DexMethod) -> String {
     let base = jni_descriptor_for(ctor);
     // base = "(params)V" — insert J before )V
-    let params: String = base.trim_start_matches('(').splitn(2, ')').next().unwrap_or("").to_string();
+    let params: String = base
+        .trim_start_matches('(')
+        .splitn(2, ')')
+        .next()
+        .unwrap_or("")
+        .to_string();
     format!("({params}J)V")
 }
 
@@ -488,16 +512,16 @@ fn jni_sys_type(ty: &Type) -> TokenStream {
     let s = type_to_string(ty);
     let last = s.split("::").last().unwrap_or(&s).trim();
     match last {
-        "jboolean"  => quote! { jni::sys::jboolean },
-        "jbyte"     => quote! { jni::sys::jbyte },
-        "jchar"     => quote! { jni::sys::jchar },
-        "jshort"    => quote! { jni::sys::jshort },
-        "jint"      => quote! { jni::sys::jint },
-        "jlong"     => quote! { jni::sys::jlong },
-        "jfloat"    => quote! { jni::sys::jfloat },
-        "jdouble"   => quote! { jni::sys::jdouble },
-        "JObject"   => quote! { jni::sys::jobject },
-        _           => quote! { jni::sys::jobject },
+        "jboolean" => quote! { jni::sys::jboolean },
+        "jbyte" => quote! { jni::sys::jbyte },
+        "jchar" => quote! { jni::sys::jchar },
+        "jshort" => quote! { jni::sys::jshort },
+        "jint" => quote! { jni::sys::jint },
+        "jlong" => quote! { jni::sys::jlong },
+        "jfloat" => quote! { jni::sys::jfloat },
+        "jdouble" => quote! { jni::sys::jdouble },
+        "JObject" => quote! { jni::sys::jobject },
+        _ => quote! { jni::sys::jobject },
     }
 }
 
@@ -520,14 +544,14 @@ fn jvalue_from_param(p: &JniParam, expr: TokenStream) -> TokenStream {
     match last {
         "JObject" => quote! { jni::objects::JValue::Object(&#expr).to_jni() },
         "jboolean" => quote! { jni::objects::JValue::Bool(#expr).to_jni() },
-        "jbyte"    => quote! { jni::objects::JValue::Byte(#expr).to_jni() },
-        "jchar"    => quote! { jni::objects::JValue::Char(#expr).to_jni() },
-        "jshort"   => quote! { jni::objects::JValue::Short(#expr).to_jni() },
-        "jint"     => quote! { jni::objects::JValue::Int(#expr).to_jni() },
-        "jlong"    => quote! { jni::objects::JValue::Long(#expr).to_jni() },
-        "jfloat"   => quote! { jni::objects::JValue::Float(#expr).to_jni() },
-        "jdouble"  => quote! { jni::objects::JValue::Double(#expr).to_jni() },
-        _          => quote! { jni::objects::JValue::Object(&#expr).to_jni() },
+        "jbyte" => quote! { jni::objects::JValue::Byte(#expr).to_jni() },
+        "jchar" => quote! { jni::objects::JValue::Char(#expr).to_jni() },
+        "jshort" => quote! { jni::objects::JValue::Short(#expr).to_jni() },
+        "jint" => quote! { jni::objects::JValue::Int(#expr).to_jni() },
+        "jlong" => quote! { jni::objects::JValue::Long(#expr).to_jni() },
+        "jfloat" => quote! { jni::objects::JValue::Float(#expr).to_jni() },
+        "jdouble" => quote! { jni::objects::JValue::Double(#expr).to_jni() },
+        _ => quote! { jni::objects::JValue::Object(&#expr).to_jni() },
     }
 }
 
@@ -536,7 +560,9 @@ fn gen_return_expr(ret: &ReturnType) -> TokenStream {
         ReturnType::Default => quote! {},
         ReturnType::Type(_, ty) => {
             let s = type_to_string(ty);
-            if s == "Self" { return quote! {}; }
+            if s == "Self" {
+                return quote! {};
+            }
             quote! { -> #ty }
         }
     }

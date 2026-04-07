@@ -5,10 +5,10 @@ use crate::writer::DexWriter;
 pub struct AccessFlags(pub u32);
 
 impl AccessFlags {
-    pub const PUBLIC: Self      = Self(0x0001);
-    pub const PRIVATE: Self     = Self(0x0002);
-    pub const PROTECTED: Self   = Self(0x0004);
-    pub const NATIVE: Self      = Self(0x0100);
+    pub const PUBLIC: Self = Self(0x0001);
+    pub const PRIVATE: Self = Self(0x0002);
+    pub const PROTECTED: Self = Self(0x0004);
+    pub const NATIVE: Self = Self(0x0100);
     pub const CONSTRUCTOR: Self = Self(0x10000);
 
     pub fn with(self, other: Self) -> Self {

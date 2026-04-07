@@ -1,97 +1,43 @@
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::ffi::c_void;
+use std::rc::Rc;
 
+use crate::context::{CHILD_VIEW, ChildViewEntry};
+use crate::ui::flex::Flex;
+use crate::ui::layout::{activate_constraints, pin_edges};
 use crate::view_component::AppKitViewBuilder;
 use objc2::rc::Retained;
+use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSCollectionView, NSCollectionViewDataSource, NSCollectionViewItem,
-    NSIndexPathNSCollectionViewAdditions,
+    NSControlTextEditingDelegate, NSScrollView, NSTableColumn, NSTableView,
+    NSTableViewColumnAutoresizingStyle, NSTableViewDataSource, NSTableViewDelegate,
+    NSTableViewSelectionHighlightStyle, NSUserInterfaceItemIdentification, NSView,
 };
-use objc2_foundation::{MainThreadMarker, NSIndexPath, NSInteger, NSObject, NSObjectProtocol};
-use reactive_core::{Component, ReadStoredSignal, SetupContext, Signal};
-use ui_core::widgets::{ListData, ListOrientation};
-
-pub struct CollectionView {
-    component: AppKitViewBuilder<NSCollectionView, ()>,
-    orientation: ListOrientation,
-}
-
-impl Component for CollectionView {
-    fn setup(self: Box<Self>, _ctx: &mut SetupContext) {
-        todo!()
-    }
-}
-
-impl ui_core::widgets::List for CollectionView {
-    fn new<L, I, C>(
-        _list_data: impl Signal<Value = L> + 'static,
-        _component_factory: impl FnMut(ReadStoredSignal<I>) -> C + 'static,
-    ) -> Self
-    where
-        L: ListData<I> + 'static,
-        C: Component + 'static,
-        I: 'static,
-    {
-        todo!()
-    }
-
-    fn orientation(self, _orientation: ListOrientation) -> Self {
-        todo!()
-    }
-}
-
-// // ---------------------------------------------------------------------------
-// // Public API
-// // ---------------------------------------------------------------------------
-//
-// /// A reactive, recycling wrapper around `NSCollectionView`.
-// ///
-// /// Each live `NSCollectionViewItem` carries its own companion `StoredSignal<Item>`
-// /// stored as an ObjC ivar.  When AppKit recycles a cell we simply write new
-// /// data through that signal; reactivity propagates the update without any view
-// /// teardown.
-// pub struct CollectionView<ItemsSignal, CellBuilder> {
-//     items: ItemsSignal,
-//     cell_builder: Rc<RefCell<CellBuilder>>,
-//     layout: Retained<NSCollectionViewLayout>,
-// }
-
-// impl<ItemsSignal, CellBuilder> CollectionView<ItemsSignal, CellBuilder> {
-//     pub fn new(
-//         items: ItemsSignal,
-//         cell_builder: CellBuilder,
-//         layout: Retained<NSCollectionViewLayout>,
-//     ) -> Self {
-//         Self {
-//             items,
-//             cell_builder: Rc::new(RefCell::new(cell_builder)),
-//             layout,
-//         }
-//     }
-// }
+use objc2_foundation::{MainThreadMarker, NSInteger, NSObject, NSObjectProtocol, NSSize, NSString};
+use reactive_core::{
+    BoxedComponent, Component, IntoSignal, ReadStoredSignal, SetupContext, Signal, StoredSignal,
+};
+use ui_core::layout::CrossAxisAlignment;
+use ui_core::widgets::{Column, List, ListComparator, ListData, ListOrientation};
 
 // ---------------------------------------------------------------------------
-// ReactiveCollectionViewItem — NSCollectionViewItem subclass with signal ivar
+// ReactiveCellView — NSView subclass that stores a per-cell signal pointer
 //
-// `signal_ptr` stores a heap pointer to a `Box<StoredSignal<T>>`.
+//   null     → cell is fresh; no component set up yet
+//   non-null → component is live; dereference to get StoredSignal<I>
 //
-//   null  → cell is freshly allocated; no component set up yet.
-//   non-null → component is live; dereference to get the signal.
-//
-// The Box is freed via an `on_cleanup` registered on the cell's own child
-// component, so it is automatically reclaimed when the collection view
-// component tree is torn down.
+// The Box<StoredSignal<I>> is freed in an on_cleanup registered during
+// component setup, so it is reclaimed when the list is torn down.
 // ---------------------------------------------------------------------------
 
-struct ReactiveItemIvars {
+struct CellViewIvars {
     signal_ptr: Cell<*const c_void>,
 }
 
-impl Default for ReactiveItemIvars {
+impl Default for CellViewIvars {
     fn default() -> Self {
-        // Null pointer = "not yet configured".  ObjC zero-initialises ivars on
-        // alloc so this matches what AppKit sees when it creates cells itself.
         Self {
             signal_ptr: Cell::new(std::ptr::null()),
         }
@@ -99,41 +45,40 @@ impl Default for ReactiveItemIvars {
 }
 
 define_class!(
-    #[unsafe(super(NSCollectionViewItem))]
+    #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
-    #[name = "ReactiveCollectionViewItem"]
-    #[ivars = ReactiveItemIvars]
-    struct ReactiveItem;
+    #[name = "ReactiveListCellView"]
+    #[ivars = CellViewIvars]
+    struct ReactiveCellView;
 
-    unsafe impl NSObjectProtocol for ReactiveItem {}
+    unsafe impl NSObjectProtocol for ReactiveCellView {}
 );
 
-// ---------------------------------------------------------------------------
-// ObjC helpers
-// ---------------------------------------------------------------------------
-
-fn make_index_path(item: usize) -> Retained<NSIndexPath> {
-    NSIndexPath::indexPathForItem_inSection(item as NSInteger, 0)
+impl ReactiveCellView {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(CellViewIvars::default());
+        unsafe { msg_send![super(this), init] }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Type-erased data-source callbacks
+// Type-erased table callbacks
 // ---------------------------------------------------------------------------
 
-struct DataSourceCallbacks {
-    item_count: Box<dyn Fn() -> usize>,
-    item_at: Box<dyn Fn(usize) -> Retained<NSCollectionViewItem>>,
+struct TableCallbacks {
+    row_count: Box<dyn Fn() -> usize>,
+    view_for_row: Box<dyn Fn(&NSTableView, usize) -> Retained<NSView>>,
 }
 
 // ---------------------------------------------------------------------------
-// ObjC data-source class
+// TableDataSource — NSObject subclass that wires NSTableView data + delegate
 // ---------------------------------------------------------------------------
 
-struct DataSourceIvars {
+struct TableDataSourceIvars {
     ptr: Cell<*const c_void>,
 }
 
-impl Default for DataSourceIvars {
+impl Default for TableDataSourceIvars {
     fn default() -> Self {
         Self {
             ptr: Cell::new(std::ptr::null()),
@@ -144,44 +89,47 @@ impl Default for DataSourceIvars {
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "ReactiveCollectionViewDataSource"]
-    #[ivars = DataSourceIvars]
-    struct CollectionDataSource;
+    #[name = "ReactiveListTableDataSource"]
+    #[ivars = TableDataSourceIvars]
+    struct TableDataSource;
 
-    unsafe impl NSObjectProtocol for CollectionDataSource {}
+    unsafe impl NSObjectProtocol for TableDataSource {}
 
-    unsafe impl NSCollectionViewDataSource for CollectionDataSource {
-        #[unsafe(method(collectionView:numberOfItemsInSection:))]
-        fn collection_view_number_of_items(
-            &self,
-            _cv: &NSCollectionView,
-            _section: NSInteger,
-        ) -> NSInteger {
+    unsafe impl NSTableViewDataSource for TableDataSource {
+        #[allow(non_snake_case)]
+        #[unsafe(method(numberOfRowsInTableView:))]
+        fn numberOfRowsInTableView(&self, _tv: &NSTableView) -> NSInteger {
             let ptr = self.ivars().ptr.get();
             if ptr.is_null() {
                 return 0;
             }
-            let cb = unsafe { &*(ptr as *const DataSourceCallbacks) };
-            (cb.item_count)() as NSInteger
+            let cb = unsafe { &*(ptr as *const TableCallbacks) };
+            (cb.row_count)() as NSInteger
         }
+    }
 
-        #[unsafe(method_id(collectionView:itemForRepresentedObjectAtIndexPath:))]
-        fn collection_view_item_for_index_path(
+    unsafe impl NSControlTextEditingDelegate for TableDataSource {}
+
+    unsafe impl NSTableViewDelegate for TableDataSource {
+        #[allow(non_snake_case)]
+        #[unsafe(method_id(tableView:viewForTableColumn:row:))]
+        fn tableView_viewForTableColumn_row(
             &self,
-            _cv: &NSCollectionView,
-            index_path: &NSIndexPath,
-        ) -> Retained<NSCollectionViewItem> {
+            tv: &NSTableView,
+            _column: Option<&NSTableColumn>,
+            row: NSInteger,
+        ) -> Option<Retained<NSView>> {
             let ptr = self.ivars().ptr.get();
             debug_assert!(!ptr.is_null());
-            let cb = unsafe { &*(ptr as *const DataSourceCallbacks) };
-            (cb.item_at)(index_path.item() as usize)
+            let cb = unsafe { &*(ptr as *const TableCallbacks) };
+            Some((cb.view_for_row)(tv, row as usize))
         }
     }
 );
 
-impl CollectionDataSource {
-    fn new(mtm: MainThreadMarker, callbacks_ptr: *const DataSourceCallbacks) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(DataSourceIvars {
+impl TableDataSource {
+    fn new(mtm: MainThreadMarker, callbacks_ptr: *const TableCallbacks) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(TableDataSourceIvars {
             ptr: Cell::new(callbacks_ptr as *const c_void),
         });
         unsafe { msg_send![super(this), init] }
@@ -189,176 +137,229 @@ impl CollectionDataSource {
 }
 
 // ---------------------------------------------------------------------------
-// Component impl
+// Public struct
 // ---------------------------------------------------------------------------
 
-// impl<Item, ItemsSignal, CellBuilder, CellComponent> Component
-//     for CollectionView<ItemsSignal, CellBuilder>
-// where
-//     Item: PartialEq + Clone + 'static,
-//     ItemsSignal: Signal<Value = Rc<[Item]>> + 'static,
-//     CellBuilder: FnMut(ReadStoredSignal<Item>) -> CellComponent + 'static,
-//     CellComponent: Component + 'static,
-// {
-//     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-//         let mtm =
-//             MainThreadMarker::new().expect("CollectionView must be set up on the main thread");
-//
-//         let CollectionView {
-//             items,
-//             cell_builder,
-//             layout,
-//         } = *self;
-//
-//         // ── View hierarchy ─────────────────────────────────────────────────
-//         let scroll_view = NSScrollView::new(mtm);
-//         let collection_view = NSCollectionView::new(mtm);
-//         collection_view.setCollectionViewLayout(Some(&*layout));
-//         scroll_view.setDocumentView(Some(collection_view.as_ref()));
-//
-//         let sv_nsview: Retained<NSView> = scroll_view.clone().into_super();
-//         if let Some(parent_signal) = ctx.use_context(&PARENT_VIEW) {
-//             let parent = parent_signal.read();
-//             parent.add_child(sv_nsview.clone());
-//             ctx.on_cleanup({
-//                 let sv = sv_nsview.clone();
-//                 move || parent.remove_child(&sv)
-//             });
-//         }
-//
-//         // ── Register our subclass for AppKit's reuse queue ─────────────────
-//         //
-//         // Using `ReactiveItem` instead of the base `NSCollectionViewItem`
-//         // ensures every cell vended by `makeItemWithIdentifier:forIndexPath:`
-//         // carries our `signal_ptr` ivar.
-//         let cell_identifier = NSString::from_str("cell");
-//         unsafe {
-//             let _: () = msg_send![
-//                 &*collection_view,
-//                 registerClass: ReactiveItem::class(),
-//                 forItemWithIdentifier: &*cell_identifier
-//             ];
-//         }
-//
-//         // ── Current items snapshot ─────────────────────────────────────────
-//         //
-//         // Written by the reconciliation effect before `reloadData`; read by
-//         // `item_at` to know which datum to bind to each cell.
-//         let current_items: Rc<RefCell<Rc<[Item]>>> = Rc::new(RefCell::new(Rc::from([])));
-//
-//         // ── Clone scope for use inside the data-source callback ────────────
-//         //
-//         // `ReactiveScope` is `Rc<RefCell<...>>` — cheap to clone, all clones
-//         // share the same runtime.  This lets `item_at` call `setup_child` and
-//         // `create_signal` even though it runs outside any reactive effect.
-//         let scope_for_item_at = ctx.scope();
-//         let parent_id = ctx.component_id();
-//
-//         // ── Data-source callbacks ──────────────────────────────────────────
-//         let callbacks = Box::new(DataSourceCallbacks {
-//             item_count: Box::new({
-//                 let items = Rc::clone(&current_items);
-//                 move || items.borrow().len()
-//             }),
-//
-//             item_at: Box::new({
-//                 let items = Rc::clone(&current_items);
-//                 let builder = Rc::clone(&cell_builder);
-//                 let scope = scope_for_item_at;
-//                 let cv = collection_view.clone();
-//                 let identifier = cell_identifier.clone();
-//                 move |index| {
-//                     let ip = make_index_path(index);
-//
-//                     // Ask AppKit for a cell.  Because we registered `ReactiveItem`,
-//                     // every returned instance has our `signal_ptr` ivar.
-//                     let cv_item: Retained<NSCollectionViewItem> = unsafe {
-//                         msg_send![
-//                             &*cv,
-//                             makeItemWithIdentifier: &*identifier,
-//                             forIndexPath: &*ip
-//                         ]
-//                     };
-//
-//                     // Cast to our concrete subtype to reach the ivar.
-//                     // SAFETY: all cells for this identifier are `ReactiveItem`.
-//                     let reactive = unsafe {
-//                         &*(&*cv_item as *const NSCollectionViewItem as *const ReactiveItem)
-//                     };
-//                     let raw = reactive.ivars().signal_ptr.get();
-//
-//                     if raw.is_null() {
-//                         // ── Create path ─────────────────────────────────────
-//                         // First time AppKit allocates this cell object.
-//                         // Create a signal, store a stable heap pointer to it in
-//                         // the ivar, then wire up the child component.
-//
-//                         let signal = scope.create_signal(items.borrow()[index].clone());
-//
-//                         // Heap-allocate a clone so the ivar holds a stable address.
-//                         // The original `signal` is moved into `ReadStoredSignal` below.
-//                         // The Box is freed via `on_cleanup` on the cell's child component.
-//                         let raw = Box::into_raw(Box::new(signal.clone())) as *const c_void;
-//                         reactive.ivars().signal_ptr.set(raw);
-//
-//                         let container = NSView::new(mtm);
-//                         cv_item.setView(&*container);
-//
-//                         scope.setup_child(parent_id, |child_ctx| {
-//                             child_ctx
-//                                 .provide_context(&PARENT_VIEW, ViewParent::View(container.clone()));
-//                             Box::new((builder.borrow_mut())(signal.read_only())).setup(child_ctx);
-//
-//                             // Free the signal Box when the collection view's
-//                             // component tree is eventually disposed.
-//                             child_ctx.on_cleanup(move || unsafe {
-//                                 drop(Box::<StoredSignal<Item>>::from_raw(
-//                                     raw as *mut StoredSignal<Item>,
-//                                 ));
-//                             });
-//                         });
-//                     } else {
-//                         // ── Reuse path ──────────────────────────────────────
-//                         // AppKit handed back a recycled cell.  The ivar already
-//                         // points to the companion signal; push the new data
-//                         // through it and let reactive effects do the rest.
-//                         let signal = unsafe { &*(raw as *const StoredSignal<Item>) }.clone();
-//                         signal.update_with(|curr| {
-//                             let items = items.borrow();
-//                             if &items[index] != curr {
-//                                 *curr = items[index].clone();
-//                                 true
-//                             } else {
-//                                 false
-//                             }
-//                         })
-//                     }
-//
-//                     cv_item
-//                 }
-//             }),
-//         });
-//
-//         let callbacks_ptr: *const DataSourceCallbacks = &*callbacks;
-//         let datasource = CollectionDataSource::new(mtm, callbacks_ptr);
-//         collection_view.setDataSource(Some(ProtocolObject::from_ref(&*datasource)));
-//
-//         // ── Reconciliation effect ──────────────────────────────────────────
-//         //
-//         // On every items change: snapshot into `current_items`, then reload.
-//         // AppKit drives `item_at` for each visible cell; create/reuse is
-//         // handled there transparently.
-//         let cv = collection_view.clone();
-//         ctx.create_effect(move |_: &ReactiveScope, _: Option<()>| {
-//             *current_items.borrow_mut() = items.read();
-//             cv.reloadData();
-//         });
-//
-//         // Cleanup: drop datasource first so no ObjC callbacks fire after the
-//         // `callbacks` Box is freed.
-//         ctx.on_cleanup(move || {
-//             drop(datasource);
-//             drop(callbacks);
-//         });
-//     }
-// }
+pub struct CollectionView {
+    orientation: ListOrientation,
+    setup_fn: Box<dyn FnOnce(ListOrientation, &mut SetupContext)>,
+}
+
+impl Component for CollectionView {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        (self.setup_fn)(self.orientation, ctx);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// List trait impl
+// ---------------------------------------------------------------------------
+
+impl List for CollectionView {
+    fn new_with_comparator<L, I, C, Comp>(
+        list_data: impl Signal<Value = L> + 'static,
+        mut component_factory: impl FnMut(ReadStoredSignal<I>) -> C + 'static,
+        list_comparator: Comp,
+    ) -> Self
+    where
+        L: ListData<I> + 'static,
+        C: Component + 'static,
+        I: Clone + 'static,
+        Comp: ListComparator<I> + 'static,
+    {
+        let factory: Rc<RefCell<dyn FnMut(ReadStoredSignal<I>) -> BoxedComponent>> =
+            Rc::new(RefCell::new(move |s| -> BoxedComponent {
+                Box::new(component_factory(s))
+            }));
+        let comparator = Rc::new(list_comparator);
+
+        CollectionView {
+            orientation: ListOrientation::Vertical,
+            setup_fn: Box::new(move |orientation, ctx| {
+                setup_list(ctx, orientation, list_data, factory, comparator);
+            }),
+        }
+    }
+
+    fn orientation(mut self, orientation: ListOrientation) -> Self {
+        self.orientation = orientation;
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+
+fn scroll_view_into_nsview(sv: Retained<NSScrollView>) -> Retained<NSView> {
+    sv.into_super()
+}
+
+fn setup_list<I, L, Comp>(
+    ctx: &mut SetupContext,
+    _orientation: ListOrientation,
+    list_data: impl Signal<Value = L> + 'static,
+    factory: Rc<RefCell<dyn FnMut(ReadStoredSignal<I>) -> BoxedComponent>>,
+    comparator: Rc<Comp>,
+) where
+    I: Clone + 'static,
+    L: ListData<I> + 'static,
+    Comp: ListComparator<I> + 'static,
+{
+    let mtm = MainThreadMarker::new().expect("CollectionView must be set up on the main thread");
+
+    let table_view = NSTableView::new(mtm);
+
+    // Appearance: plain list, no header, no selection highlight, no grid lines.
+    unsafe {
+        let _: () = msg_send![&*table_view, setHeaderView: std::ptr::null::<AnyObject>()];
+    }
+    table_view.setSelectionHighlightStyle(NSTableViewSelectionHighlightStyle::None);
+    table_view.setUsesAutomaticRowHeights(true);
+    table_view.setIntercellSpacing(NSSize {
+        width: 0.0,
+        height: 0.0,
+    });
+
+    // Single column that fills all available width.
+    let col_id = NSString::from_str("main");
+    let column = NSTableColumn::initWithIdentifier(NSTableColumn::alloc(mtm), &col_id);
+    column.setMinWidth(0.0);
+    column.setMaxWidth(f64::MAX);
+    table_view.addTableColumn(&column);
+    table_view.setColumnAutoresizingStyle(
+        NSTableViewColumnAutoresizingStyle::LastColumnOnlyAutoresizingStyle,
+    );
+
+    // Wrap in a scroll view and register it with the parent layout.
+    let scroll_view = AppKitViewBuilder::create_no_child(
+        move |_| {
+            let mtm = MainThreadMarker::new().unwrap();
+            NSScrollView::new(mtm)
+        },
+        scroll_view_into_nsview,
+    )
+    .debug_identifier("ListView")
+    .setup(ctx);
+
+    scroll_view.setDocumentView(Some(&**table_view));
+    scroll_view.setHasVerticalScroller(true);
+
+    // Snapshot of current items — written by the reconciliation effect and
+    // read by the data-source callbacks (which run from AppKit, outside effects).
+    let current_items: Rc<RefCell<Vec<I>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let scope = ctx.scope();
+    let parent_id = ctx.component_id();
+    let cell_id = NSString::from_str("cell");
+
+    let callbacks = Box::new(TableCallbacks {
+        row_count: {
+            let items = Rc::clone(&current_items);
+            Box::new(move || items.borrow().len())
+        },
+
+        view_for_row: {
+            let items = Rc::clone(&current_items);
+            let factory = Rc::clone(&factory);
+            let comparator = Rc::clone(&comparator);
+            let scope = scope.clone();
+            let cell_id = cell_id.clone();
+
+            Box::new(move |tv: &NSTableView, index: usize| {
+                // AppKit always calls this from the main thread.
+                let mtm = unsafe { MainThreadMarker::new_unchecked() };
+
+                // Try to dequeue a recycled cell.
+                let maybe_recycled = unsafe { tv.makeViewWithIdentifier_owner(&cell_id, None) };
+
+                if let Some(recycled) = maybe_recycled {
+                    // ── Reuse path ────────────────────────────────────────────
+                    // Cast back to our subclass to reach the signal ivar.
+                    let cell =
+                        unsafe { &*(&*recycled as *const NSView as *const ReactiveCellView) };
+                    let raw = cell.ivars().signal_ptr.get();
+                    if !raw.is_null() {
+                        let signal = unsafe { &*(raw as *const StoredSignal<I>) };
+                        let new_item = &items.borrow()[index];
+                        signal.update_with(|curr| {
+                            if !comparator.are_content_the_same(curr, new_item) {
+                                *curr = new_item.clone();
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                    }
+                    recycled
+                } else {
+                    // ── Create path ───────────────────────────────────────────
+                    let item_val = items.borrow()[index].clone();
+                    let signal = scope.create_signal(item_val);
+                    let raw = Box::into_raw(Box::new(signal.clone())) as *const c_void;
+
+                    let cell_view = ReactiveCellView::new(mtm);
+                    cell_view.ivars().signal_ptr.set(raw);
+                    // Stamp with the reuse identifier.
+                    cell_view.setIdentifier(Some(&cell_id));
+
+                    let slot: StoredSignal<Option<ChildViewEntry>> = scope.create_signal(None);
+                    scope.setup_child(parent_id, |child_ctx| {
+                        child_ctx.set_context(&CHILD_VIEW, slot.clone().into_signal());
+
+                        // Always wrap in a vertical Column so that ReactiveLayoutView
+                        // is guaranteed to be in the hierarchy. This ensures Padding,
+                        // Expanded, and intrinsicContentSize work correctly even when
+                        // the factory doesn't supply a Row/Column itself.
+                        let user_component = factory.borrow_mut()(signal.clone().read_only());
+                        let wrapped = <Flex as Column>::new()
+                            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                            .child(move |ctx: &mut SetupContext| {
+                                user_component.setup(ctx);
+                            });
+                        Box::new(wrapped).setup(child_ctx);
+
+                        // Free the heap-boxed signal when this component is disposed.
+                        child_ctx.on_cleanup(move || unsafe {
+                            drop(Box::<StoredSignal<I>>::from_raw(raw as *mut _));
+                        });
+                    });
+
+                    // Wire the child view into the cell with Auto Layout constraints.
+                    let cell_view_ns: Retained<NSView> = cell_view.into_super();
+                    if let Some(entry) = slot.read() {
+                        cell_view_ns.addSubview(&*entry.native);
+                        activate_constraints(&pin_edges(&*entry.native, &cell_view_ns));
+                    }
+
+                    cell_view_ns
+                }
+            })
+        },
+    });
+
+    let callbacks_ptr: *const TableCallbacks = &*callbacks;
+    let datasource = TableDataSource::new(mtm, callbacks_ptr);
+    unsafe {
+        table_view.setDataSource(Some(ProtocolObject::from_ref(&*datasource)));
+        table_view.setDelegate(Some(ProtocolObject::from_ref(&*datasource)));
+    }
+
+    // Reconciliation effect: on every items change, snapshot and tell the
+    // table to reload. AppKit then drives view_for_row for each visible row.
+    let tv = table_view.clone();
+    ctx.create_effect(move |_, _: Option<()>| {
+        let data = list_data.read();
+        let new_items: Vec<I> = (0..data.count())
+            .filter_map(|i| data.get_item(i).cloned())
+            .collect();
+        *current_items.borrow_mut() = new_items;
+        tv.reloadData();
+    });
+
+    // Keep the datasource and callbacks alive for the component's lifetime.
+    ctx.on_cleanup(move || {
+        drop(datasource);
+        drop(callbacks);
+    });
+}

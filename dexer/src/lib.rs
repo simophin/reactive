@@ -23,7 +23,11 @@ impl SuperCaller {
         method_name: &'static str,
         descriptor: &'static str,
     ) -> Self {
-        Self { this_raw, method_name, descriptor }
+        Self {
+            this_raw,
+            method_name,
+            descriptor,
+        }
     }
 
     pub fn call<'local>(

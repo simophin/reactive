@@ -4,13 +4,13 @@ use objc2_app_kit::NSView;
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use std::cell::RefCell;
-use ui_core::{ChildEntry, ChildrenHost, sync_children};
 use ui_core::layout::algorithm::{
     AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
 };
 use ui_core::layout::{
     ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
 };
+use ui_core::{ChildEntry, ChildrenHost, sync_children};
 
 pub(crate) type ChildViewEntry = ChildEntry<Retained<NSView>>;
 
@@ -127,10 +127,14 @@ impl ReactiveLayoutView {
     fn update_window_min_size(&self) {
         let Some(window) = self.window() else { return };
         let data = self.ivars().borrow();
-        if data.children.is_empty() { return; }
+        if data.children.is_empty() {
+            return;
+        }
         let child_infos: Vec<ChildLayoutInfo> =
             data.children.iter().map(|e| e.layout.clone()).collect();
-        let host = AppKitFlexHost { children: &data.children };
+        let host = AppKitFlexHost {
+            children: &data.children,
+        };
         // Measure unconstrained so the minimum is stable and independent of
         // the current window width (avoids feedback loops during resize).
         let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
@@ -146,7 +150,10 @@ impl ReactiveLayoutView {
                     height: (sv.size.height - us.size.height).max(0.0),
                 }
             })
-            .unwrap_or(NSSize { width: 0.0, height: 0.0 });
+            .unwrap_or(NSSize {
+                width: 0.0,
+                height: 0.0,
+            });
         window.setContentMinSize(NSSize {
             width: m.min.width as CGFloat + extra.width,
             height: m.min.height as CGFloat + extra.height,

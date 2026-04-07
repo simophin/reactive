@@ -7,6 +7,10 @@ edition = "2024"
 name = "demo-app"
 path = "src/main.rs"
 
+[[bin]]
+name = "hn-stories"
+path = "src/hn_stories.rs"
+
 [dependencies]
 reactive_core = { path = "../../core", package = "core" }
 ui_core = { path = "../../ui-core", package = "ui-core" }
