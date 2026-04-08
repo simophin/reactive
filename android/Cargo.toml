@@ -10,4 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
 jni = "0.21.1"
-android-macros = { path = "../android-macros" }
+android-macros = { version = "0.1.0", path = "../android-macros" }
+ui-core = { version = "0.1.0", path = "../ui-core" }
+dexer = { version = "0.1.0", path = "../dexer" }
+dexer-macros = { version = "0.1.0", path = "../dexer-macros" }
