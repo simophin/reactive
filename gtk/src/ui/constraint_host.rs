@@ -7,7 +7,7 @@ use ui_core::layout::algorithm::{
     AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
 };
 use ui_core::layout::{
-    ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
+    ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container_constrained,
 };
 use ui_core::{ChildrenHost, sync_children};
 
@@ -58,7 +58,7 @@ mod imp {
     }
 
     impl WidgetImpl for ConstraintHost {
-        fn measure(&self, orientation: gtk4::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
+        fn measure(&self, orientation: gtk4::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             let data = self.flex_data.borrow();
             if data.children.is_empty() {
                 return (0, 0, -1, -1);
@@ -69,7 +69,25 @@ mod imp {
             let host = GtkFlexHost {
                 children: &data.children,
             };
-            let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
+
+            // When GTK passes a cross-axis size (for_size >= 0), use it to
+            // constrain children.  This is essential for height-for-width
+            // negotiation: wrapped labels need to know the available width in
+            // order to report the correct natural height.
+            let is_main_axis = (data.vertical && orientation == gtk4::Orientation::Vertical)
+                || (!data.vertical && orientation == gtk4::Orientation::Horizontal);
+            let cross_size = if is_main_axis && for_size >= 0 {
+                Some((for_size as f32, data.cross_axis))
+            } else {
+                None
+            };
+            let m = measure_flex_container_constrained(
+                &host,
+                &child_infos,
+                data.vertical,
+                data.spacing,
+                cross_size,
+            );
 
             let (min, natural) = match orientation {
                 gtk4::Orientation::Horizontal => (m.min.width as i32, m.natural.width as i32),
@@ -185,8 +203,13 @@ impl LayoutHost for GtkFlexHost<'_> {
             AxisConstraint::Unconstrained => nat_w as f32,
         };
 
-        // Measure height at min width (for min height) and at natural width (for natural height).
-        let (min_h, _, _, _) = widget.measure(gtk4::Orientation::Vertical, min_w);
+        // Measure height at resolved_w for both min and natural.  Previously
+        // min_h was measured at min_w which, for wrapped labels, produces a
+        // very tall value (text wrapped at the narrowest word-width).  When
+        // GTK measures unconstrained (for_size=-1), the widget will use its
+        // natural width, so the minimum height should reflect that width —
+        // not the pathological minimum-width case.
+        let (min_h, _, _, _) = widget.measure(gtk4::Orientation::Vertical, resolved_w as i32);
         let (_, nat_h, _, _) = widget.measure(gtk4::Orientation::Vertical, resolved_w as i32);
 
         let resolved_h = match constraint.height {

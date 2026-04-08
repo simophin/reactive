@@ -290,6 +290,12 @@ fn apply_diff<I: Clone + 'static>(
             });
 
             list_box.append(&widget);
+            // Prevent vexpand from propagating up through the ConstraintHost
+            // hierarchy (wrapping Labels with set_wrap(true) can set vexpand=true,
+            // which would cause gtk4::Box to distribute the full viewport height
+            // equally among cells instead of using each cell's natural height).
+            widget.set_vexpand(false);
+            widget.set_hexpand(true);
 
             new_cells.push(Cell {
                 item: new_item,

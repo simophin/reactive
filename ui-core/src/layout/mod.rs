@@ -8,7 +8,7 @@ pub mod types;
 
 pub use algorithm::{
     AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint, compute_flex_layout,
-    measure_flex_container,
+    measure_flex_container, measure_flex_container_constrained,
 };
 pub use align::Align;
 pub use center::Center;

@@ -236,18 +236,34 @@ pub fn measure_flex_container(
     vertical: bool,
     spacing: f32,
 ) -> Measurement {
+    measure_flex_container_constrained(host, child_infos, vertical, spacing, None)
+}
+
+/// Like [`measure_flex_container`] but with an optional cross-axis constraint.
+///
+/// When `cross_size` is `Some((size, alignment))`, children are measured with
+/// the cross axis constrained to `size` (using the same logic as
+/// [`compute_flex_layout`]).  This is important for height-for-width
+/// negotiation: e.g. GTK passes the allocated width when asking for the
+/// natural height of a vertical container.
+pub fn measure_flex_container_constrained(
+    host: &dyn LayoutHost,
+    child_infos: &[ChildLayoutInfo],
+    vertical: bool,
+    spacing: f32,
+    cross_size: Option<(f32, CrossAxisAlignment)>,
+) -> Measurement {
     let mut min_main = 0.0f32;
     let mut nat_main = 0.0f32;
     let mut min_cross = 0.0f32;
     let mut nat_cross = 0.0f32;
 
     for (i, info) in child_infos.iter().enumerate() {
-        let m = measure_with_modifiers(
-            host,
-            i,
-            &info.box_modifiers.modifiers,
-            SizeConstraint::unconstrained(),
-        );
+        let constraint = match cross_size {
+            Some((size, cross_axis)) => main_measure_constraint(size, cross_axis, vertical),
+            None => SizeConstraint::unconstrained(),
+        };
+        let m = measure_with_modifiers(host, i, &info.box_modifiers.modifiers, constraint);
         // Non-flex children are rigid: their true minimum contributes to the
         // container minimum.  Flex children are elastic: they can shrink below
         // their natural size, so we use natural (not platform-min) as their
