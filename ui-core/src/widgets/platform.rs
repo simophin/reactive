@@ -22,4 +22,6 @@ pub trait Platform {
     /// Start the platform's main loop, call `setup` to build the component
     /// tree, then block until the application exits.
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static);
+
+    fn register_back_handler(on_back: impl FnMut() -> bool + 'static);
 }

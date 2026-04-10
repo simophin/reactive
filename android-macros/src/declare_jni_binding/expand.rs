@@ -19,7 +19,7 @@ pub fn expand(binding: JavaBinding) -> TokenStream {
     output.extend(quote! {
         pub struct #class_ident;
 
-        impl ::android::JavaClassDescriptor for #class_ident {
+        impl crate::desc::JavaClassDescriptor for #class_ident {
             const FQ_NAME: &'static str = #class_name;
         }
     });
@@ -47,11 +47,12 @@ pub fn expand(binding: JavaBinding) -> TokenStream {
         };
 
         output.extend(quote! {
-            impl ::android::desc::JavaFieldDescriptor for #field_name {
+            impl crate::desc::JavaFieldDescriptor for #field_name {
                 type ClassDescriptor = #class_ident;
                 type RustType = #rust_type;
+                const NAME: &'static str = stringify!(#field_name);
                 const SIGNATURE: &'static str = #signature;
-                const FIELD_TYPE: ::android::desc::JavaFieldType = #field_type;
+                const FIELD_TYPE: crate::desc::JavaFieldType = #field_type;
             }
         });
     }
@@ -90,10 +91,11 @@ pub fn expand(binding: JavaBinding) -> TokenStream {
         let signature = format!("({arg_signatures}){return_signature}");
 
         output.extend(quote! {
-            impl ::android::JavaMethodDescriptor<#arg_tuple> for #method_name {
+            impl crate::desc::JavaMethodDescriptor<#arg_tuple> for #method_name {
                 type ClassDescriptor = #class_ident;
+                const NAME: &'static str = stringify!(#method_name);
                 const SIGNATURE: &'static str = #signature;
-                const RETURN_TYPE: ::android::desc::JavaReturnType = #return_type;
+                const RETURN_TYPE: crate::desc::JavaReturnType = #return_type;
             }
         });
     }
@@ -174,26 +176,26 @@ fn java_args_tuple(args: &[JavaType]) -> syn::Result<TokenStream> {
 fn java_return_type_tokens(ty: &JavaType) -> syn::Result<TokenStream> {
     match ty {
         JavaType::Void => Ok(quote! {
-            ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Void)
+            crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Void)
         }),
         JavaType::Primitive(ident) => match ident.to_string().as_str() {
             "byte" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Byte)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Byte)
             }),
             "char" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Char)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Char)
             }),
             "int" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Int)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Int)
             }),
             "float" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Float)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Float)
             }),
             "boolean" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Boolean)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Boolean)
             }),
             "double" => Ok(quote! {
-                ::android::desc::JavaReturnType::Primitive(::android::desc::JavaPrimitiveType::Double)
+                crate::desc::JavaReturnType::Primitive(crate::desc::JavaPrimitiveType::Double)
             }),
             _ => Err(syn::Error::new(
                 ident.span(),
@@ -206,11 +208,11 @@ fn java_return_type_tokens(ty: &JavaType) -> syn::Result<TokenStream> {
             Span::call_site(),
             "primitive arrays are not supported as Java method return types",
         )),
-        JavaType::String => Ok(quote! { ::android::desc::JavaReturnType::String }),
+        JavaType::String => Ok(quote! { crate::desc::JavaReturnType::String }),
         JavaType::Object(path) => {
             let class_name = path.jni_name();
             Ok(quote! {
-                ::android::desc::JavaReturnType::Object {
+                crate::desc::JavaReturnType::Object {
                     class_name: #class_name,
                 }
             })
@@ -226,17 +228,17 @@ fn java_field_type_tokens(ty: &JavaType) -> syn::Result<TokenStream> {
         )),
         JavaType::Primitive(ident) => {
             let primitive = java_primitive_type_tokens(ident)?;
-            Ok(quote! { ::android::desc::JavaFieldType::Primitive(#primitive) })
+            Ok(quote! { crate::desc::JavaFieldType::Primitive(#primitive) })
         }
         JavaType::PrimitiveArray(ident) => {
             let primitive = java_primitive_type_tokens(ident)?;
-            Ok(quote! { ::android::desc::JavaFieldType::PrimitiveArray(#primitive) })
+            Ok(quote! { crate::desc::JavaFieldType::PrimitiveArray(#primitive) })
         }
-        JavaType::String => Ok(quote! { ::android::desc::JavaFieldType::String }),
+        JavaType::String => Ok(quote! { crate::desc::JavaFieldType::String }),
         JavaType::Object(path) => {
             let class_name = path.jni_name();
             Ok(quote! {
-                ::android::desc::JavaFieldType::Object {
+                crate::desc::JavaFieldType::Object {
                     class_name: #class_name,
                 }
             })
@@ -263,13 +265,13 @@ fn java_primitive_signature(ident: &syn::Ident) -> syn::Result<&'static str> {
 
 fn java_primitive_type_tokens(ident: &syn::Ident) -> syn::Result<TokenStream> {
     match ident.to_string().as_str() {
-        "void" => Ok(quote! { ::android::desc::JavaPrimitiveType::Void }),
-        "int" => Ok(quote! { ::android::desc::JavaPrimitiveType::Int }),
-        "float" => Ok(quote! { ::android::desc::JavaPrimitiveType::Float }),
-        "boolean" => Ok(quote! { ::android::desc::JavaPrimitiveType::Boolean }),
-        "double" => Ok(quote! { ::android::desc::JavaPrimitiveType::Double }),
-        "char" => Ok(quote! { ::android::desc::JavaPrimitiveType::Char }),
-        "byte" => Ok(quote! { ::android::desc::JavaPrimitiveType::Byte }),
+        "void" => Ok(quote! { crate::desc::JavaPrimitiveType::Void }),
+        "int" => Ok(quote! { crate::desc::JavaPrimitiveType::Int }),
+        "float" => Ok(quote! { crate::desc::JavaPrimitiveType::Float }),
+        "boolean" => Ok(quote! { crate::desc::JavaPrimitiveType::Boolean }),
+        "double" => Ok(quote! { crate::desc::JavaPrimitiveType::Double }),
+        "char" => Ok(quote! { crate::desc::JavaPrimitiveType::Char }),
+        "byte" => Ok(quote! { crate::desc::JavaPrimitiveType::Byte }),
         _ => Err(syn::Error::new(
             ident.span(),
             format!("unsupported Java primitive type `{ident}`"),

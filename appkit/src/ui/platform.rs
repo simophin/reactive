@@ -31,4 +31,8 @@ impl Platform for AppKit {
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static) {
         crate::run_app(setup);
     }
+
+    fn register_back_handler(on_back: impl FnMut() -> bool + 'static) {
+        todo!()
+    }
 }

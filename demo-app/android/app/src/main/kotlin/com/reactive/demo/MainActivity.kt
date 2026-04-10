@@ -35,6 +35,7 @@ class MainActivity : Activity() {
         })
 
         scope = ReactiveScope.create()
+        scope.attach(this)
         handler.post(tick)
     }
 

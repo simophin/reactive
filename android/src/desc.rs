@@ -29,6 +29,7 @@ pub enum JavaFieldType {
 
 pub trait JavaMethodDescriptor<Args> {
     type ClassDescriptor: JavaClassDescriptor;
+    const NAME: &'static str;
     const SIGNATURE: &'static str;
     const RETURN_TYPE: JavaReturnType;
 }
@@ -36,6 +37,7 @@ pub trait JavaMethodDescriptor<Args> {
 pub trait JavaFieldDescriptor {
     type ClassDescriptor: JavaClassDescriptor;
     type RustType;
+    const NAME: &'static str;
     const SIGNATURE: &'static str;
     const FIELD_TYPE: JavaFieldType;
 }

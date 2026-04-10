@@ -8,7 +8,10 @@ version = "0.1.0"
 dependencies = [
  "android-macros",
  "core",
+ "dexer",
+ "dexer-macros",
  "jni",
+ "ui-core",
 ]
 
 [[package]]
@@ -767,6 +770,7 @@ name = "gtk"
 version = "0.1.0"
 dependencies = [
  "core",
+ "glib",
  "gtk4",
  "ui-core",
 ]

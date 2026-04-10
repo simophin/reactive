@@ -119,7 +119,7 @@ fn gen_into_java(class: &DexClass) -> TokenStream {
                 #byo_descriptor,
                 &[
                     #(#arg_jvalues,)*
-                    jni::objects::JValue::Long(__ptr).to_jni(),
+                    jni::objects::JValue::Long(__ptr),
                 ],
             )
         }
@@ -359,10 +359,12 @@ fn gen_init_bridge(class: &DexClass) -> TokenStream {
         ) {
             let mut __env = unsafe { jni::JNIEnv::from_raw(__env) }.unwrap();
             let __this_obj = unsafe { jni::objects::JObject::from_raw(__this) };
+            let __current_this_guard = dexer::push_current_this(__this);
             #(let #param_names = { #param_conversions };)*
             let __state = #name::init(&mut __env, #(#param_names2),*);
             let __ptr = Box::into_raw(Box::new(__state)) as jni::sys::jlong;
             __env.set_field(&__this_obj, "nativePtr", "J", jni::objects::JValue::Long(__ptr)).unwrap();
+            drop(__current_this_guard);
         }
     }
 }
@@ -432,11 +434,14 @@ fn gen_method_bridge(
         ) #ret_expr {
             let mut __env = unsafe { jni::JNIEnv::from_raw(__env) }.unwrap();
             let __this_obj = unsafe { jni::objects::JObject::from_raw(__this) };
+            let __current_this_guard = dexer::push_current_this(__this);
             let __ptr = __env.get_field(&__this_obj, "nativePtr", "J").unwrap().j().unwrap();
             let __state = unsafe { &mut *(__ptr as *mut #struct_name) };
             #super_arg
             #(let #param_names = { #param_conversions };)*
-            #struct_name::#rust_name(__state, &mut __env, #call_super_arg #(#param_names),*)
+            let __result = #struct_name::#rust_name(__state, &mut __env, #call_super_arg #(#param_names),*);
+            drop(__current_this_guard);
+            __result
         }
     }
 }
@@ -537,21 +542,21 @@ fn convert_from_sys(p: &JniParam, expr: TokenStream) -> TokenStream {
     }
 }
 
-/// For `into_java`, convert a user param to `JValue::to_jni()`.
+/// For `into_java`, convert a user param to a `JValue`.
 fn jvalue_from_param(p: &JniParam, expr: TokenStream) -> TokenStream {
     let s = type_to_string(&p.ty);
     let last = s.split("::").last().unwrap_or(&s).trim();
     match last {
-        "JObject" => quote! { jni::objects::JValue::Object(&#expr).to_jni() },
-        "jboolean" => quote! { jni::objects::JValue::Bool(#expr).to_jni() },
-        "jbyte" => quote! { jni::objects::JValue::Byte(#expr).to_jni() },
-        "jchar" => quote! { jni::objects::JValue::Char(#expr).to_jni() },
-        "jshort" => quote! { jni::objects::JValue::Short(#expr).to_jni() },
-        "jint" => quote! { jni::objects::JValue::Int(#expr).to_jni() },
-        "jlong" => quote! { jni::objects::JValue::Long(#expr).to_jni() },
-        "jfloat" => quote! { jni::objects::JValue::Float(#expr).to_jni() },
-        "jdouble" => quote! { jni::objects::JValue::Double(#expr).to_jni() },
-        _ => quote! { jni::objects::JValue::Object(&#expr).to_jni() },
+        "JObject" => quote! { jni::objects::JValue::Object(&#expr) },
+        "jboolean" => quote! { jni::objects::JValue::Bool(#expr) },
+        "jbyte" => quote! { jni::objects::JValue::Byte(#expr) },
+        "jchar" => quote! { jni::objects::JValue::Char(#expr) },
+        "jshort" => quote! { jni::objects::JValue::Short(#expr) },
+        "jint" => quote! { jni::objects::JValue::Int(#expr) },
+        "jlong" => quote! { jni::objects::JValue::Long(#expr) },
+        "jfloat" => quote! { jni::objects::JValue::Float(#expr) },
+        "jdouble" => quote! { jni::objects::JValue::Double(#expr) },
+        _ => quote! { jni::objects::JValue::Object(&#expr) },
     }
 }
 
