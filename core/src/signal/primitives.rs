@@ -53,7 +53,7 @@ impl Signal for String {
 }
 
 /// Allows string literals to be used directly where `Signal<Value = String>` is expected.
-impl Signal for &str {
+impl Signal for &'static str {
     type Value = String;
     #[inline]
     fn read(&self) -> String {

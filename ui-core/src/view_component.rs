@@ -8,7 +8,7 @@ use reactive_core::{
 
 /// Describes how many child components a view has.
 pub trait ChildStrategy {
-    fn into_data(self) -> Vec<BoxedComponent>;
+    fn into_vec(self) -> Vec<BoxedComponent>;
 }
 
 pub struct NoChild;
@@ -17,19 +17,19 @@ pub struct AtMostOneChild(pub Option<BoxedComponent>);
 pub struct MultipleChildren(pub Vec<BoxedComponent>);
 
 impl ChildStrategy for NoChild {
-    fn into_data(self) -> Vec<BoxedComponent> {
+    fn into_vec(self) -> Vec<BoxedComponent> {
         Vec::new()
     }
 }
 
 impl ChildStrategy for SingleChild {
-    fn into_data(self) -> Vec<BoxedComponent> {
+    fn into_vec(self) -> Vec<BoxedComponent> {
         vec![self.0]
     }
 }
 
 impl ChildStrategy for AtMostOneChild {
-    fn into_data(self) -> Vec<BoxedComponent> {
+    fn into_vec(self) -> Vec<BoxedComponent> {
         match self.0 {
             Some(v) => vec![v],
             None => Vec::new(),
@@ -38,7 +38,7 @@ impl ChildStrategy for AtMostOneChild {
 }
 
 impl ChildStrategy for MultipleChildren {
-    fn into_data(self) -> Vec<BoxedComponent> {
+    fn into_vec(self) -> Vec<BoxedComponent> {
         self.0
     }
 }
@@ -232,7 +232,7 @@ impl<Target: Clone + 'static, NativeView: Clone + PartialEq + Eq + 'static, C>
         ctx.set_context(&BOX_MODIFIERS, BoxModifierChain::default().into_signal());
         ctx.set_context(&FLEX_PARENT_DATA, FlexParentData::default().into_signal());
 
-        let children_data = children.into_data();
+        let children_data = children.into_vec();
         if !children_data.is_empty() {
             let signals_signal = ctx.provide_context(
                 children_key,

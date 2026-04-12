@@ -1,11 +1,15 @@
 use super::{
-    Button, Column, Image, ImageCodec, Label, ProgressIndicator, Row, Slider, Stack, TextInput,
-    Window,
+    Button, Column, CustomLayoutOperation, Image, ImageCodec, Label, ProgressIndicator, Row,
+    Slider, Stack, TextInput, Window,
 };
 use crate::widgets::list::List;
+use crate::widgets::platform_view::{PlatformBaseView, PlatformContainerView, SizeSpec};
 use reactive_core::SetupContext;
 
-pub trait Platform {
+pub trait Platform: 'static {
+    type View: PlatformBaseView + Eq + Clone;
+    type ContainerView: PlatformContainerView<BaseView = Self::View> + Eq + Clone;
+
     type ImageCodec: ImageCodec;
     type Button: Button;
     type Label: Label;
@@ -24,4 +28,6 @@ pub trait Platform {
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static);
 
     fn register_back_handler(on_back: impl FnMut() -> bool + 'static);
+
+    fn new_custom_layout(ops: impl CustomLayoutOperation + 'static) -> Self::ContainerView;
 }

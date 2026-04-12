@@ -1,24 +1,30 @@
 mod constant;
-mod dynamic;
 mod ext;
 pub(crate) mod primitives;
 pub(crate) mod stored;
 mod wrapper;
 
 pub use constant::*;
-pub use dynamic::*;
 pub use ext::{SignalExt, SignalMapper};
+use std::any::Any;
 use std::rc::Rc;
 pub use stored::{ReadStoredSignal, StoredSignal};
 pub use wrapper::SignalWrapper;
 
 /// A reactive signal. Object-safe: `dyn Signal<Value = T>` is valid when `T: Clone + 'static`.
 ///
-pub trait Signal {
-    type Value;
+pub trait Signal: Any {
+    type Value: 'static;
 
     /// Read the current value, cloning it out.
     fn read(&self) -> Self::Value;
+
+    fn as_any(&self) -> &dyn Any
+    where
+        Self: Sized + 'static,
+    {
+        self
+    }
 }
 
 /// Unit is a constant signal — useful as a no-op input to streams/resources.
@@ -27,7 +33,7 @@ impl Signal for () {
     fn read(&self) {}
 }
 
-impl<T> Signal for Box<dyn Signal<Value = T>> {
+impl<T: 'static> Signal for Box<dyn Signal<Value = T>> {
     type Value = T;
 
     fn read(&self) -> Self::Value {
@@ -35,7 +41,7 @@ impl<T> Signal for Box<dyn Signal<Value = T>> {
     }
 }
 
-impl<T> Signal for Rc<dyn Signal<Value = T>> {
+impl<T: 'static> Signal for Rc<dyn Signal<Value = T>> {
     type Value = T;
 
     fn read(&self) -> Self::Value {
@@ -44,7 +50,7 @@ impl<T> Signal for Rc<dyn Signal<Value = T>> {
 }
 
 /// Any `Fn() -> T` is a computed signal that re-evaluates on every read.
-impl<T, F: Fn() -> T> Signal for F {
+impl<T: 'static, F: Fn() -> T + 'static> Signal for F {
     type Value = T;
 
     fn read(&self) -> T {

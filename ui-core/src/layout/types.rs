@@ -1,4 +1,4 @@
-use reactive_core::ContextKey;
+use reactive_core::{ConstantSignal, ContextKey, IntoSignal};
 use std::num::NonZeroUsize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -26,6 +26,15 @@ impl EdgeInsets {
             bottom: vertical,
             left: horizontal,
         }
+    }
+
+    pub fn plus(mut self, insets: &EdgeInsets) -> Self {
+        self.top += insets.top;
+        self.right += insets.right;
+        self.bottom += insets.bottom;
+        self.left += insets.left;
+
+        self
     }
 }
 

@@ -2,6 +2,16 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+## Design Intent
+
+Before making API-shaping or runtime-architecture changes, read [docs/architecture-principles.md](/Users/fanchao/Projects/reactive/docs/architecture-principles.md).
+
+That document captures the intended direction for:
+- SolidJS-style fine-grained reactivity without a virtual DOM
+- shared cross-platform widget APIs
+- first-class native-view escape hatches
+- why the project should prefer direct native view ownership over a React Native-style shadow tree
+
 ## Build & Test Commands
 
 ```bash

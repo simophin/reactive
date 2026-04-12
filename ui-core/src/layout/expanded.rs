@@ -1,4 +1,4 @@
-use reactive_core::{Component, SetupContext, Signal};
+use reactive_core::{Component, SetupContext, Signal, SignalExt};
 use std::num::NonZeroUsize;
 
 use super::{FLEX_PARENT_DATA, FlexParentData};
@@ -17,9 +17,10 @@ where
 {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Expanded { flex, child } = *self;
-        ctx.set_context(&FLEX_PARENT_DATA, move || FlexParentData {
-            flex: flex.read(),
-        });
+        ctx.set_context(
+            &FLEX_PARENT_DATA,
+            flex.map_value(|flex| FlexParentData { flex }),
+        );
 
         ctx.child(child);
     }

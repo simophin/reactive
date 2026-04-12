@@ -1,10 +1,12 @@
 use crate::signal::stored::SignalId;
 use crate::sorted_vec::SortedVec;
-use crate::{ReactiveScope, Signal, TypeErasedSignal};
+use crate::{ReactiveScope, Signal};
 use slotmap::new_key_type;
+use std::any::Any;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
 
@@ -67,6 +69,6 @@ pub struct ComponentScope {
     /// kept only so their captured state lives as long as the component.
     pub(crate) inert_effects: Vec<BoxedEffectFn>,
     pub(crate) cleanup: Vec<Box<dyn FnOnce()>>,
-    pub(crate) context: HashMap<ContextKeyId, TypeErasedSignal>,
+    pub(crate) context_signals: HashMap<ContextKeyId, Box<dyn Any>>,
     pub(crate) children: Vec<ComponentId>,
 }

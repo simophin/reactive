@@ -1,7 +1,7 @@
 use super::ReactiveScope;
+use crate::Signal;
 use crate::component_scope::{ComponentId, ContextKey};
 use crate::signal::StoredSignal;
-use crate::{Signal, SignalExt};
 use std::rc::Rc;
 
 impl ReactiveScope {
@@ -13,7 +13,10 @@ impl ReactiveScope {
     ) -> StoredSignal<T> {
         let signal = self.create_signal(initial_value);
         if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
-            component.context.insert(key.id(), signal.clone().into());
+            let context_signal: Rc<dyn Signal<Value = T>> = Rc::new(signal.clone());
+            component
+                .context_signals
+                .insert(key.id(), Box::new(context_signal));
         }
         signal
     }
@@ -25,7 +28,8 @@ impl ReactiveScope {
         value: impl Signal<Value = T> + 'static,
     ) {
         if let Some(component) = self.0.borrow_mut().components.get_mut(component_id) {
-            component.context.insert(key.id(), value.boxed());
+            let value: Rc<dyn Signal<Value = T>> = Rc::new(value);
+            component.context_signals.insert(key.id(), Box::new(value));
         }
     }
 
@@ -38,8 +42,8 @@ impl ReactiveScope {
         let mut scope = data.components.get(component_id);
 
         while let Some(component) = scope {
-            if let Some(signal) = component.context.get(&key.id()) {
-                return Some(signal.clone().typed());
+            if let Some(signal) = component.context_signals.get(&key.id()) {
+                return signal.downcast_ref::<Rc<dyn Signal<Value = T>>>().cloned();
             }
             scope = component.parent.and_then(|id| data.components.get(id));
         }

@@ -2,6 +2,7 @@ pub mod algorithm;
 mod align;
 mod center;
 mod expanded;
+mod flex;
 mod padding;
 mod sized_box;
 pub mod types;

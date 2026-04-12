@@ -12,7 +12,8 @@ impl<S, T> SignalWrapper<S, T> {
 impl<S, T, V> Signal for SignalWrapper<S, T>
 where
     S: Signal,
-    T: Fn(S::Value) -> V,
+    T: Fn(S::Value) -> V + 'static,
+    V: 'static,
 {
     type Value = V;
 

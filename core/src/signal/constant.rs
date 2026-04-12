@@ -1,11 +1,11 @@
 use super::Signal;
 
 #[derive(Clone)]
-pub struct ConstantSignal<T>(T);
+pub struct ConstantSignal<T>(pub T);
 
 impl<T> Signal for ConstantSignal<T>
 where
-    T: Clone,
+    T: Clone + 'static,
 {
     type Value = T;
 
@@ -22,7 +22,7 @@ pub trait IntoSignal {
 
 impl<T> IntoSignal for T
 where
-    T: Clone,
+    T: Clone + 'static,
 {
     type S = ConstantSignal<T>;
 

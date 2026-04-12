@@ -1,0 +1,195 @@
+use reactive_core::Signal;
+use std::any::Any;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+type ModifierKeyId = usize;
+
+pub struct ModifierKey<T> {
+    id: LazyLock<ModifierKeyId>,
+    merger: fn(&dyn Signal<Value = T>, T) -> T,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> ModifierKey<T> {
+    pub const fn new(merger: fn(&dyn Signal<Value = T>, T) -> T) -> Self {
+        Self {
+            id: LazyLock::new(|| {
+                static COUNTER: AtomicUsize = AtomicUsize::new(0);
+                COUNTER.fetch_add(1, Ordering::Relaxed)
+            }),
+            merger,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn id(&self) -> ModifierKeyId {
+        *self.id
+    }
+}
+
+struct ModifierValue {
+    id: ModifierKeyId,
+    signal: Box<dyn Any>, // A type erased Rc<dyn Signal<Value = T>>,
+    merger: Box<dyn Fn(&Box<dyn Any>, &Box<dyn Any>) -> Box<dyn Any>>, // A function merging two type erased signals into one.
+}
+
+#[derive(Default)]
+pub struct Modifier {
+    values: Vec<ModifierValue>,
+}
+
+impl Modifier {
+    pub fn new() -> Self {
+        Self { values: Vec::new() }
+    }
+
+    fn box_signal<T: 'static>(s: impl Signal<Value = T> + 'static) -> Box<dyn Any> {
+        let boxed_signal: Rc<dyn Signal<Value = T>> = Rc::new(s);
+        Box::new(boxed_signal)
+    }
+
+    fn unbox_signal<T: 'static>(s: &Box<dyn Any>) -> Rc<dyn Signal<Value = T>> {
+        s.downcast_ref::<Rc<dyn Signal<Value = T>>>()
+            .unwrap()
+            .clone()
+    }
+
+    pub fn with<T: 'static>(
+        mut self,
+        k: &ModifierKey<T>,
+        signal: impl Signal<Value = T> + 'static,
+    ) -> Self {
+        let merger = k.merger;
+
+        match self.values.binary_search_by_key(&k.id(), |v| v.id) {
+            Ok(found) => {
+                let old_signal = Self::unbox_signal(&self.values[found].signal);
+                self.values[found].signal =
+                    Self::box_signal(move || merger(old_signal.as_ref(), signal.read()))
+            }
+            Err(insert) => self.values.insert(
+                insert,
+                ModifierValue {
+                    id: k.id(),
+                    signal: Self::box_signal(signal),
+                    merger: Box::new(move |old, new| {
+                        let old_signal = Self::unbox_signal::<T>(old);
+                        let new_signal = Self::unbox_signal::<T>(new);
+                        Self::box_signal(move || merger(old_signal.as_ref(), new_signal.read()))
+                    }),
+                },
+            ),
+        }
+
+        self
+    }
+
+    pub fn get<T: 'static>(&self, k: &ModifierKey<T>) -> Option<Rc<dyn Signal<Value = T>>> {
+        self.values
+            .binary_search_by_key(&k.id(), |v| v.id)
+            .ok()
+            .and_then(|found| self.values[found].signal.downcast_ref().cloned())
+    }
+
+    pub fn then(mut self, another: Self) -> Self {
+        for value in another.values {
+            match self.values.binary_search_by_key(&value.id, |v| v.id) {
+                Ok(found) => {
+                    // Merge the two signals using the merger function.
+                    let old_value = &mut self.values[found];
+                    old_value.signal = (value.merger)(&old_value.signal, &value.signal);
+                }
+                Err(insert) => self.values.insert(insert, value),
+            }
+        }
+
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    static SUM_KEY: ModifierKey<i32> =
+        ModifierKey::new(|old_signal, new_value| old_signal.read() + new_value);
+    static PRODUCT_KEY: ModifierKey<i32> =
+        ModifierKey::new(|old_signal, new_value| old_signal.read() * new_value);
+
+    #[test]
+    fn new_modifier_has_no_values() {
+        let modifier = Modifier::new();
+
+        assert!(modifier.get(&SUM_KEY).is_none());
+    }
+
+    #[test]
+    fn with_stores_value_for_key() {
+        let modifier = Modifier::new().with(&SUM_KEY, 4);
+
+        assert_eq!(modifier.get(&SUM_KEY).unwrap().read(), 4);
+    }
+
+    #[test]
+    fn with_merges_repeated_key_in_order() {
+        let modifier = Modifier::new().with(&SUM_KEY, 4).with(&SUM_KEY, 7);
+
+        assert_eq!(modifier.get(&SUM_KEY).unwrap().read(), 11);
+    }
+
+    #[test]
+    fn with_keeps_merged_signals_live() {
+        let left = Rc::new(Cell::new(2));
+        let right = Rc::new(Cell::new(3));
+
+        let modifier = Modifier::new()
+            .with(&SUM_KEY, {
+                let left = Rc::clone(&left);
+                move || left.get()
+            })
+            .with(&SUM_KEY, {
+                let right = Rc::clone(&right);
+                move || right.get()
+            });
+
+        let signal = modifier.get(&SUM_KEY).unwrap();
+        assert_eq!(signal.read(), 5);
+
+        left.set(10);
+        right.set(-4);
+
+        assert_eq!(signal.read(), 6);
+    }
+
+    #[test]
+    fn then_combines_distinct_keys() {
+        let modifier = Modifier::new()
+            .with(&SUM_KEY, 4)
+            .then(Modifier::new().with(&PRODUCT_KEY, 6));
+
+        assert_eq!(modifier.get(&SUM_KEY).unwrap().read(), 4);
+        assert_eq!(modifier.get(&PRODUCT_KEY).unwrap().read(), 6);
+    }
+
+    #[test]
+    fn then_merges_overlapping_keys() {
+        let modifier = Modifier::new()
+            .with(&SUM_KEY, 4)
+            .then(Modifier::new().with(&SUM_KEY, 7));
+
+        assert_eq!(modifier.get(&SUM_KEY).unwrap().read(), 11);
+    }
+
+    #[test]
+    fn then_uses_each_keys_own_merger() {
+        let modifier = Modifier::new()
+            .with(&PRODUCT_KEY, 3)
+            .then(Modifier::new().with(&PRODUCT_KEY, 5));
+
+        assert_eq!(modifier.get(&PRODUCT_KEY).unwrap().read(), 15);
+    }
+}
