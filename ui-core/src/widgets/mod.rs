@@ -19,6 +19,7 @@ mod window;
 
 pub use button::Button;
 pub use column::Column;
+pub use common_modifiers::CommonModifiers;
 pub use image::Image;
 pub use image_codec::ImageCodec;
 pub use label::Label;

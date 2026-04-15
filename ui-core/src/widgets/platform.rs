@@ -3,7 +3,7 @@ use super::{
     Slider, Stack, TextInput, Window,
 };
 use crate::widgets::list::List;
-use crate::widgets::platform_view::{PlatformBaseView, PlatformContainerView, SizeSpec};
+use crate::widgets::platform_view::{PlatformBaseView, PlatformContainerView};
 use reactive_core::SetupContext;
 
 pub trait Platform: 'static {
@@ -29,5 +29,7 @@ pub trait Platform: 'static {
 
     fn register_back_handler(on_back: impl FnMut() -> bool + 'static);
 
-    fn new_custom_layout(ops: impl CustomLayoutOperation + 'static) -> Self::ContainerView;
+    fn new_custom_layout(
+        ops: impl CustomLayoutOperation<BaseView = Self::ContainerView> + 'static,
+    ) -> Self::ContainerView;
 }

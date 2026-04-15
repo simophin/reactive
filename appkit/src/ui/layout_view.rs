@@ -1,146 +1,135 @@
 use objc2::rc::Retained;
-use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::NSView;
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
-use std::cell::RefCell;
-use ui_core::layout::algorithm::{
-    AxisConstraint, LayoutHost, Measurement, Rect, Size, SizeConstraint,
+use std::cell::UnsafeCell;
+use std::ops::Deref;
+use ui_core::widgets::{
+    CustomLayoutOperation, PlatformBaseView, PlatformContainerView, SingleAxisMeasure,
+    SingleAxisMeasureResult, SizeSpec,
 };
-use ui_core::layout::{
-    ChildLayoutInfo, CrossAxisAlignment, compute_flex_layout, measure_flex_container,
-};
-use ui_core::{ChildEntry, ChildrenHost, sync_children};
 
-pub(crate) type ChildViewEntry = ChildEntry<Retained<NSView>>;
+#[derive(Clone)]
+pub struct AppKitView(pub Retained<NSView>);
 
-pub struct FlexData {
-    pub children: Vec<ChildViewEntry>,
-    pub vertical: bool,
-    pub spacing: f32,
-    pub cross_axis: CrossAxisAlignment,
+impl Deref for AppKitView {
+    type Target = NSView;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-impl Default for FlexData {
-    fn default() -> Self {
-        Self {
-            children: Vec::new(),
-            vertical: false,
-            spacing: 0.0,
-            cross_axis: CrossAxisAlignment::Start,
-        }
+impl From<Retained<NSView>> for AppKitView {
+    fn from(value: Retained<NSView>) -> Self {
+        Self(value)
     }
+}
+
+impl PartialEq for AppKitView {
+    fn eq(&self, other: &Self) -> bool {
+        Retained::as_ptr(&self.0) == Retained::as_ptr(&other.0)
+    }
+}
+
+impl Eq for AppKitView {}
+
+#[derive(Clone)]
+pub struct AppKitContainerView(pub Retained<ReactiveLayoutView>);
+
+impl Deref for AppKitContainerView {
+    type Target = ReactiveLayoutView;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for AppKitContainerView {
+    fn eq(&self, other: &Self) -> bool {
+        Retained::as_ptr(&self.0) == Retained::as_ptr(&other.0)
+    }
+}
+
+impl Eq for AppKitContainerView {}
+
+pub struct LayoutViewData {
+    children: Vec<AppKitView>,
+    ops: Box<dyn CustomLayoutOperation<BaseView = AppKitContainerView>>,
 }
 
 define_class!(
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
-    #[ivars = RefCell<FlexData>]
+    #[ivars = UnsafeCell<LayoutViewData>]
     #[name = "ReactiveLayoutView"]
     pub struct ReactiveLayoutView;
 
     impl ReactiveLayoutView {
-        /// Top-left origin so our algorithm's coordinates map directly to frames.
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
             true
         }
 
-        /// Called by AppKit's layout engine whenever this view's layout is invalidated
-        /// (e.g. on resize or after `setNeedsLayout`). Runs the algorithm and sets
-        /// child frames.
         #[unsafe(method(layout))]
         fn layout_impl(&self) {
-            // Let the superclass finish its own layout work first.
             let _: () = unsafe { msg_send![super(self), layout] };
-
-            let data = self.ivars().borrow();
-            if data.children.is_empty() {
-                return;
-            }
-
-            let frame = self.frame();
-            let available = Size {
-                width: frame.size.width as f32,
-                height: frame.size.height as f32,
-            };
-
-            let child_infos: Vec<ChildLayoutInfo> =
-                data.children.iter().map(|e| e.layout.clone()).collect();
-
-            let host = AppKitFlexHost {
-                children: &data.children,
-            };
-            compute_flex_layout(
-                &host,
-                &child_infos,
-                data.vertical,
-                data.spacing,
-                data.cross_axis,
-                available,
-            );
+            let size = nsview_size(self);
+            self.with_data(|data| data.ops.on_layout(&self.handle(), size));
         }
 
-        /// Reports the preferred size so Auto Layout can size this view correctly.
         #[unsafe(method(intrinsicContentSize))]
         fn intrinsic_content_size_impl(&self) -> NSSize {
-            let data = self.ivars().borrow();
-            if data.children.is_empty() {
-                return NSSize {
-                    width: 0.0,
-                    height: 0.0,
-                };
-            }
-            let child_infos: Vec<ChildLayoutInfo> =
-                data.children.iter().map(|e| e.layout.clone()).collect();
-            let host = AppKitFlexHost {
-                children: &data.children,
-            };
-            let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
+            let measured = self.with_data(|data| {
+                data.ops.on_measure(&self.handle(), SizeSpec::Unspecified, SizeSpec::Unspecified)
+            });
+
             NSSize {
-                width: m.natural.width as CGFloat,
-                height: m.natural.height as CGFloat,
+                width: measured.0 as CGFloat,
+                height: measured.1 as CGFloat,
             }
         }
     }
 );
 
 impl ReactiveLayoutView {
-    pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(RefCell::new(FlexData::default()));
+    pub fn new(
+        mtm: MainThreadMarker,
+        ops: impl CustomLayoutOperation<BaseView = AppKitContainerView> + 'static,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(UnsafeCell::new(LayoutViewData {
+            children: Vec::new(),
+            ops: Box::new(ops),
+        }));
         unsafe { msg_send![super(this), init] }
     }
 
-    pub fn set_flex_params(&self, vertical: bool, spacing: f32, cross_axis: CrossAxisAlignment) {
-        let mut data = self.ivars().borrow_mut();
-        data.vertical = vertical;
-        data.spacing = spacing;
-        data.cross_axis = cross_axis;
+    pub fn new_empty(mtm: MainThreadMarker) -> Retained<Self> {
+        Self::new(mtm, NoopLayout)
     }
 
-    pub fn update_children(&self, entries: Vec<ChildViewEntry>) {
-        sync_children(self, &mut self.ivars().borrow_mut().children, entries);
-        // borrow_mut released — safe to borrow() now
-        self.update_window_min_size();
+    pub fn handle(&self) -> AppKitContainerView {
+        AppKitContainerView(self.retain())
     }
 
-    fn update_window_min_size(&self) {
+    fn with_data<R>(&self, f: impl FnOnce(&LayoutViewData) -> R) -> R {
+        let data = unsafe { &*self.ivars().get() };
+        f(data)
+    }
+
+    fn with_data_mut<R>(&self, f: impl FnOnce(&mut LayoutViewData) -> R) -> R {
+        let data = unsafe { &mut *self.ivars().get() };
+        f(data)
+    }
+
+    pub fn update_window_min_size(&self) {
         let Some(window) = self.window() else { return };
-        let data = self.ivars().borrow();
-        if data.children.is_empty() {
-            return;
-        }
-        let child_infos: Vec<ChildLayoutInfo> =
-            data.children.iter().map(|e| e.layout.clone()).collect();
-        let host = AppKitFlexHost {
-            children: &data.children,
-        };
-        // Measure unconstrained so the minimum is stable and independent of
-        // the current window width (avoids feedback loops during resize).
-        let m = measure_flex_container(&host, &child_infos, data.vertical, data.spacing);
-        drop(data);
-        // Add the gap between our frame and the content view's frame, which
-        // accounts for any outer padding applied via Auto Layout layout guides.
+        let measured = self.with_data(|data| {
+            data.ops
+                .on_measure(&self.handle(), SizeSpec::Unspecified, SizeSpec::Unspecified)
+        });
+
         let extra = unsafe { self.superview() }
             .map(|sv| {
                 let sv = sv.frame();
@@ -154,76 +143,234 @@ impl ReactiveLayoutView {
                 width: 0.0,
                 height: 0.0,
             });
+
         window.setContentMinSize(NSSize {
-            width: m.min.width as CGFloat + extra.width,
-            height: m.min.height as CGFloat + extra.height,
+            width: measured.0 as CGFloat + extra.width,
+            height: measured.1 as CGFloat + extra.height,
         });
     }
+
+    pub fn clear_children(&self) {
+        self.with_data_mut(|data| {
+            for child in data.children.drain(..) {
+                child.removeFromSuperview();
+            }
+        });
+        self.update_window_min_size();
+        nsview_request_layout(self);
+    }
+
+    pub fn replace_children(&self, children: Vec<Retained<NSView>>) {
+        self.clear_children();
+        self.with_data_mut(|data| {
+            data.children = children.into_iter().map(AppKitView::from).collect();
+            for child in &data.children {
+                child.removeFromSuperview();
+                self.addSubview(child);
+            }
+        });
+        self.update_window_min_size();
+        nsview_request_layout(self);
+    }
 }
 
-impl ChildrenHost<Retained<NSView>> for ReactiveLayoutView {
-    fn remove_child(&self, child: &Retained<NSView>) {
+struct NoopLayout;
+
+impl CustomLayoutOperation for NoopLayout {
+    type BaseView = AppKitContainerView;
+
+    fn on_measure(
+        &self,
+        _view: &Self::BaseView,
+        width: SizeSpec,
+        height: SizeSpec,
+    ) -> (usize, usize) {
+        (
+            resolve_size_spec(width, 0.0),
+            resolve_size_spec(height, 0.0),
+        )
+    }
+
+    fn on_measure_single(
+        &self,
+        _view: &Self::BaseView,
+        _measure: SingleAxisMeasure,
+    ) -> SingleAxisMeasureResult {
+        SingleAxisMeasureResult { min: 0, natrual: 0 }
+    }
+
+    fn on_layout(&self, _view: &Self::BaseView, _size: (usize, usize)) {}
+}
+
+pub(crate) fn nsview_measure(
+    view: &NSView,
+    width_spec: SizeSpec,
+    height_spec: SizeSpec,
+) -> (usize, usize) {
+    let fitting = view.fittingSize();
+    (
+        resolve_size_spec(width_spec, fitting.width),
+        resolve_size_spec(height_spec, fitting.height),
+    )
+}
+
+pub(crate) fn nsview_measure_single(
+    view: &NSView,
+    measure: SingleAxisMeasure,
+) -> SingleAxisMeasureResult {
+    let result = match measure {
+        // AppKit does not expose an axis-agnostic single-axis query for arbitrary
+        // views, so we use the larger intrinsic dimension as a conservative
+        // fallback here and the constraint-aware paths below when the caller can
+        // provide the dependent axis.
+        SingleAxisMeasure::Independent => {
+            let fitting = view.fittingSize();
+            fitting.width.max(fitting.height)
+        }
+        SingleAxisMeasure::WidthForHeight(height) => {
+            nsview_measure(view, SizeSpec::Unspecified, SizeSpec::Exactly(height)).0 as CGFloat
+        }
+        SingleAxisMeasure::HeightForWidth(width) => {
+            nsview_measure(view, SizeSpec::Exactly(width), SizeSpec::Unspecified).1 as CGFloat
+        }
+    };
+
+    let result = result.max(0.0) as usize;
+    SingleAxisMeasureResult {
+        min: result,
+        natrual: result,
+    }
+}
+
+pub(crate) fn nsview_size(view: &NSView) -> (usize, usize) {
+    let frame = view.frame();
+    (
+        frame.size.width.max(0.0) as usize,
+        frame.size.height.max(0.0) as usize,
+    )
+}
+
+pub(crate) fn nsview_request_layout(view: &NSView) {
+    view.invalidateIntrinsicContentSize();
+    view.setNeedsLayout(true);
+    if let Some(superview) = unsafe { view.superview() } {
+        superview.setNeedsLayout(true);
+    }
+}
+
+fn resolve_size_spec(spec: SizeSpec, fitting: CGFloat) -> usize {
+    let fitting = fitting.max(0.0) as usize;
+    match spec {
+        SizeSpec::Exactly(size) => size,
+        SizeSpec::AtMost(size) => fitting.min(size),
+        SizeSpec::Unspecified => fitting,
+    }
+}
+
+impl PlatformBaseView for AppKitView {
+    fn measure(&self, width_spec: SizeSpec, height_spec: SizeSpec) -> (usize, usize) {
+        nsview_measure(self, width_spec, height_spec)
+    }
+
+    fn measure_single_axis(&self, measure: SingleAxisMeasure) -> SingleAxisMeasureResult {
+        nsview_measure_single(self, measure)
+    }
+
+    fn size(&self) -> (usize, usize) {
+        nsview_size(self)
+    }
+
+    fn request_layout(&self) {
+        nsview_request_layout(self);
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl PlatformBaseView for AppKitContainerView {
+    fn measure(&self, width_spec: SizeSpec, height_spec: SizeSpec) -> (usize, usize) {
+        self.0
+            .with_data(|data| data.ops.on_measure(self, width_spec, height_spec))
+    }
+
+    fn measure_single_axis(&self, measure: SingleAxisMeasure) -> SingleAxisMeasureResult {
+        self.0
+            .with_data(|data| data.ops.on_measure_single(self, measure))
+    }
+
+    fn size(&self) -> (usize, usize) {
+        nsview_size(&self.0)
+    }
+
+    fn request_layout(&self) {
+        nsview_request_layout(&self.0);
+        self.0.update_window_min_size();
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl PlatformContainerView for AppKitContainerView {
+    type BaseView = AppKitView;
+
+    fn add_child(&self, child: &Self::BaseView) {
         child.removeFromSuperview();
+        self.0.addSubview(child);
+        self.0
+            .with_data_mut(|data| data.children.push(child.clone()));
+        self.0.update_window_min_size();
     }
 
-    fn add_child(&self, child: &Retained<NSView>, _after: Option<&Retained<NSView>>) {
-        // Children are manually framed by layout(), so disable Auto Layout
-        // for this parent-child relationship.
-        child.setTranslatesAutoresizingMaskIntoConstraints(true);
-        self.addSubview(child);
+    fn update_child_at(&self, index: usize, child: &Self::BaseView) {
+        child.removeFromSuperview();
+        self.0.addSubview(child);
+        self.0.with_data_mut(|data| {
+            if index < data.children.len() {
+                data.children[index] = child.clone();
+            } else {
+                data.children.push(child.clone());
+            }
+        });
+        self.0.update_window_min_size();
     }
 
-    fn invalidate_layout(&self) {
-        self.invalidateIntrinsicContentSize();
-        self.setNeedsLayout(true);
+    fn remove_child(&self, child: &Self::BaseView) {
+        self.0
+            .with_data_mut(|data| data.children.retain(|existing| existing != child));
+        child.removeFromSuperview();
+        self.0.update_window_min_size();
     }
-}
 
-// ── AppKit LayoutHost implementation ─────────────────────────────────────────
+    fn remove_all_children(&self) {
+        self.0.clear_children();
+    }
 
-struct AppKitFlexHost<'a> {
-    children: &'a [ChildViewEntry],
-}
+    fn child_at(&self, index: usize) -> Option<&Self::BaseView> {
+        let data = unsafe { &*self.0.ivars().get() };
+        data.children.get(index)
+    }
 
-impl LayoutHost for AppKitFlexHost<'_> {
     fn child_count(&self) -> usize {
-        self.children.len()
+        self.0.with_data(|data| data.children.len())
     }
 
-    fn measure_child(&self, index: usize, constraint: SizeConstraint) -> Measurement {
-        let view = &self.children[index].native;
-        // `fittingSize` returns the smallest size that satisfies all Auto-Layout
-        // constraints — it serves as both the minimum and the natural size.
-        let fitting = view.fittingSize();
-        let min = Size {
-            width: fitting.width as f32,
-            height: fitting.height as f32,
+    fn place_child(&self, child_index: usize, pos: (usize, usize), size: (usize, usize)) {
+        let Some(child) = self.child_at(child_index) else {
+            return;
         };
-        let natural = Size {
-            width: match constraint.width {
-                AxisConstraint::Exact(v) => v,
-                AxisConstraint::AtMost(max) => (fitting.width as f32).min(max),
-                AxisConstraint::Unconstrained => fitting.width as f32,
-            },
-            height: match constraint.height {
-                AxisConstraint::Exact(v) => v,
-                AxisConstraint::AtMost(max) => (fitting.height as f32).min(max),
-                AxisConstraint::Unconstrained => fitting.height as f32,
-            },
-        };
-        Measurement { min, natural }
-    }
 
-    fn place_child(&self, index: usize, frame: Rect) {
-        let view = &self.children[index].native;
-        view.setFrame(NSRect {
+        child.setFrame(NSRect {
             origin: NSPoint {
-                x: frame.x as CGFloat,
-                y: frame.y as CGFloat,
+                x: pos.0 as CGFloat,
+                y: pos.1 as CGFloat,
             },
             size: NSSize {
-                width: frame.width as CGFloat,
-                height: frame.height as CGFloat,
+                width: size.0 as CGFloat,
+                height: size.1 as CGFloat,
             },
         });
     }
