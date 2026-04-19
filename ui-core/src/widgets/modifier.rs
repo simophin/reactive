@@ -14,7 +14,7 @@ pub struct ModifierKey<T> {
 }
 
 impl<T> ModifierKey<T> {
-    pub const fn new(merger: fn(&dyn Signal<Value = T>, T) -> T) -> Self {
+    pub const fn with_merger(merger: fn(&dyn Signal<Value = T>, T) -> T) -> Self {
         Self {
             id: LazyLock::new(|| {
                 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -23,6 +23,10 @@ impl<T> ModifierKey<T> {
             merger,
             _marker: PhantomData,
         }
+    }
+
+    pub const fn new() -> Self {
+        Self::with_merger(|_old, new| new)
     }
 
     pub fn id(&self) -> ModifierKeyId {
@@ -116,9 +120,9 @@ mod tests {
     use std::cell::Cell;
 
     static SUM_KEY: ModifierKey<i32> =
-        ModifierKey::new(|old_signal, new_value| old_signal.read() + new_value);
+        ModifierKey::with_merger(|old_signal, new_value| old_signal.read() + new_value);
     static PRODUCT_KEY: ModifierKey<i32> =
-        ModifierKey::new(|old_signal, new_value| old_signal.read() * new_value);
+        ModifierKey::with_merger(|old_signal, new_value| old_signal.read() * new_value);
 
     #[test]
     fn new_modifier_has_no_values() {

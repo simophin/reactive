@@ -1,5 +1,5 @@
 use super::{
-    Button, Column, CustomLayoutOperation, Image, ImageCodec, Label, ProgressIndicator, Row,
+    Button, Column, CustomLayoutOperation, Flex, Image, ImageCodec, Label, ProgressIndicator, Row,
     Slider, Stack, TextInput, Window,
 };
 use crate::widgets::list::List;
@@ -23,13 +23,11 @@ pub trait Platform: 'static {
     type Window: Window;
     type List: List;
 
+    type Flex: Flex;
+
     /// Start the platform's main loop, call `setup` to build the component
     /// tree, then block until the application exits.
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static);
 
     fn register_back_handler(on_back: impl FnMut() -> bool + 'static);
-
-    fn new_custom_layout(
-        ops: impl CustomLayoutOperation<BaseView = Self::ContainerView> + 'static,
-    ) -> Self::ContainerView;
 }

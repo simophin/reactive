@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-static WEIGHT_KEY: ModifierKey<f64> = ModifierKey::new(|_old_signal, new_value| new_value);
+static WEIGHT_KEY: ModifierKey<f64> = ModifierKey::with_merger(|_old_signal, new_value| new_value);
 
 pub struct FlexScope {
     pub weight: &'static ModifierKey<f64>,

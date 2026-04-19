@@ -8,7 +8,7 @@ pub trait CommonModifiers {
 }
 
 static PADDINGS_KEY: ModifierKey<EdgeInsets> =
-    ModifierKey::new(|old_signal, new_value| old_signal.read().plus(&new_value));
+    ModifierKey::with_merger(|old_signal, new_value| old_signal.read().plus(&new_value));
 
 impl CommonModifiers for Modifier {
     fn paddings(self, edge_insets: impl Signal<Value = EdgeInsets> + 'static) -> Self {

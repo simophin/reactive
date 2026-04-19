@@ -1,6 +1,7 @@
 mod button;
 mod column;
 mod common_modifiers;
+mod flex;
 mod image;
 mod image_codec;
 mod label;
@@ -20,6 +21,7 @@ mod window;
 pub use button::Button;
 pub use column::Column;
 pub use common_modifiers::CommonModifiers;
+pub use flex::*;
 pub use image::Image;
 pub use image_codec::ImageCodec;
 pub use label::Label;
