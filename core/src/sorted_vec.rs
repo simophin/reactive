@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct SortedVec<T>(Vec<T>);
 
 impl<T> Deref for SortedVec<T> {

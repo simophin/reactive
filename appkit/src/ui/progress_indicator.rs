@@ -1,14 +1,13 @@
-use super::view_component::AppKitViewBuilder;
-use super::view_component::AppKitViewComponent;
-use crate::view_component::NoChildView;
+use crate::native::AppKitNativeView;
 use apple::Prop;
 use objc2::rc::Retained;
 use objc2::{MainThreadOnly, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
 use reactive_core::{Signal, SignalExt};
+use ui_core::widgets::NativeView;
 
-pub type ProgressIndicator = AppKitViewComponent<NSProgressIndicator, NoChildView>;
+pub type ProgressIndicator = AppKitNativeView<NSProgressIndicator, ()>;
 
 apple::view_props! {
     ProgressIndicator on NSProgressIndicator {
@@ -18,8 +17,8 @@ apple::view_props! {
     }
 }
 
-pub static PROP_INDETERMINATE: &Prop<ProgressIndicator, NSProgressIndicator, bool> =
-    &Prop::new(|pi, indeterminate| {
+pub static PROP_INDETERMINATE: Prop<ProgressIndicator, NSProgressIndicator, bool> =
+    Prop::new(|pi, indeterminate| {
         pi.setIndeterminate(indeterminate);
         if indeterminate {
             unsafe { pi.startAnimation(None) };
@@ -30,31 +29,43 @@ pub static PROP_INDETERMINATE: &Prop<ProgressIndicator, NSProgressIndicator, boo
 
 impl ProgressIndicator {
     fn build_bar(_value: impl Signal<Value = f64> + 'static) -> Self {
-        Self(AppKitViewBuilder::create_no_child(
-            |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let pi: Retained<NSProgressIndicator> =
-                    unsafe { msg_send![NSProgressIndicator::alloc(mtm), init] };
-                pi.setStyle(NSProgressIndicatorStyle::Bar);
-                pi
-            },
-            |view: Retained<NSProgressIndicator>| view.into_super(),
-        ))
+        Self(
+            NativeView::new(
+                |_| {
+                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                    let pi: Retained<NSProgressIndicator> =
+                        unsafe { msg_send![NSProgressIndicator::alloc(mtm), init] };
+                    pi.setStyle(NSProgressIndicatorStyle::Bar);
+                    pi
+                },
+                |view| view.into_super(),
+                move |_, _| {},
+                Default::default(),
+                &super::VIEW_REGISTRY_KEY,
+            ),
+            Default::default(),
+        )
     }
 
     fn build_spinner() -> Self {
-        Self(AppKitViewBuilder::create_no_child(
-            |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let pi: Retained<NSProgressIndicator> =
-                    unsafe { msg_send![NSProgressIndicator::alloc(mtm), init] };
-                pi.setStyle(NSProgressIndicatorStyle::Spinning);
-                pi.setIndeterminate(true);
-                unsafe { pi.startAnimation(None) };
-                pi
-            },
-            |view: Retained<NSProgressIndicator>| view.into_super(),
-        ))
+        Self(
+            NativeView::new(
+                |_| {
+                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                    let pi: Retained<NSProgressIndicator> =
+                        unsafe { msg_send![NSProgressIndicator::alloc(mtm), init] };
+                    pi.setStyle(NSProgressIndicatorStyle::Spinning);
+                    pi.setIndeterminate(true);
+                    unsafe { pi.startAnimation(None) };
+                    pi
+                },
+                |view| view.into_super(),
+                move |_, _| {},
+                Default::default(),
+                &super::VIEW_REGISTRY_KEY,
+            ),
+            Default::default(),
+        )
     }
 
     pub fn new_bar(value: impl Signal<Value = f64> + 'static) -> Self {

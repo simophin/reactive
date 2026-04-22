@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
+taffy = "0.10.1"

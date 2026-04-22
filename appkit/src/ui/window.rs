@@ -1,13 +1,12 @@
-use crate::context::CHILDREN_VIEWS;
-use crate::ui::layout::{MountedChild, activate_constraints, mount_child_to_parent, pin_edges};
-use crate::view_component::AppKitViewBuilder;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
+use reactive_core::{BoxedComponent, Component, IntoSignal, SetupContext, Signal, StoredSignal};
+use std::rc::Rc;
 use ui_core::widgets;
+use ui_core::widgets::{CommonModifiers, EdgeInsets, Modifier, NativeViewRegistry};
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -38,8 +37,6 @@ pub struct Window {
     initial_height: f64,
 }
 
-// pub type Window = AppKitViewComponent<NSWindow, SingleChildView>;
-
 apple::view_props! {
     Window on NSWindow {
         pub title: String;
@@ -62,6 +59,22 @@ impl widgets::Window for Window {
     }
 }
 
+struct WindowViewRegistry {
+    current_view: StoredSignal<Option<(Retained<NSView>, Modifier)>>,
+}
+
+impl NativeViewRegistry<Retained<NSView>> for WindowViewRegistry {
+    fn update_view(&self, view: &Retained<NSView>, modifier: Modifier) {
+        self.current_view.update(Some((view.clone(), modifier)));
+    }
+
+    fn clear_view(&self, view: &Retained<NSView>) {
+        if self.current_view.read().as_ref().map(|s| &s.0) == Some(view) {
+            self.current_view.update(None);
+        }
+    }
+}
+
 impl Component for Window {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Self {
@@ -71,67 +84,58 @@ impl Component for Window {
             initial_height,
         } = *self;
 
-        let window = AppKitViewBuilder::create_with_child(
-            move |_| {
-                let mtm = MainThreadMarker::new().expect("must be on main thread");
-                let delegate = AppWindowDelegate::new(mtm);
-                let rect = NSRect::new(
-                    NSPoint::new(0.0, 0.0),
-                    NSSize::new(initial_width, initial_height),
-                );
-                let style = NSWindowStyleMask::Titled
-                    | NSWindowStyleMask::Closable
-                    | NSWindowStyleMask::Resizable;
-                let window = unsafe {
-                    NSWindow::initWithContentRect_styleMask_backing_defer(
-                        mtm.alloc(),
-                        rect,
-                        style,
-                        NSBackingStoreType::Buffered,
-                        false,
-                    )
-                };
+        let mtm = MainThreadMarker::new().expect("must be on main thread");
+        let delegate = AppWindowDelegate::new(mtm);
+        let rect = NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(initial_width, initial_height),
+        );
+        let style =
+            NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Resizable;
+        let window = unsafe {
+            NSWindow::initWithContentRect_styleMask_backing_defer(
+                mtm.alloc(),
+                rect,
+                style,
+                NSBackingStoreType::Buffered,
+                false,
+            )
+        };
 
-                window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-                pin_content_view_to_content_layout_guide(&window);
-                window.center();
-                window.makeKeyAndOrderFront(None);
+        window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        window.center();
+        window.makeKeyAndOrderFront(None);
 
-                window
-            },
-            |window| window.contentView().unwrap(),
-            child,
-        )
-        .bind(PROP_TITLE, title)
-        .setup(ctx);
+        let current_view = ctx.create_signal(None);
+        let registry = WindowViewRegistry {
+            current_view: current_view.clone(),
+        };
 
-        let parent = window.contentView().unwrap();
+        ctx.set_context(
+            &super::VIEW_REGISTRY_KEY,
+            (Rc::new(registry) as Rc<dyn NativeViewRegistry<_>>).into_signal(),
+        );
 
-        if let Some(children_view) = ctx.use_context(&CHILDREN_VIEWS) {
-            ctx.create_effect(move |_, prev: Option<Option<MountedChild>>| {
-                if let Some(child) = children_view.read().first() {
-                    if let Some(Some(prev)) = prev {
-                        prev.unmount(&parent);
-                    }
+        ctx.boxed_child(child);
 
-                    if let Some(child_entry) = child.read() {
-                        return Some(mount_child_to_parent(
-                            &window.contentView().unwrap(),
-                            child_entry,
-                        ));
-                    }
-                }
+        ctx.create_effect(move |_, _| {
+            let current_view = current_view.read();
+            let Some((current_view, modifier)) = current_view else {
+                window.setContentView(None);
+                return;
+            };
 
-                None
-            });
-        }
+            apply_content_view(
+                &window,
+                &current_view,
+                modifier.get_paddings().read().unwrap_or_default(),
+            );
+        });
     }
 }
 
-fn pin_content_view_to_content_layout_guide(window: &NSWindow) {
-    let Some(content_view) = window.contentView() else {
-        return;
-    };
+fn apply_content_view(window: &NSWindow, view: &NSView, paddings: EdgeInsets) {
+    window.setContentView(Some(view));
     let Some(content_layout_guide) = window
         .contentLayoutGuide()
         .and_then(|guide| guide.downcast::<NSLayoutGuide>().ok())
@@ -139,6 +143,28 @@ fn pin_content_view_to_content_layout_guide(window: &NSWindow) {
         return;
     };
 
-    content_view.setTranslatesAutoresizingMaskIntoConstraints(false);
-    activate_constraints(&pin_edges(&content_view, &content_layout_guide));
+    view.setTranslatesAutoresizingMaskIntoConstraints(false);
+
+    let leading = view
+        .leadingAnchor()
+        .constraintEqualToAnchor(&content_layout_guide.leadingAnchor());
+    leading.setConstant(paddings.left as f64);
+
+    let trailing = view
+        .trailingAnchor()
+        .constraintEqualToAnchor(&content_layout_guide.trailingAnchor());
+    trailing.setConstant(-(paddings.right as f64));
+
+    let top = view
+        .topAnchor()
+        .constraintEqualToAnchor(&content_layout_guide.topAnchor());
+    top.setConstant(paddings.top as f64);
+
+    let bottom = view
+        .bottomAnchor()
+        .constraintEqualToAnchor(&content_layout_guide.bottomAnchor());
+    bottom.setConstant(-(paddings.bottom as f64));
+
+    let constraints = NSArray::from_retained_slice(&[leading, trailing, top, bottom]);
+    NSLayoutConstraint::activateConstraints(&constraints);
 }

@@ -14,15 +14,9 @@ pub mod encoding;
 /// carry no platform views — they propagate `LayoutHints` via context, which
 /// the nearest real view component below them consumes and translates to
 /// platform constraints.
-pub mod layout;
 pub mod prop;
 pub mod view_builder;
-pub mod view_component;
 pub mod widgets;
 
 pub use prop::Prop;
 pub use view_builder::ViewBuilder;
-pub use view_component::{
-    AtMostOneChild, ChildEntry, ChildStrategy, ChildrenHost, MultipleChildren, NoChild,
-    PlatformViewBuilder, PlatformViewComponent, SingleChild, sync_children,
-};

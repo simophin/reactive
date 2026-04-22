@@ -1,4 +1,4 @@
-use reactive_core::Signal;
+use reactive_core::{Component, ContextKey, SetupContext, Signal};
 use std::any::Any;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -36,8 +36,8 @@ impl<T> ModifierKey<T> {
 
 struct ModifierValue {
     id: ModifierKeyId,
-    signal: Box<dyn Any>, // A type erased Rc<dyn Signal<Value = T>>,
-    merger: Box<dyn Fn(&Box<dyn Any>, &Box<dyn Any>) -> Box<dyn Any>>, // A function merging two type erased signals into one.
+    signal: Rc<dyn Any>, // A type-erased Rc<dyn Signal<Value = T>>.
+    merger: Rc<dyn Fn(&Rc<dyn Any>, &Rc<dyn Any>) -> Rc<dyn Any>>,
 }
 
 #[derive(Default)]
@@ -45,17 +45,35 @@ pub struct Modifier {
     values: Vec<ModifierValue>,
 }
 
+impl Clone for Modifier {
+    fn clone(&self) -> Self {
+        Self {
+            values: self.values.clone(),
+        }
+    }
+}
+
+impl Clone for ModifierValue {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            signal: Rc::clone(&self.signal),
+            merger: Rc::clone(&self.merger),
+        }
+    }
+}
+
 impl Modifier {
     pub fn new() -> Self {
         Self { values: Vec::new() }
     }
 
-    fn box_signal<T: 'static>(s: impl Signal<Value = T> + 'static) -> Box<dyn Any> {
+    fn box_signal<T: 'static>(s: impl Signal<Value = T> + 'static) -> Rc<dyn Any> {
         let boxed_signal: Rc<dyn Signal<Value = T>> = Rc::new(s);
-        Box::new(boxed_signal)
+        Rc::new(boxed_signal)
     }
 
-    fn unbox_signal<T: 'static>(s: &Box<dyn Any>) -> Rc<dyn Signal<Value = T>> {
+    fn unbox_signal<T: 'static>(s: &Rc<dyn Any>) -> Rc<dyn Signal<Value = T>> {
         s.downcast_ref::<Rc<dyn Signal<Value = T>>>()
             .unwrap()
             .clone()
@@ -79,7 +97,7 @@ impl Modifier {
                 ModifierValue {
                     id: k.id(),
                     signal: Self::box_signal(signal),
-                    merger: Box::new(move |old, new| {
+                    merger: Rc::new(move |old, new| {
                         let old_signal = Self::unbox_signal::<T>(old);
                         let new_signal = Self::unbox_signal::<T>(new);
                         Self::box_signal(move || merger(old_signal.as_ref(), new_signal.read()))
@@ -112,6 +130,10 @@ impl Modifier {
 
         self
     }
+}
+
+pub trait WithModifier {
+    fn modifier(self, modifier: Modifier) -> Self;
 }
 
 #[cfg(test)]

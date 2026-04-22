@@ -1,6 +1,6 @@
 use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::layout::Alignment;
 use ui_core::widgets;
+use ui_core::widgets::Alignment;
 
 pub struct Stack {
     children: Vec<BoxedComponent>,

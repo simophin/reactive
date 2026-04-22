@@ -1,10 +1,46 @@
-use super::ReactiveScope;
+use super::{ActiveSignalTracker, ReactiveScope};
 use crate::Signal;
 use crate::component_scope::{BoxedEffectFn, ComponentId, Effect};
 use crate::signal::StoredSignal;
-use crate::signal::stored::ReadStoredSignal;
+use crate::signal::stored::{ReadStoredSignal, SignalId};
+use crate::sorted_vec::SortedVec;
+use std::rc::Rc;
+
+pub struct FunctionTracker {
+    tracker: ActiveSignalTracker,
+    last_accessed_signals: StoredSignal<Rc<SortedVec<SignalId>>>,
+}
+
+impl FunctionTracker {
+    pub fn run_tracking<T>(&self, f: impl FnOnce() -> T) -> T {
+        let (result, accessed) = self.tracker.run_tracking(f);
+        self.last_accessed_signals.update_with(|curr| {
+            if curr.as_ref() != &accessed {
+                *Rc::make_mut(curr) = accessed;
+                true
+            } else {
+                false
+            }
+        });
+
+        result
+    }
+}
 
 impl ReactiveScope {
+    pub(crate) fn create_fn_tracking(
+        &self,
+        id: ComponentId,
+        mut on_signal_changed: impl FnMut() + 'static,
+    ) -> FunctionTracker {
+        self.create_effect(id, move |_, _| on_signal_changed());
+
+        FunctionTracker {
+            tracker: self.0.borrow().active_signal_tracker.clone(),
+            last_accessed_signals: self.create_signal(Default::default()),
+        }
+    }
+
     pub(crate) fn create_effect<T: 'static>(
         &self,
         component_id: ComponentId,

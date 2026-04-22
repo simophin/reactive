@@ -1,5 +1,4 @@
-use super::view_component::AppKitViewBuilder;
-use crate::view_component::{AppKitViewComponent, NoChildView};
+use crate::native::AppKitNativeView;
 use apple::Prop;
 use derive_more::Display;
 use objc2::rc::Retained;
@@ -11,9 +10,9 @@ use reactive_core::Signal;
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
-use ui_core::widgets::{PlatformTextType, TextChange, TextInputState};
+use ui_core::widgets::{NativeView, PlatformTextType, TextChange, TextInputState};
 
-pub type TextView = AppKitViewComponent<NSTextView, NoChildView>;
+pub type TextView = AppKitNativeView<NSTextView, ()>;
 
 apple::view_props! {
     TextView on NSTextView {
@@ -22,7 +21,7 @@ apple::view_props! {
     }
 }
 
-pub static PROP_FONT_SIZE: &Prop<TextView, NSTextView, f64> = &Prop::new(|view, size| {
+pub static PROP_FONT_SIZE: Prop<TextView, NSTextView, f64> = Prop::new(|view, size| {
     let font = NSFont::systemFontOfSize(size);
     view.setFont(Some(&font));
 });
@@ -255,60 +254,66 @@ impl ui_core::widgets::TextInput for TextView {
         ) + 'static,
     ) -> Self {
         let on_change = Rc::new(RefCell::new(on_change));
-        Self(AppKitViewBuilder::create_no_child(
-            move |ctx| {
-                let mtm = MainThreadMarker::new().unwrap();
-                let on_change = on_change.clone();
+        Self(
+            NativeView::new(
+                move |ctx| {
+                    let mtm = MainThreadMarker::new().unwrap();
+                    let on_change = on_change.clone();
 
-                // Box the signal so it can be shared between the callback and
-                // the effect without requiring Signal: Clone.
-                let value: Rc<dyn Signal<Value = TextInputState<AppKitText>>> = Rc::new(value);
-                let value_for_effect = value.clone();
+                    // Box the signal so it can be shared between the callback and
+                    // the effect without requiring Signal: Clone.
+                    let value: Rc<dyn Signal<Value = TextInputState<AppKitText>>> = Rc::new(value);
+                    let value_for_effect = value.clone();
 
-                let storage = TextStorage::new(mtm);
+                    let storage = TextStorage::new(mtm);
 
-                let layout_manager = NSLayoutManager::new();
-                let container = NSTextContainer::initWithSize(
-                    mtm.alloc::<NSTextContainer>(),
-                    NSSize {
-                        width: f64::MAX,
-                        height: f64::MAX,
-                    },
-                );
-                layout_manager.addTextContainer(&container);
-                storage.addLayoutManager(&layout_manager);
+                    let layout_manager = NSLayoutManager::new();
+                    let container = NSTextContainer::initWithSize(
+                        mtm.alloc::<NSTextContainer>(),
+                        NSSize {
+                            width: f64::MAX,
+                            height: f64::MAX,
+                        },
+                    );
+                    layout_manager.addTextContainer(&container);
+                    storage.addLayoutManager(&layout_manager);
 
-                let text_view = ReactiveTextView::new(
-                    move |range, replacement| {
-                        let initial = value.read().text.clone();
-                        on_change.borrow_mut()(TextChange::Replacement {
-                            replace: range.location..range.location + range.length,
-                            with: replacement,
-                        });
-                        // Return true (YES) if the caller updated the signal,
-                        // meaning the change is accepted as-is.
-                        value.read().text != initial
-                    },
-                    mtm,
-                );
+                    let text_view = ReactiveTextView::new(
+                        move |range, replacement| {
+                            let initial = value.read().text.clone();
+                            on_change.borrow_mut()(TextChange::Replacement {
+                                replace: range.location..range.location + range.length,
+                                with: replacement,
+                            });
+                            // Return true (YES) if the caller updated the signal,
+                            // meaning the change is accepted as-is.
+                            value.read().text != initial
+                        },
+                        mtm,
+                    );
 
-                // Connect ReactiveTextView to our custom storage by replacing
-                // the default text container with ours.
-                unsafe { text_view.setTextContainer(Some(&container)) };
+                    // Connect ReactiveTextView to our custom storage by replacing
+                    // the default text container with ours.
+                    unsafe { text_view.setTextContainer(Some(&container)) };
 
-                // Effect: signal → storage (programmatic path).
-                let storage = storage.clone();
-                ctx.create_effect(move |_, _| {
-                    storage.set_text(&value_for_effect.read().text.0);
-                });
+                    // Effect: signal → storage (programmatic path).
+                    let storage = storage.clone();
+                    ctx.create_effect(move |_, _| {
+                        storage.set_text(&value_for_effect.read().text.0);
+                    });
 
-                text_view.into_super()
-            },
-            |t| t.into_super().into_super(),
-        ))
+                    text_view.into_super()
+                },
+                |t| t.into_super().into_super(),
+                |_, _| {},
+                Default::default(),
+                &super::VIEW_REGISTRY_KEY,
+            ),
+            Default::default(),
+        )
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
-        Self(self.0.bind(PROP_FONT_SIZE, size))
+        Self(self.0.bind(PROP_FONT_SIZE, size), Default::default())
     }
 }

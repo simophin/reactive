@@ -1,12 +1,13 @@
-use crate::view_component::{AppKitViewBuilder, AppKitViewComponent, NoChildView};
+use crate::native::AppKitNativeView;
 use apple::ActionTarget;
 use objc2::{ClassType, sel};
 use objc2_app_kit::NSButton;
 use objc2_foundation::{MainThreadMarker, NSString};
 use reactive_core::Signal;
 use ui_core::widgets;
+use ui_core::widgets::NativeView;
 
-pub type Button = AppKitViewComponent<NSButton, NoChildView>;
+pub type Button = AppKitNativeView<NSButton, ()>;
 
 apple::view_props! {
     Button on NSButton {
@@ -19,7 +20,7 @@ apple::view_props! {
 impl widgets::Button for Button {
     fn new(title: impl Signal<Value = String> + 'static, on_click: impl Fn() + 'static) -> Self {
         Self(
-            AppKitViewBuilder::create_no_child(
+            NativeView::new(
                 move |_| {
                     let mtm = MainThreadMarker::new().expect("must be on main thread");
                     let target = ActionTarget::new(move |_| on_click(), mtm);
@@ -35,12 +36,16 @@ impl widgets::Button for Button {
                     button
                 },
                 |button| button.into_super().into_super(),
+                move |_, _| {},
+                Default::default(),
+                &super::VIEW_REGISTRY_KEY,
             )
             .bind(PROP_TITLE, title),
+            Default::default(),
         )
     }
 
     fn enabled(self, value: impl Signal<Value = bool> + 'static) -> Self {
-        Self(self.0.bind(PROP_ENABLED, value))
+        Self(self.0.bind(PROP_ENABLED, value), Default::default())
     }
 }

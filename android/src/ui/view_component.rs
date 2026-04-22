@@ -176,7 +176,11 @@ impl<W: Clone + PartialEq + Eq + 'static, C> AndroidViewBuilder<W, C> {
         C: ChildStrategy,
     {
         self.inner
-            .setup(ctx, |_| {}, |native, layout| ChildEntry { native, layout })
+            .setup(ctx, |_| {}, |native, layout, modifier| ChildEntry {
+                native,
+                layout,
+                modifier,
+            })
     }
 }
 

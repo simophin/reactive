@@ -1,4 +1,4 @@
-use crate::widgets::ModifierKey;
+use crate::widgets::{ModifierKey, WithModifier};
 use reactive_core::{Component, Signal};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -108,7 +108,7 @@ impl FlexScope {
     }
 }
 
-pub trait Flex {
+pub trait Flex: WithModifier + Component + 'static {
     fn new(props: impl Signal<Value = FlexProps> + 'static) -> Self;
 
     fn with_child<C: Component + 'static>(self, factory: impl FnOnce(FlexScope) -> C) -> Self;

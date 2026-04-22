@@ -7,6 +7,7 @@ pub(crate) mod trackers;
 
 use crate::component::SetupContext;
 
+pub use effects::FunctionTracker;
 pub use resources::ResourceState;
 
 use crate::component_scope::{ComponentId, ComponentScope};

@@ -1,4 +1,5 @@
 use crate::component_scope::ComponentId;
+use crate::reactive_scope::FunctionTracker;
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
 use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
@@ -65,6 +66,11 @@ impl SetupContext {
         effect_fn: impl for<'b> FnMut(&ReactiveScope, Option<T>) -> T + 'static,
     ) {
         self.scope.create_effect(self.component_id, effect_fn);
+    }
+
+    pub fn create_fn_tracking(&self, on_signal_changed: impl FnMut() + 'static) -> FunctionTracker {
+        self.scope
+            .create_fn_tracking(self.component_id, on_signal_changed)
     }
 
     pub fn create_memo<T: 'static>(

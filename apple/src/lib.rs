@@ -34,8 +34,8 @@ macro_rules! view_props {
     // String — needs NSString conversion
     ($component:ident on $view:ident { $vis:vis $name:ident : String ; $($rest:tt)* }) => {
         $crate::paste::paste! {
-            $vis static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, String> =
-                &$crate::Prop::new(|view, value| {
+            $vis static [<PROP_ $name:upper>]: $crate::Prop<$component, $view, String> =
+                $crate::Prop::new(|view, value| {
                     view.[<set $name:camel>](
                         &::objc2_foundation::NSString::from_str(&value)
                     );
@@ -46,8 +46,8 @@ macro_rules! view_props {
     // All other types — passed through directly
     ($component:ident on $view:ident { $vis:vis $name:ident : $ty:ty ; $($rest:tt)* }) => {
         $crate::paste::paste! {
-            $vis static [<PROP_ $name:upper>]: &$crate::Prop<$component, $view, $ty> =
-                &$crate::Prop::new(|view, value| {
+            $vis static [<PROP_ $name:upper>]: $crate::Prop<$component, $view, $ty> =
+                $crate::Prop::new(|view, value| {
                     view.[<set $name:camel>](value);
                 });
         }

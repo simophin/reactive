@@ -87,7 +87,11 @@ impl<W: Clone + PartialEq + Eq + 'static, C> GtkViewBuilder<W, C> {
         self.inner.setup(
             ctx,
             |_| {},
-            |native, layout| ui_core::ChildEntry { native, layout },
+            |native, layout, modifier| ui_core::ChildEntry {
+                native,
+                layout,
+                modifier,
+            },
         )
     }
 }

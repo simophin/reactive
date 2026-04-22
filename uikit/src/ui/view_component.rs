@@ -140,7 +140,11 @@ impl<<VV: 'static, C> UIKitViewBuilder<<VV, C> {
                     let _: () = msg_send![&*uiview, setAccessibilityIdentifier: Some(&NSString::from_str(&name))];
                 }
             },
-            |native, layout| ui_core::ChildEntry { native, layout },
+            |native, layout, modifier| ui_core::ChildEntry {
+                native,
+                layout,
+                modifier,
+            },
         )
     }
 }

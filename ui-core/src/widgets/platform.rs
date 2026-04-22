@@ -1,14 +1,13 @@
 use super::{
-    Button, Column, CustomLayoutOperation, Flex, Image, ImageCodec, Label, ProgressIndicator, Row,
-    Slider, Stack, TextInput, Window,
+    Button, Flex, Image, ImageCodec, Label, NativeViewRegistry, ProgressIndicator, Slider, Stack,
+    TextInput, Window,
 };
 use crate::widgets::list::List;
-use crate::widgets::platform_view::{PlatformBaseView, PlatformContainerView};
-use reactive_core::SetupContext;
+use reactive_core::{ContextKey, SetupContext};
+use std::rc::Rc;
 
 pub trait Platform: 'static {
-    type View: PlatformBaseView + Eq + Clone;
-    type ContainerView: PlatformContainerView<BaseView = Self::View> + Eq + Clone;
+    type NativeViewHandle: Clone + 'static;
 
     type ImageCodec: ImageCodec;
     type Button: Button;
@@ -17,13 +16,13 @@ pub trait Platform: 'static {
     type ProgressIndicator: ProgressIndicator;
     type TextInput: TextInput;
     type Slider: Slider;
-    type Row: Row;
-    type Column: Column;
     type Stack: Stack;
     type Window: Window;
     type List: List;
-
     type Flex: Flex;
+
+    fn native_view_registry_key()
+    -> &'static ContextKey<Rc<dyn NativeViewRegistry<Self::NativeViewHandle>>>;
 
     /// Start the platform's main loop, call `setup` to build the component
     /// tree, then block until the application exits.
