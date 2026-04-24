@@ -1,7 +1,7 @@
 use crate::Prop;
 use crate::widgets::WithModifier;
 use crate::widgets::modifier::Modifier;
-use reactive_core::{Component, ContextKey, ReactiveScope, SetupContext, Signal};
+use reactive_core::{Component, ComponentId, ContextKey, ReactiveScope, SetupContext, Signal};
 use std::rc::Rc;
 
 pub struct NativeView<BN: 'static, N: 'static> {
@@ -14,8 +14,8 @@ pub struct NativeView<BN: 'static, N: 'static> {
 }
 
 pub trait NativeViewRegistry<V> {
-    fn update_view(&self, view: &V, modifier: Modifier);
-    fn clear_view(&self, view: &V);
+    fn update_view(&self, component_id: ComponentId, view: V, modifier: Modifier);
+    fn clear_view(&self, component_id: ComponentId, view: V);
 }
 
 impl<BN, N> NativeView<BN, N>
@@ -37,9 +37,10 @@ where
         let registry = ctx.use_context(registry_key);
 
         if let Some(registry) = registry.read() {
+            let component_id = ctx.component_id();
             let base_view = to_base(native_view.clone());
-            registry.update_view(&base_view, modifier);
-            ctx.on_cleanup(move || registry.clear_view(&base_view));
+            registry.update_view(component_id, base_view.clone(), modifier);
+            ctx.on_cleanup(move || registry.clear_view(component_id, base_view));
         }
 
         for binder in prop_binders {

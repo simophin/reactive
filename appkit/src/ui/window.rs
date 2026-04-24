@@ -3,7 +3,9 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::*;
 use objc2_foundation::*;
-use reactive_core::{BoxedComponent, Component, IntoSignal, SetupContext, Signal, StoredSignal};
+use reactive_core::{
+    BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal, StoredSignal,
+};
 use std::rc::Rc;
 use ui_core::widgets;
 use ui_core::widgets::{CommonModifiers, EdgeInsets, Modifier, NativeViewRegistry};
@@ -64,12 +66,12 @@ struct WindowViewRegistry {
 }
 
 impl NativeViewRegistry<Retained<NSView>> for WindowViewRegistry {
-    fn update_view(&self, view: &Retained<NSView>, modifier: Modifier) {
-        self.current_view.update(Some((view.clone(), modifier)));
+    fn update_view(&self, _component_id: ComponentId, view: Retained<NSView>, modifier: Modifier) {
+        self.current_view.update(Some((view, modifier)));
     }
 
-    fn clear_view(&self, view: &Retained<NSView>) {
-        if self.current_view.read().as_ref().map(|s| &s.0) == Some(view) {
+    fn clear_view(&self, _component_id: ComponentId, view: Retained<NSView>) {
+        if self.current_view.read().as_ref().map(|s| &s.0) == Some(&view) {
             self.current_view.update(None);
         }
     }

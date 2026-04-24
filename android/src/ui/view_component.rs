@@ -175,12 +175,15 @@ impl<W: Clone + PartialEq + Eq + 'static, C> AndroidViewBuilder<W, C> {
     where
         C: ChildStrategy,
     {
-        self.inner
-            .setup(ctx, |_| {}, |native, layout, modifier| ChildEntry {
+        self.inner.setup(
+            ctx,
+            |_| {},
+            |native, layout, modifier| ChildEntry {
                 native,
                 layout,
                 modifier,
-            })
+            },
+        )
     }
 }
 
