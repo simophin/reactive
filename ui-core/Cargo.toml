@@ -3,7 +3,104 @@ name = "ui-core"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+appkit = [
+    "dep:block2",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-core-graphics",
+    "dep:objc2-core-foundation",
+    "dep:objc2-image-io",
+    "dep:objc2-app-kit",
+]
+gtk = ["dep:gtk4", "dep:glib"]
+uikit = [
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-ui-kit",
+]
+android = [
+    "dep:jni",
+    "dep:android-macros",
+    "dep:dexer",
+    "dep:dexer-macros",
+]
+
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
+paste = "1"
 smallvec = "1.15.1"
 taffy = "0.10.1"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet", "NSNotification", "NSAttributedString", "NSDictionary", "NSRange"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "0.6", optional = true }
+objc2-core-graphics = { version = "0.3.2", optional = true, features = ["CGImage"] }
+objc2-core-foundation = { version = "0.3.2", optional = true, features = ["CFData"] }
+objc2-image-io = { version = "0.3.2", optional = true, features = ["CGImageSource"] }
+objc2-app-kit = { version = "0.3", optional = true, features = [
+    "NSApplication",
+    "NSRunningApplication",
+    "NSWindow",
+    "NSStackView",
+    "NSButton",
+    "NSTextField",
+    "NSView",
+    "NSControl",
+    "NSResponder",
+    "NSGraphics",
+    "NSCell",
+    "NSText",
+    "NSTextView",
+    "NSTextStorage",
+    "NSLayoutManager",
+    "NSTextContainer",
+    "NSFont",
+    "NSImage",
+    "NSImageView",
+    "NSProgressIndicator",
+    "NSSlider",
+    "NSCollectionView",
+    "NSCollectionViewFlowLayout",
+    "NSCollectionViewLayout",
+    "NSTableView",
+    "NSTableColumn",
+    "NSScrollView",
+    "NSViewController",
+    "NSLayoutConstraint",
+    "NSLayoutAnchor",
+    "NSUserInterfaceItemIdentification",
+    "block2",
+] }
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+gtk4 = { version = "0", optional = true, features = ["v4_8"] }
+glib = { version = "0", optional = true }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-ui-kit = { version = "0.3", optional = true, features = [
+    "UIApplication",
+    "UIView",
+    "UIStackView",
+    "UIButton",
+    "UILabel",
+    "UIWindow",
+    "UIViewController",
+    "UIControl",
+    "UIFont",
+    "UIResponder",
+    "UIGeometry",
+] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21.1", optional = true }
+android-macros = { version = "0.1.0", path = "../android-macros", optional = true }
+dexer = { version = "0.1.0", path = "../dexer", optional = true }
+dexer-macros = { version = "0.1.0", path = "../dexer-macros", optional = true }

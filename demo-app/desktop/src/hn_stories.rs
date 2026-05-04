@@ -9,11 +9,11 @@ use ui_core::widgets::{Button, Column, Label, List, Platform, ProgressIndicator,
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "macos")]
-type AppPlatform = gtk::platform::Gtk;
-// type AppPlatform = appkit::platform::AppKit;
+type AppPlatform = ui_core::gtk::platform::Gtk;
+// type AppPlatform = ui_core::appkit::platform::AppKit;
 
 #[cfg(target_os = "linux")]
-type AppPlatform = gtk::platform::Gtk;
+type AppPlatform = ui_core::gtk::platform::Gtk;
 
 // ---------------------------------------------------------------------------
 // Data types

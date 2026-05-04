@@ -14,8 +14,8 @@ include!(concat!(env!("OUT_DIR"), "/resources.rs"));
 
 // Platform selection: the only two lines that differ between macOS and Linux.
 #[cfg(target_os = "macos")]
-// type AppPlatform = appkit::platform::AppKit;
-type AppPlatform = gtk::platform::Gtk;
+// type AppPlatform = ui_core::appkit::platform::AppKit;
+type AppPlatform = ui_core::gtk::platform::Gtk;
 
 // ---------------------------------------------------------------------------
 // Application UI — generic over any Platform, compiled once.

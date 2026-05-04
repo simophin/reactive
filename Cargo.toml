@@ -3,14 +3,9 @@ resolver = "2"
 members = [
     "core",
     "ui-core",
-    "apple",
-    "appkit",
-    "gtk",
     "resources",
     "resources-build",
-    "android",
     "android-macros",
     "dexer",
     "dexer-macros",
 ]
-
