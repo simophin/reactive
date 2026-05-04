@@ -3,10 +3,11 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
 
-use crate::context::{CHILD_VIEW, ChildViewEntry};
 use crate::appkit::ui::flex::Flex;
 use crate::appkit::ui::layout::{activate_constraints, pin_edges};
 use crate::appkit::view_component::AppKitViewBuilder;
+use crate::context::{CHILD_VIEW, ChildViewEntry};
+use crate::widgets::{Column, List, ListComparator, ListData, ListOrientation};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
@@ -20,7 +21,6 @@ use reactive_core::{
     BoxedComponent, Component, IntoSignal, ReadStoredSignal, SetupContext, Signal, StoredSignal,
 };
 use ui_core::layout::CrossAxisAlignment;
-use ui_core::widgets::{Column, List, ListComparator, ListData, ListOrientation};
 
 // ---------------------------------------------------------------------------
 // ReactiveCellView — NSView subclass that stores a per-cell signal pointer

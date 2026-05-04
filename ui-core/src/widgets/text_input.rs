@@ -1,11 +1,11 @@
+use crate::widgets::WithModifier;
+use futures::channel::mpsc;
 use reactive_core::{Component, Signal};
 use std::fmt::Display;
 use std::ops::Range;
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct TextInputState<S> {
-    pub text: S,
-    pub selection: Range<usize>,
+pub enum TextCommand<T> {
+    SetText(T),
 }
 
 pub trait PlatformTextType: Display + for<'a> From<&'a str> + Send + Sync + Eq + 'static {
@@ -16,36 +16,21 @@ pub trait PlatformTextType: Display + for<'a> From<&'a str> + Send + Sync + Eq +
     fn as_str(&self) -> Option<&str>;
 }
 
-pub enum TextChange<S> {
-    Replacement { replace: Range<usize>, with: S },
-    SetSelection { selection: Range<usize> },
-}
-
-pub trait TextInput: Component + Sized + 'static {
+pub trait TextInput: Component + WithModifier + Sized + 'static {
     type PlatformTextType: PlatformTextType;
 
-    fn new(
-        value: impl Signal<Value = TextInputState<Self::PlatformTextType>> + 'static,
-        on_change: impl for<'a> FnMut(
-            TextChange<<Self::PlatformTextType as PlatformTextType>::RefType<'a>>,
-        ) + 'static,
+    fn new() -> Self;
+
+    fn with_commander(self, rx: mpsc::Receiver<TextCommand<Self::PlatformTextType>>) -> Self;
+
+    fn with_on_text_changed(
+        self,
+        on_change: impl FnMut(<Self::PlatformTextType as PlatformTextType>::RefType<'_>) + 'static,
+    ) -> Self;
+    fn with_on_selection_changed(
+        self,
+        on_selection_changed: impl FnMut(Range<usize>) + 'static,
     ) -> Self;
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self;
-}
-
-impl<S> TextInputState<S> {
-    pub fn apply_change(&mut self, c: &TextChange<S::RefType<'_>>)
-    where
-        S: PlatformTextType,
-    {
-        match c {
-            TextChange::Replacement { replace, with } => {
-                self.text = self.text.replace(replace.clone(), with);
-            }
-            TextChange::SetSelection { selection } => {
-                self.selection = selection.clone();
-            }
-        }
-    }
 }

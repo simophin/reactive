@@ -1,3 +1,7 @@
+use crate::widgets::taffy::TaffyTreeManager;
+use crate::widgets::{
+    FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, WithModifier,
+};
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSView, NSViewNoIntrinsicMetric};
@@ -5,10 +9,6 @@ use objc2_foundation::{NSObjectProtocol, NSSize};
 use reactive_core::{BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal};
 use std::cell::Cell;
 use std::rc::Rc;
-use ui_core::widgets::taffy::TaffyTreeManager;
-use ui_core::widgets::{
-    FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, WithModifier,
-};
 
 struct ViewRegistry {
     tree: TaffyTreeManager<Retained<NSView>>,
@@ -168,7 +168,7 @@ impl WithModifier for Flex {
     }
 }
 
-impl ui_core::widgets::Flex for Flex {
+impl crate::widgets::Flex for Flex {
     fn new(props: impl Signal<Value = FlexProps> + 'static) -> Self {
         Self {
             props: Box::new(props),

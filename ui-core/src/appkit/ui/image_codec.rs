@@ -1,4 +1,5 @@
 use super::image_view::ImageHandle;
+use crate::widgets::ImageCodec;
 use objc2_core_foundation::CFRetained;
 use objc2_core_graphics::CGDataProvider;
 use objc2_image_io::CGImageSource;
@@ -6,7 +7,6 @@ use std::error::Error;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use thiserror::Error;
-use ui_core::widgets::ImageCodec;
 
 #[derive(Error, Debug)]
 enum ImageDecodeError {

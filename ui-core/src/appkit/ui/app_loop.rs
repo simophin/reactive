@@ -17,7 +17,7 @@ unsafe extern "C" {
     );
 }
 
-fn main_queue() -> *mut c_void {
+unsafe fn main_queue() -> *mut c_void {
     &raw mut _dispatch_main_q
 }
 

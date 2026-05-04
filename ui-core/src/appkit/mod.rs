@@ -2,7 +2,6 @@ mod ui;
 
 pub use ui::*;
 
-use apple::app_loop::{AppState, schedule_tick};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
 use reactive_core::{ReactiveScope, SetupContext};
@@ -22,12 +21,12 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
     let scope = ReactiveScope::default();
     setup(&mut SetupContext::new_root(&scope));
 
-    let state = Box::into_raw(Box::new(AppState {
+    let state = Box::into_raw(Box::new(app_loop::AppState {
         scope,
         tick_scheduled: AtomicBool::new(false),
     }));
 
-    schedule_tick(state);
+    app_loop::schedule_tick(state);
 
     // Bring app to front
     app.activate();

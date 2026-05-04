@@ -1,3 +1,6 @@
+use crate::apple_view_props;
+use crate::widgets;
+use crate::widgets::{CommonModifiers, EdgeInsets, Modifier, NativeViewRegistry};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
@@ -7,8 +10,6 @@ use reactive_core::{
     BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal, StoredSignal,
 };
 use std::rc::Rc;
-use ui_core::widgets;
-use ui_core::widgets::{CommonModifiers, EdgeInsets, Modifier, NativeViewRegistry};
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -39,7 +40,7 @@ pub struct Window {
     initial_height: f64,
 }
 
-apple::view_props! {
+apple_view_props! {
     Window on NSWindow {
         pub title: String;
     }

@@ -9,11 +9,11 @@ use super::window::Window;
 use crate::appkit::collection_view::CollectionView;
 use crate::appkit::flex::Flex;
 use crate::appkit::text_view::TextView;
+use crate::widgets::{NativeViewRegistry, Platform};
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
 use reactive_core::{ContextKey, SetupContext};
 use std::rc::Rc;
-use ui_core::widgets::{NativeViewRegistry, Platform};
 
 pub struct AppKit;
 
