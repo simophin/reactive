@@ -1,40 +1,69 @@
-use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
-use gtk4::prelude::*;
-use reactive_core::{Signal, SignalExt};
+use crate::ui::gtk_view::GtkViewComponent;
+use glib::object::Cast;
+use reactive_core::{Component, SetupContext, Signal, SignalExt};
 use ui_core::Prop;
 use ui_core::widgets;
+use ui_core::widgets::{Modifier, NativeView, WithModifier};
 
-pub type ProgressIndicator = GtkViewComponent<gtk4::Widget, NoChildWidget>;
+pub enum ProgressIndicator {
+    Bar(NativeView<gtk4::Widget, gtk4::ProgressBar>),
+    Spinner(NativeView<gtk4::Widget, gtk4::Spinner>),
+}
 
-pub static PROP_FRACTION: &Prop<ProgressIndicator, gtk4::Widget, f64> =
-    &Prop::new(|widget, fraction| {
-        if let Some(bar) = widget.downcast_ref::<gtk4::ProgressBar>() {
-            bar.set_fraction(fraction);
-        }
+static PROP_FRACTION: Prop<ProgressIndicator, gtk4::ProgressBar, f64> =
+    Prop::new(|widget, fraction| {
+        widget.set_fraction(fraction);
     });
 
 fn new_bar_widget(value: impl Signal<Value = f64> + 'static) -> ProgressIndicator {
-    GtkViewComponent(
-        GtkViewBuilder::create_no_child(
-            |_| {
-                let bar = gtk4::ProgressBar::new();
-                bar.upcast::<gtk4::Widget>()
-            },
-            |w| w,
+    ProgressIndicator::Bar(
+        NativeView::new(
+            |_| gtk4::ProgressBar::new(),
+            |w| w.upcast(),
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
         )
         .bind(PROP_FRACTION, value),
     )
 }
 
 fn new_spinner_widget() -> ProgressIndicator {
-    GtkViewComponent(GtkViewBuilder::create_no_child(
+    ProgressIndicator::Spinner(NativeView::new(
         |_| {
             let spinner = gtk4::Spinner::new();
             spinner.start();
-            spinner.upcast::<gtk4::Widget>()
+            spinner
         },
-        |w| w,
+        |w| w.upcast(),
+        |_, _| {},
+        Default::default(),
+        &super::VIEW_REGISTRY_KEY,
     ))
+}
+
+impl Component for ProgressIndicator {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        match *self {
+            ProgressIndicator::Bar(bar) => {
+                bar.setup_in_component(ctx);
+            }
+            ProgressIndicator::Spinner(spinner) => {
+                spinner.setup_in_component(ctx);
+            }
+        }
+    }
+}
+
+impl WithModifier for ProgressIndicator {
+    fn modifier(self, modifier: Modifier) -> Self {
+        match self {
+            ProgressIndicator::Bar(bar) => ProgressIndicator::Bar(bar.modifier(modifier)),
+            ProgressIndicator::Spinner(spinner) => {
+                ProgressIndicator::Spinner(spinner.modifier(modifier))
+            }
+        }
+    }
 }
 
 impl widgets::ProgressIndicator for ProgressIndicator {

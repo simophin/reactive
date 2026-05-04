@@ -76,11 +76,11 @@ pub struct FlexProps {
 #[derive(Copy, Clone, Default)]
 pub struct FlexScope;
 
-static KEY_ORDER: ModifierKey<isize> = ModifierKey::new();
-static KEY_FLEX_GROW: ModifierKey<isize> = ModifierKey::new();
-static KEY_FLEX_SHRINK: ModifierKey<isize> = ModifierKey::new();
-static KEY_FLEX_BASIS: ModifierKey<FlexUnit> = ModifierKey::new();
-static KEY_ALIGN_SELF: ModifierKey<AlignItems> = ModifierKey::new();
+pub static KEY_ORDER: ModifierKey<isize> = ModifierKey::new();
+pub static KEY_FLEX_GROW: ModifierKey<isize> = ModifierKey::new();
+pub static KEY_FLEX_SHRINK: ModifierKey<isize> = ModifierKey::new();
+pub static KEY_FLEX_BASIS: ModifierKey<FlexUnit> = ModifierKey::new();
+pub static KEY_ALIGN_SELF: ModifierKey<AlignItems> = ModifierKey::new();
 
 impl FlexScope {
     pub fn order(&self) -> &'static ModifierKey<isize> {

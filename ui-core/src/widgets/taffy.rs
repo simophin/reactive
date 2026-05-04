@@ -30,7 +30,13 @@ impl<N> TaffyTreeManager<N> {
 }
 
 impl<N: PartialEq> TaffyTreeManager<N> {
-    pub fn upsert_node(&self, component_id: ComponentId, view: N, modifier: Modifier) {
+    pub fn upsert_node(
+        &self,
+        component_id: ComponentId,
+        view: N,
+        modifier: Modifier,
+        style: taffy::Style,
+    ) {
         let mut tree = self.tree.borrow_mut();
         let children = tree.children(self.root_node).unwrap();
         match children.binary_search_by(|id| {
@@ -42,12 +48,13 @@ impl<N: PartialEq> TaffyTreeManager<N> {
                 let data = tree.get_node_context_mut(children[index]).unwrap();
                 data.view = view;
                 data.modifier = modifier;
+                tree.set_style(children[index], style).unwrap();
             }
 
             Err(index) => {
                 let new_child = tree
                     .new_leaf_with_context(
-                        Default::default(),
+                        style,
                         NativeNodeData {
                             view,
                             modifier,
@@ -114,5 +121,10 @@ impl<N: PartialEq> TaffyTreeManager<N> {
             let layout = tree.get_final_layout(child_id);
             (data.view.clone(), layout)
         })
+    }
+
+    pub fn set_root_style(&self, style: taffy::Style) {
+        let mut tree = self.tree.borrow_mut();
+        tree.set_style(self.root_node, style).unwrap();
     }
 }

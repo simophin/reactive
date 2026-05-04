@@ -1,24 +1,24 @@
-use crate::view_component::{GtkViewBuilder, GtkViewComponent, NoChildWidget};
+use crate::ui::gtk_view::GtkViewComponent;
+use gtk4::pango;
 use gtk4::prelude::WidgetExt;
 use gtk4::prelude::*;
 use reactive_core::{Signal, SignalExt};
 use ui_core::Prop;
-use ui_core::layout::types::TextAlignment;
 use ui_core::widgets;
+use ui_core::widgets::{NativeView, TextAlignment};
 
-pub type Label = GtkViewComponent<gtk4::Label, NoChildWidget>;
+pub type Label = GtkViewComponent<gtk4::Label>;
 
-pub static PROP_TEXT: &Prop<Label, gtk4::Label, String> =
-    &Prop::new(|label, text| label.set_text(&text));
+pub static PROP_TEXT: Prop<Label, gtk4::Label, String> =
+    Prop::new(|label, text| label.set_text(&text));
 
-pub static PROP_HALIGN: &Prop<Label, gtk4::Label, gtk4::Align> =
-    &Prop::new(|label, value| label.set_halign(value));
+pub static PROP_HALIGN: Prop<Label, gtk4::Label, gtk4::Align> =
+    Prop::new(|label, value| label.set_halign(value));
 
-pub static PROP_XALIGN: &Prop<Label, gtk4::Label, f32> =
-    &Prop::new(|label, value| label.set_xalign(value));
+pub static PROP_XALIGN: Prop<Label, gtk4::Label, f32> =
+    Prop::new(|label, value| label.set_xalign(value));
 
-pub static PROP_FONT_SIZE: &Prop<Label, gtk4::Label, f64> = &Prop::new(|label, size| {
-    use gtk4::pango;
+pub static PROP_FONT_SIZE: Prop<Label, gtk4::Label, f64> = Prop::new(|label, size| {
     let attrs = pango::AttrList::new();
     let size_pango = (size * pango::SCALE as f64) as i32;
     attrs.insert(pango::AttrSize::new(size_pango));
@@ -28,7 +28,7 @@ pub static PROP_FONT_SIZE: &Prop<Label, gtk4::Label, f64> = &Prop::new(|label, s
 impl widgets::Label for Label {
     fn new(text: impl Signal<Value = String> + 'static) -> Self {
         Self(
-            GtkViewBuilder::create_no_child(
+            NativeView::new(
                 |_| {
                     let label = gtk4::Label::new(None);
                     label.set_wrap(true);
@@ -37,6 +37,9 @@ impl widgets::Label for Label {
                     label
                 },
                 |l| l.upcast(),
+                |_, _| {},
+                Default::default(),
+                &super::VIEW_REGISTRY_KEY,
             )
             .bind(PROP_TEXT, text),
         )

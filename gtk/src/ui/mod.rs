@@ -1,16 +1,23 @@
+use gtk4::Widget;
+use reactive_core::ContextKey;
+use std::rc::Rc;
+use ui_core::widgets::NativeViewRegistry;
+
 pub mod button;
-pub mod constraint_host;
-pub mod context;
 pub mod flex;
+mod gtk_view;
 pub mod image_codec;
 pub mod image_view;
 pub mod label;
-mod layout;
 pub mod list_view;
 pub mod platform;
 pub mod progress_indicator;
 pub mod slider;
 pub mod stack;
 pub mod text_input;
-pub mod view_component;
 pub mod window;
+
+pub(crate) static VIEW_REGISTRY_KEY: ContextKey<Rc<dyn NativeViewRegistry<Widget>>> =
+    ContextKey::new();
+
+use gtk_view::GtkViewComponent;

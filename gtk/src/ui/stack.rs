@@ -1,15 +1,48 @@
-use super::context::CHILDREN_WIDGETS;
-use super::layout::apply_parent_layout;
-use super::view_component::GtkViewBuilder;
-use gtk4::prelude::*;
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::layout::CrossAxisAlignment;
-use ui_core::layout::types::Alignment;
-use ui_core::widgets::Stack;
+use glib::object::Cast;
+use gtk4::prelude::DialogExtManual;
+use gtk4::{Overlay, Widget};
+use reactive_core::{
+    BoxedComponent, Component, ComponentId, IntoSignal, ReactiveScope, SetupContext, Signal,
+    StoredSignal,
+};
+use std::collections::HashSet;
+use std::rc::Rc;
+use ui_core::widgets::{Alignment, Modifier, NativeView, NativeViewRegistry, Stack};
 
 pub struct GtkStack {
     children: Vec<BoxedComponent>,
     alignment: Option<Box<dyn Signal<Value = Alignment>>>,
+}
+
+struct StackViewRegistry {
+    scope: ReactiveScope,
+    children: StoredSignal<Rc<Vec<(ComponentId, Widget, Modifier)>>>,
+}
+
+impl NativeViewRegistry<Widget> for StackViewRegistry {
+    fn update_view(&self, component_id: ComponentId, view: Widget, modifier: Modifier) {
+        self.children.update_with(|children| {
+            if let Err(insertion) = children
+                .binary_search_by(|(id, _, _)| self.scope.compare_components(*id, component_id))
+            {
+                Rc::make_mut(children).insert(insertion, (component_id, view, modifier));
+                return true;
+            }
+
+            false
+        })
+    }
+
+    fn clear_view(&self, component_id: ComponentId, view: Widget) {
+        self.children.update_with(|children| {
+            if let Some(index) = children.iter().position(|c| c.0 == component_id) {
+                Rc::make_mut(children).remove(index);
+                return true;
+            }
+
+            false
+        });
+    }
 }
 
 impl Stack for GtkStack {
@@ -38,78 +71,41 @@ impl Component for GtkStack {
             alignment,
         } = *self;
 
-        let builder = children.into_iter().fold(
-            GtkViewBuilder::create_multiple_child(|_| gtk4::Overlay::new(), |o| o.upcast()),
-            |builder, child| builder.add_child(child),
+        let overlay = NativeView::new(
+            |_| Overlay::new(),
+            |w| w.upcast(),
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
         );
 
-        let overlay = builder.setup(ctx);
+        let overlay = overlay.setup_in_component(ctx);
 
-        if let Some(children_widgets) = ctx.use_context(&CHILDREN_WIDGETS) {
-            ctx.create_effect(move |_, prev: Option<Vec<gtk4::Widget>>| {
-                // Remove previously overlaid widgets.
-                if let Some(prev) = prev {
-                    for w in &prev {
-                        overlay.remove_overlay(w);
-                    }
-                }
+        let children_view = ctx.create_signal(Default::default());
+        let registry = StackViewRegistry {
+            scope: ctx.scope(),
+            children: children_view.clone(),
+        };
 
-                let entries: Vec<_> = children_widgets
-                    .read()
-                    .into_iter()
-                    .filter_map(|s| s.read())
-                    .collect();
+        let registry: Rc<dyn NativeViewRegistry<_>> = Rc::new(registry);
+        ctx.set_context(&super::VIEW_REGISTRY_KEY, registry.into_signal());
 
-                let mut mounted = Vec::new();
-
-                for (index, entry) in entries.iter().enumerate() {
-                    // First child is the base; rest are overlays.
-                    let align = alignment.as_ref().map(|a| a.read()).unwrap_or_default();
-                    if index == 0 {
-                        apply_parent_layout(
-                            &entry.native,
-                            &entry.layout,
-                            true,
-                            CrossAxisAlignment::Stretch,
-                        );
-                        overlay.set_child(Some(&entry.native));
-                        mounted.push(entry.native.clone());
-                    } else {
-                        apply_parent_layout(
-                            &entry.native,
-                            &entry.layout,
-                            true,
-                            CrossAxisAlignment::Stretch,
-                        );
-                        entry.native.set_halign(match align {
-                            Alignment::TopLeading
-                            | Alignment::Leading
-                            | Alignment::BottomLeading => gtk4::Align::Start,
-                            Alignment::Top | Alignment::Center | Alignment::Bottom => {
-                                gtk4::Align::Center
-                            }
-                            Alignment::TopTrailing
-                            | Alignment::Trailing
-                            | Alignment::BottomTrailing => gtk4::Align::End,
-                        });
-                        entry.native.set_valign(match align {
-                            Alignment::TopLeading | Alignment::Top | Alignment::TopTrailing => {
-                                gtk4::Align::Start
-                            }
-                            Alignment::Leading | Alignment::Center | Alignment::Trailing => {
-                                gtk4::Align::Center
-                            }
-                            Alignment::BottomLeading
-                            | Alignment::Bottom
-                            | Alignment::BottomTrailing => gtk4::Align::End,
-                        });
-                        overlay.add_overlay(&entry.native);
-                        mounted.push(entry.native.clone());
-                    }
-                }
-
-                mounted
-            });
+        for child in children {
+            ctx.boxed_child(child);
         }
+
+        ctx.create_effect(move |_, added_children| {
+            let mut added_children: HashSet<_> = added_children.unwrap_or_default();
+
+            for (_, view, modifier) in children_view.read().iter() {
+                if !added_children.contains(view) {
+                    added_children.insert(view.clone());
+                    overlay.ins
+                    overlay.add_overlay(view);
+                }
+            }
+
+            added_children
+        });
     }
 }

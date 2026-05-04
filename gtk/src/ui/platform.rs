@@ -9,12 +9,17 @@ use super::slider::Slider;
 use super::stack::GtkStack;
 use super::text_input::GtkTextInputWidget;
 use super::window::Window;
-use reactive_core::SetupContext;
-use ui_core::widgets::Platform;
+use gtk4::Widget;
+use gtk4::ffi::{GtkBox, GtkWidget};
+use reactive_core::{ContextKey, SetupContext};
+use std::rc::Rc;
+use ui_core::widgets::{NativeViewRegistry, Platform};
 
 pub struct Gtk;
 
 impl Platform for Gtk {
+    type NativeViewHandle = Widget;
+
     type ImageCodec = GtkImageCodec;
     type Button = Button;
     type Label = Label;
@@ -22,11 +27,15 @@ impl Platform for Gtk {
     type ProgressIndicator = ProgressIndicator;
     type TextInput = GtkTextInputWidget;
     type Slider = Slider;
-    type Row = Flex;
-    type Column = Flex;
     type Stack = GtkStack;
     type Window = Window;
     type List = ListView;
+    type Flex = Flex;
+
+    fn native_view_registry_key()
+    -> &'static ContextKey<Rc<dyn NativeViewRegistry<Self::NativeViewHandle>>> {
+        &super::VIEW_REGISTRY_KEY
+    }
 
     fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static) {
         crate::run_app(setup);

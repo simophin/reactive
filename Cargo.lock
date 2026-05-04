@@ -786,6 +786,7 @@ dependencies = [
  "core",
  "glib",
  "gtk4",
+ "taffy",
  "ui-core",
 ]
 
