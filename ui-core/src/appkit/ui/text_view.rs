@@ -1,13 +1,16 @@
 use crate::widgets::{Modifier, NativeView, PlatformTextType, TextCommand, WithModifier};
 use derive_more::Display;
 use futures::channel::mpsc::Receiver;
-use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2_app_kit::NSTextView;
-use objc2_foundation::{NSMutableCopying, NSRange, NSString};
-use reactive_core::{Component, ConstantSignal, IntoSignal, SetupContext, Signal};
+use objc2::runtime::ProtocolObject;
+use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{NSTextDelegate, NSTextView, NSTextViewDelegate};
+use objc2_foundation::{
+    NSMutableCopying, NSNotification, NSObject, NSObjectProtocol, NSRange, NSString,
+};
+use reactive_core::{Component, SetupContext, Signal};
+use std::cell::RefCell;
 use std::ops::Range;
-use std::rc::Rc;
 
 #[derive(Default)]
 pub struct TextInput {
@@ -16,6 +19,74 @@ pub struct TextInput {
     commander: Option<Receiver<TextCommand<AppkitString>>>,
     font_size: Option<Box<dyn Signal<Value = f64>>>,
     modifier: Modifier,
+}
+
+pub type TextView = TextInput;
+
+struct TextViewDelegateIvars {
+    on_text_changed: RefCell<Option<Box<dyn FnMut(&NSString)>>>,
+    on_selection_changed: RefCell<Option<Box<dyn FnMut(Range<usize>)>>>,
+}
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = TextViewDelegateIvars]
+    #[name = "ReactiveTextViewDelegate"]
+    struct TextViewDelegate;
+
+    unsafe impl NSObjectProtocol for TextViewDelegate {}
+
+    unsafe impl NSTextDelegate for TextViewDelegate {
+        #[unsafe(method(textDidChange:))]
+        fn text_did_change(&self, notification: &NSNotification) {
+            let Some(text_view) = notification
+                .object()
+                .and_then(|object| object.downcast::<NSTextView>().ok())
+            else {
+                return;
+            };
+
+            let string = text_view.string();
+            if let Some(on_text_changed) = &mut *self.ivars().on_text_changed.borrow_mut() {
+                on_text_changed(&string);
+            }
+        }
+    }
+
+    unsafe impl NSTextViewDelegate for TextViewDelegate {
+        #[unsafe(method(textViewDidChangeSelection:))]
+        fn text_view_did_change_selection(&self, notification: &NSNotification) {
+            let Some(text_view) = notification
+                .object()
+                .and_then(|object| object.downcast::<NSTextView>().ok())
+            else {
+                return;
+            };
+
+            let selected_range = text_view.selectedRange();
+            if let Some(on_selection_changed) = &mut *self.ivars().on_selection_changed.borrow_mut()
+            {
+                on_selection_changed(
+                    selected_range.location..selected_range.location + selected_range.length,
+                );
+            }
+        }
+    }
+);
+
+impl TextViewDelegate {
+    fn new(
+        mtm: MainThreadMarker,
+        on_text_changed: Option<Box<dyn FnMut(&NSString)>>,
+        on_selection_changed: Option<Box<dyn FnMut(Range<usize>)>>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(TextViewDelegateIvars {
+            on_text_changed: RefCell::new(on_text_changed),
+            on_selection_changed: RefCell::new(on_selection_changed),
+        });
+        unsafe { msg_send![super(this), init] }
+    }
 }
 
 #[derive(Clone, Display, PartialEq, Eq, Hash)]
@@ -53,8 +124,8 @@ impl Component for TextInput {
         let Self {
             on_text_changed,
             on_selection_changed,
-            commander,
-            font_size,
+            commander: _,
+            font_size: _,
             modifier,
         } = *self;
 
@@ -62,12 +133,23 @@ impl Component for TextInput {
             |_| NSTextView::new(MainThreadMarker::new().unwrap()),
             |v| v.into_super().into_super(),
             |_, _| {},
-            Default::default(),
+            modifier,
             &super::VIEW_REGISTRY_KEY,
         )
         .setup_in_component(ctx);
 
-        //TODO: hook up on_selection_changed & on_text_changed
+        if on_text_changed.is_some() || on_selection_changed.is_some() {
+            let delegate = TextViewDelegate::new(
+                MainThreadMarker::new().expect("must be on main thread"),
+                on_text_changed,
+                on_selection_changed,
+            );
+            text_view.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+            ctx.on_cleanup(move || {
+                text_view.setDelegate(None);
+                drop(delegate);
+            });
+        }
     }
 }
 

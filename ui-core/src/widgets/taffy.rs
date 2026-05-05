@@ -1,130 +1,241 @@
-use crate::widgets::Modifier;
+use crate::widgets::taffy_modifier::ModifierAndFlexProps;
+use crate::widgets::{FlexProps, Modifier};
 use reactive_core::{ComponentId, ReactiveScope};
-use std::cell::RefCell;
-use std::rc::Rc;
-use taffy::{AvailableSpace, Layout, NodeId, PrintTree, Size, TaffyTree};
+use taffy::{
+    Cache, CacheTree, CoreStyle, Layout, LayoutFlexboxContainer, LayoutInput, LayoutOutput,
+    LayoutPartialTree, NodeId, TraversePartialTree, compute_cached_layout, compute_flexbox_layout,
+};
 
-struct NativeNodeData<N> {
+struct NativeViewData<N> {
     view: N,
     modifier: Modifier,
     component_id: ComponentId,
+    node_id: NodeId,
+    layout: Option<Layout>,
+    cache: Cache,
 }
 
-#[derive(Clone)]
-pub struct TaffyTreeManager<N> {
-    scope: ReactiveScope,
-    tree: Rc<RefCell<TaffyTree<NativeNodeData<N>>>>,
-    root_node: NodeId,
-}
+pub struct NativeViewIter<'a, N>(std::slice::Iter<'a, NativeViewData<N>>);
 
-impl<N> TaffyTreeManager<N> {
-    pub fn new(scope: ReactiveScope) -> Self {
-        let mut tree = TaffyTree::new();
-        let root_node = tree.new_leaf(Default::default()).unwrap();
-        Self {
-            scope,
-            tree: Rc::new(RefCell::new(tree)),
-            root_node,
-        }
+impl<'a, N> Iterator for NativeViewIter<'a, N> {
+    type Item = (&'a N, Option<&'a Layout>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|data| (&data.view, data.layout.as_ref()))
     }
 }
 
-impl<N: PartialEq> TaffyTreeManager<N> {
-    pub fn upsert_node(
-        &self,
-        component_id: ComponentId,
-        view: N,
-        modifier: Modifier,
-        style: taffy::Style,
-    ) {
-        let mut tree = self.tree.borrow_mut();
-        let children = tree.children(self.root_node).unwrap();
-        match children.binary_search_by(|id| {
-            let data = tree.get_node_context(*id).unwrap();
+pub struct FlexTaffyContainer<N> {
+    scope: ReactiveScope,
+    node_id_seq: u64,
+    children: Vec<NativeViewData<N>>,
+    root: Option<NativeViewData<N>>,
+    props: FlexProps,
+}
+
+pub const ROOT_ID: NodeId = NodeId::new(0);
+
+impl<N> FlexTaffyContainer<N> {
+    fn get_node_by_id(&self, node_id: NodeId) -> Option<&NativeViewData<N>> {
+        match self.root.as_ref() {
+            Some(root) if root.node_id == node_id => Some(root),
+            _ => self.children.iter().find(|child| child.node_id == node_id),
+        }
+    }
+
+    fn get_mut_node_by_id(&mut self, node_id: NodeId) -> Option<&mut NativeViewData<N>> {
+        match self.root.as_mut() {
+            Some(root) if root.node_id == node_id => Some(root),
+            _ => self
+                .children
+                .iter_mut()
+                .find(|child| child.node_id == node_id),
+        }
+    }
+
+    fn new_node_id(&mut self) -> NodeId {
+        let id = self.node_id_seq;
+        self.node_id_seq += 1;
+        NodeId::new(id)
+    }
+
+    pub fn insert_child(&mut self, view: N, modifier: Modifier, component_id: ComponentId) {
+        match self.children.binary_search_by(|child| {
             self.scope
-                .compare_components(data.component_id, component_id)
+                .compare_components(child.component_id, component_id)
         }) {
             Ok(index) => {
-                let data = tree.get_node_context_mut(children[index]).unwrap();
-                data.view = view;
-                data.modifier = modifier;
-                tree.set_style(children[index], style).unwrap();
+                let child = &mut self.children[index];
+                child.view = view;
+                child.modifier = modifier;
+                child.cache.clear();
             }
 
             Err(index) => {
-                let new_child = tree
-                    .new_leaf_with_context(
-                        style,
-                        NativeNodeData {
-                            view,
-                            modifier,
-                            component_id,
-                        },
-                    )
-                    .unwrap();
-                let _ = tree.insert_child_at_index(self.root_node, index, new_child);
+                let node_id = self.new_node_id();
+                self.children.insert(
+                    index,
+                    NativeViewData {
+                        view,
+                        modifier,
+                        component_id,
+                        cache: Default::default(),
+                        layout: None,
+                        node_id,
+                    },
+                )
             }
         }
     }
 
-    pub fn remove_node(&self, component_id: ComponentId, view: N) {
-        let mut tree = self.tree.borrow_mut();
-        for child in tree.children(self.root_node).unwrap() {
-            match tree.get_node_context_mut(child) {
-                Some(data) if data.component_id == component_id && data.view == view => {
-                    let _ = tree.remove_child(self.root_node, child);
-                    return;
-                }
-
-                Some(data) if data.component_id == component_id => {
-                    // The component is the same but the view is different, so it must have been
-                    // updated after the view was added to the tree.
-                    // Don't remove it since it's not the same view.
-                    return;
-                }
-
-                _ => {}
-            }
-        }
-    }
-
-    pub fn compute_layout(
-        &self,
-        available_space: Size<AvailableSpace>,
-        mut measurer: impl FnMut(Size<AvailableSpace>, &N) -> Size<f32>,
-    ) {
-        let mut tree = self.tree.borrow_mut();
-
-        tree.compute_layout_with_measure(
-            self.root_node,
-            available_space,
-            move |_known_dimensions, available_space, _node, ctx, _style| {
-                measurer(available_space, &ctx.unwrap().view)
-            },
-        )
-        .unwrap();
-    }
-
-    pub fn get_root_node_size(&self) -> Layout {
-        self.tree.borrow().get_final_layout(self.root_node)
-    }
-
-    pub fn children_layouts(&self) -> impl Iterator<Item = (N, Layout)>
+    pub fn remove_child(&mut self, view: &N) -> bool
     where
-        N: Clone,
+        N: PartialEq,
     {
-        let children = self.tree.borrow().children(self.root_node).unwrap();
+        self.children
+            .iter()
+            .position(|child| &child.view == view)
+            .map(|index| self.children.remove(index))
+            .is_some()
+    }
 
-        children.into_iter().map(move |child_id| {
-            let tree = self.tree.borrow();
-            let data = tree.get_node_context(child_id).unwrap();
-            let layout = tree.get_final_layout(child_id);
-            (data.view.clone(), layout)
+    pub fn set_root(&mut self, view: N, modifier: Modifier, component_id: ComponentId) {
+        self.root.replace(NativeViewData {
+            view,
+            modifier,
+            node_id: ROOT_ID,
+            layout: None,
+            cache: Default::default(),
+            component_id,
+        });
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&N, Option<&Layout>)> {
+        NativeViewIter(self.children.iter())
+    }
+
+    pub fn root_layout(&self) -> Option<&Layout> {
+        self.root.as_ref().and_then(|root| root.layout.as_ref())
+    }
+
+    pub fn root_view(&self) -> Option<&N> {
+        self.root.as_ref().map(|root| &root.view)
+    }
+
+    pub fn new(reactive_scope: ReactiveScope, props: FlexProps) -> Self {
+        Self {
+            scope: reactive_scope,
+            children: Default::default(),
+            root: None,
+            node_id_seq: 1,
+            props,
+        }
+    }
+}
+
+struct TreeChildIter<'a, N>(std::slice::Iter<'a, NativeViewData<N>>);
+
+impl<'a, N> Iterator for TreeChildIter<'a, N> {
+    type Item = NodeId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|d| d.node_id)
+    }
+}
+
+impl<N: 'static> TraversePartialTree for FlexTaffyContainer<N> {
+    type ChildIter<'a> = TreeChildIter<'a, N>;
+
+    fn child_ids(&self, parent_node_id: NodeId) -> Self::ChildIter<'_> {
+        if ROOT_ID == parent_node_id {
+            TreeChildIter(self.children.iter())
+        } else {
+            TreeChildIter([].iter())
+        }
+    }
+
+    fn child_count(&self, parent_node_id: NodeId) -> usize {
+        if ROOT_ID == parent_node_id {
+            self.children.len()
+        } else {
+            0
+        }
+    }
+
+    fn get_child_id(&self, parent_node_id: NodeId, child_index: usize) -> NodeId {
+        if ROOT_ID == parent_node_id {
+            self.children[child_index].node_id
+        } else {
+            panic!("Invalid parent node id")
+        }
+    }
+}
+
+impl<N: 'static> CacheTree for FlexTaffyContainer<N> {
+    fn cache_get(&self, node_id: NodeId, input: &LayoutInput) -> Option<LayoutOutput> {
+        self.get_node_by_id(node_id)?.cache.get(input)
+    }
+
+    fn cache_store(&mut self, node_id: NodeId, input: &LayoutInput, layout_output: LayoutOutput) {
+        self.get_mut_node_by_id(node_id)
+            .expect("Invalid node id")
+            .cache
+            .store(input, layout_output);
+    }
+
+    fn cache_clear(&mut self, node_id: NodeId) {
+        self.get_mut_node_by_id(node_id)
+            .expect("Invalid node id")
+            .cache
+            .clear();
+    }
+}
+
+impl<N: 'static> LayoutPartialTree for FlexTaffyContainer<N> {
+    type CoreContainerStyle<'a> = &'a Modifier;
+    type CustomIdent = <Modifier as CoreStyle>::CustomIdent;
+
+    fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
+        if ROOT_ID == node_id {
+            &self.root.as_ref().unwrap().modifier
+        } else {
+            panic!("Invalid node id")
+        }
+    }
+
+    fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
+        self.get_mut_node_by_id(node_id)
+            .expect("Invalid node id")
+            .layout
+            .replace(layout.clone());
+    }
+
+    fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
+        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+            compute_flexbox_layout(tree, node_id, inputs)
         })
     }
+}
 
-    pub fn set_root_style(&self, style: taffy::Style) {
-        let mut tree = self.tree.borrow_mut();
-        tree.set_style(self.root_node, style).unwrap();
+impl<N: 'static> LayoutFlexboxContainer for FlexTaffyContainer<N> {
+    type FlexboxContainerStyle<'a> = ModifierAndFlexProps<'a>;
+
+    type FlexboxItemStyle<'a> = &'a Modifier;
+
+    fn get_flexbox_container_style(&self, node_id: NodeId) -> Self::FlexboxContainerStyle<'_> {
+        if ROOT_ID == node_id {
+            ModifierAndFlexProps(&self.root.as_ref().unwrap().modifier, &self.props)
+        } else {
+            panic!("Invalid node id")
+        }
+    }
+
+    fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
+        assert_ne!(child_node_id, ROOT_ID, "Root node cannot be a child");
+
+        &self
+            .get_node_by_id(child_node_id)
+            .expect("Invalid child node id")
+            .modifier
     }
 }

@@ -13,6 +13,7 @@ mod progress_indicator;
 mod slider;
 mod stack;
 pub mod taffy;
+mod taffy_modifier;
 mod text_input;
 mod window;
 

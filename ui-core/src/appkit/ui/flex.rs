@@ -1,4 +1,4 @@
-use crate::widgets::taffy::TaffyTreeManager;
+use crate::widgets::taffy::FlexTaffyContainer;
 use crate::widgets::{
     FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, WithModifier,
 };
@@ -7,30 +7,35 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{NSView, NSViewNoIntrinsicMetric};
 use objc2_foundation::{NSObjectProtocol, NSSize};
 use reactive_core::{BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+type ViewTree = FlexTaffyContainer<Retained<NSView>>;
+
 struct ViewRegistry {
-    tree: TaffyTreeManager<Retained<NSView>>,
-    my_view: Retained<NSView>,
+    tree: Rc<RefCell<ViewTree>>,
 }
 
 impl NativeViewRegistry<Retained<NSView>> for ViewRegistry {
     fn update_view(&self, component_id: ComponentId, view: Retained<NSView>, modifier: Modifier) {
-        self.my_view.addSubview(&view);
-        self.tree.upsert_node(component_id, view, modifier);
-        self.my_view.setNeedsLayout(true);
-        self.my_view.invalidateIntrinsicContentSize();
+        let mut tree = self.tree.borrow_mut();
+        tree.root_view().addSubview(&view);
+        tree.insert_child(view, modifier, component_id);
+        tree.root_view().setNeedsLayout(true);
+        tree.root_view().invalidateIntrinsicContentSize();
     }
 
-    fn clear_view(&self, component_id: ComponentId, view: Retained<NSView>) {
-        self.tree.remove_node(component_id, view);
+    fn clear_view(&self, _component_id: ComponentId, view: Retained<NSView>) {
+        let mut tree = self.tree.borrow_mut();
+        tree.remove_child(&view);
+        tree.root_view().setNeedsLayout(true);
+        tree.root_view().invalidateIntrinsicContentSize();
     }
 }
 
 struct FlexViewIvars {
     props: Cell<FlexProps>,
-    taffy_tree_manager: TaffyTreeManager<Retained<NSView>>,
+    tree: Rc<RefCell<ViewTree>>,
 }
 
 define_class!(
@@ -72,10 +77,10 @@ define_class!(
 );
 
 impl ReactiveFlexView {
-    fn new(taffy_tree_manager: TaffyTreeManager<Retained<NSView>>) -> Retained<Self> {
+    fn new(tree: Rc<RefCell<ViewTree>>) -> Retained<Self> {
         let this = Self::alloc(MainThreadMarker::new().unwrap()).set_ivars(FlexViewIvars {
             props: Default::default(),
-            taffy_tree_manager,
+            tree,
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -130,30 +135,37 @@ impl Component for Flex {
             modifier,
         } = *self;
 
-        let tree = TaffyTreeManager::new(ctx.scope());
+        let tree = Rc::new(RefCell::new(ViewTree::new(ctx.scope(), props.read())));
 
-        let my_view = {
+        {
             let tree = tree.clone();
+            let component_id = ctx.component_id();
             NativeView::new(
-                move |_| {
-                    let view = ReactiveFlexView::new(tree.clone());
-                    view.setTranslatesAutoresizingMaskIntoConstraints(false);
-                    view
+                {
+                    let modifier = modifier.clone();
+                    move |_| {
+                        let view = ReactiveFlexView::new(tree.clone());
+                        tree.borrow_mut().set_root(
+                            view.clone().into_super(),
+                            modifier,
+                            component_id,
+                        );
+                        view.setTranslatesAutoresizingMaskIntoConstraints(false);
+                        view
+                    }
                 },
                 |view: Retained<ReactiveFlexView>| view.into_super(),
                 |_, _| {},
                 modifier,
                 &super::VIEW_REGISTRY_KEY,
             )
-            .setup_in_component(ctx)
+            .setup_in_component(ctx);
         };
 
         for child in children {
-            let my_view = my_view.clone().into_super();
             let tree = tree.clone();
             ctx.child(move |child_ctx: &mut SetupContext| {
-                let registry: Rc<dyn NativeViewRegistry<_>> =
-                    Rc::new(ViewRegistry { tree, my_view });
+                let registry: Rc<dyn NativeViewRegistry<_>> = Rc::new(ViewRegistry { tree });
                 child_ctx.set_context(&super::VIEW_REGISTRY_KEY, registry.into_signal());
                 child_ctx.boxed_child(child);
             });

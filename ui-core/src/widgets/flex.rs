@@ -77,8 +77,8 @@ pub struct FlexProps {
 pub struct FlexScope;
 
 pub static KEY_ORDER: ModifierKey<isize> = ModifierKey::new();
-pub static KEY_FLEX_GROW: ModifierKey<isize> = ModifierKey::new();
-pub static KEY_FLEX_SHRINK: ModifierKey<isize> = ModifierKey::new();
+pub static KEY_FLEX_GROW: ModifierKey<f32> = ModifierKey::new();
+pub static KEY_FLEX_SHRINK: ModifierKey<f32> = ModifierKey::new();
 pub static KEY_FLEX_BASIS: ModifierKey<FlexUnit> = ModifierKey::new();
 pub static KEY_ALIGN_SELF: ModifierKey<AlignItems> = ModifierKey::new();
 
@@ -87,11 +87,11 @@ impl FlexScope {
         &KEY_ORDER
     }
 
-    pub fn flex_grow(&self) -> &'static ModifierKey<isize> {
+    pub fn flex_grow(&self) -> &'static ModifierKey<f32> {
         &KEY_FLEX_GROW
     }
 
-    pub fn flex_shrink(&self) -> &'static ModifierKey<isize> {
+    pub fn flex_shrink(&self) -> &'static ModifierKey<f32> {
         &KEY_FLEX_SHRINK
     }
 
@@ -103,7 +103,7 @@ impl FlexScope {
         &KEY_ALIGN_SELF
     }
 
-    pub fn flex_grow_shrink(&self) -> &'static ModifierKey<isize> {
+    pub fn flex_grow_shrink(&self) -> &'static ModifierKey<f32> {
         &KEY_FLEX_SHRINK
     }
 }
