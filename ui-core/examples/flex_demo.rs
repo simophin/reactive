@@ -47,7 +47,7 @@ fn flex_demo<P: Platform>() -> impl Component {
     };
 
     P::Flex::new(root_props.into_signal())
-        .modifier(Modifier::new().paddings(EdgeInsets::all(24)))
+        .modifier(Modifier::new().paddings(EdgeInsets::all(16)))
         .with_child(|flex| {
             P::Label::new("Flex layout")
                 .font_size(22.0)

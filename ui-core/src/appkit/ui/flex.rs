@@ -4,7 +4,7 @@ use crate::widgets::{
     WithModifier,
 };
 use objc2::rc::Retained;
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSControl, NSTextField, NSView};
 use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
 use objc2_foundation::{NSObjectProtocol, NSRect, NSSize};
@@ -220,7 +220,32 @@ fn measure_native_view(
         .unwrap_or(CGFloat::INFINITY);
 
     if let Some(text) = v.downcast_ref::<NSTextField>() {
+        let text_width = known_dimensions
+            .width
+            .unwrap_or(match available_space.width {
+                AvailableSpace::Definite(value) => value,
+                AvailableSpace::MinContent => 0.0,
+                AvailableSpace::MaxContent => f32::INFINITY,
+            });
+        let width = CGFloat::from(text_width);
         text.setPreferredMaxLayoutWidth(width);
+
+        let fitted = if let Some(control) = v.downcast_ref::<NSControl>() {
+            control.sizeThatFits(NSSize::new(width, height))
+        } else {
+            v.fittingSize()
+        };
+
+        return Size {
+            width: known_dimensions
+                .width
+                .unwrap_or(match available_space.width {
+                    AvailableSpace::Definite(value) => value,
+                    AvailableSpace::MinContent => 0.0,
+                    AvailableSpace::MaxContent => fitted.width as f32,
+                }),
+            height: known_dimensions.height.unwrap_or(fitted.height as f32),
+        };
     }
 
     let fitted = if let Some(control) = v.downcast_ref::<NSControl>() {
