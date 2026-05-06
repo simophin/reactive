@@ -1,8 +1,10 @@
 use crate::Prop;
-use crate::widgets::{NativeView, PlatformTextType, TextCommand, TextInput};
+use crate::widgets::{
+    Modifier, NativeView, PlatformTextType, TextCommand, TextInput, WithModifier,
+};
 use futures::channel::mpsc::Receiver;
 use gtk4::prelude::*;
-use reactive_core::Signal;
+use reactive_core::{Component, SetupContext, Signal};
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::ops::Range;
@@ -70,6 +72,18 @@ pub static PROP_FONT_SIZE: Prop<GtkTextInputWidget, gtk4::TextView, f64> =
         view.style_context()
             .add_provider(&css, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
     });
+
+impl Component for GtkTextInputWidget {
+    fn setup(self: Box<Self>, ctx: &mut SetupContext) {
+        todo!()
+    }
+}
+
+impl WithModifier for GtkTextInputWidget {
+    fn modifier(self, modifier: Modifier) -> Self {
+        todo!()
+    }
+}
 
 impl TextInput for GtkTextInputWidget {
     type PlatformTextType = GtkTextType;

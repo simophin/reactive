@@ -29,7 +29,7 @@ impl Platform for Gtk {
     type Slider = Slider;
     type Stack = GtkStack;
     type Window = Window;
-    type List = ListView;
+    // type List = ListView;
     type Flex = Flex;
 
     fn native_view_registry_key()

@@ -1,11 +1,10 @@
-use super::context::CHILDREN_WIDGETS;
-use super::layout::apply_parent_layout;
-use super::view_component::GtkViewBuilder;
-use gtk4::prelude::*;
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::Prop;
-use ui_core::layout::CrossAxisAlignment;
-use ui_core::widgets;
+use crate::Prop;
+use crate::widgets;
+use crate::widgets::{Modifier, NativeView, NativeViewRegistry};
+use glib::object::Cast;
+use gtk4::prelude::GtkWindowExt;
+use reactive_core::{BoxedComponent, Component, ComponentId, SetupContext, Signal};
+use std::rc::Rc;
 
 pub struct Window {
     child: BoxedComponent,
@@ -14,8 +13,8 @@ pub struct Window {
     initial_height: f64,
 }
 
-pub static PROP_TITLE: &Prop<Window, gtk4::ApplicationWindow, String> =
-    &Prop::new(|w, title| w.set_title(Some(&title)));
+pub static PROP_TITLE: Prop<Window, gtk4::ApplicationWindow, String> =
+    Prop::new(|w, title| w.set_title(Some(&title)));
 
 impl widgets::Window for Window {
     fn new(
@@ -33,6 +32,20 @@ impl widgets::Window for Window {
     }
 }
 
+struct WindowViewRegistry(gtk4::ApplicationWindow);
+
+impl NativeViewRegistry<gtk4::Widget> for WindowViewRegistry {
+    fn update_view(&self, component_id: ComponentId, view: gtk4::Widget, modifier: Modifier) {
+        self.0.set_child(Some(&view));
+    }
+
+    fn clear_view(&self, component_id: ComponentId, view: gtk4::Widget) {
+        if self.0.child().as_ref() == Some(&view) {
+            self.0.set_child(None);
+        }
+    }
+}
+
 impl Component for Window {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
         let Self {
@@ -42,7 +55,7 @@ impl Component for Window {
             initial_height,
         } = *self;
 
-        let app_window = GtkViewBuilder::create_with_child(
+        let app_window = NativeView::new(
             move |_| {
                 let app = gtk4::gio::Application::default()
                     .and_then(|a| a.downcast::<gtk4::Application>().ok())
@@ -51,29 +64,24 @@ impl Component for Window {
                 window.set_default_size(initial_width as i32, initial_height as i32);
                 window.connect_close_request(|_| {
                     crate::gtk::stop_app();
-                    gtk4::glib::Propagation::Proceed
+                    glib::Propagation::Proceed
                 });
                 window.present();
                 window
             },
             |w| w.upcast(),
-            child,
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
         )
         .bind(PROP_TITLE, title)
-        .setup(ctx);
+        .setup_in_component(ctx);
 
-        if let Some(children_widgets) = ctx.use_context(&CHILDREN_WIDGETS) {
-            ctx.create_effect(move |_, _| {
-                if let Some(entry) = children_widgets.read().first().and_then(|s| s.read()) {
-                    apply_parent_layout(
-                        &entry.native,
-                        &entry.layout,
-                        true,
-                        CrossAxisAlignment::Stretch,
-                    );
-                    app_window.set_child(Some(&entry.native));
-                }
-            });
-        }
+        ctx.set_static_context(
+            &super::VIEW_REGISTRY_KEY,
+            Rc::new(WindowViewRegistry(app_window)),
+        );
+
+        ctx.boxed_child(child);
     }
 }
