@@ -18,6 +18,9 @@ apple_view_props! {
 pub static PROP_FONT_SIZE: Prop<Label, Retained<NSTextField>, f64> = Prop::new(|view, size| {
     let font = NSFont::systemFontOfSize(size);
     view.setFont(Some(&font));
+    if let Some(parent) = unsafe { view.superview() } {
+        parent.setNeedsLayout(true);
+    }
 });
 
 impl crate::widgets::Label for Label {

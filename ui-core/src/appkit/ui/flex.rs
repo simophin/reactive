@@ -3,12 +3,14 @@ use crate::widgets::{
     CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, SizeSpec,
     WithModifier,
 };
-use objc2::rc::Retained;
-use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::rc::{Retained, Weak};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSControl, NSLayoutConstraint, NSTextField, NSView};
 use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
 use objc2_foundation::{NSArray, NSObjectProtocol, NSRect, NSSize};
-use reactive_core::{BoxedComponent, Component, ComponentId, SetupContext, Signal};
+use reactive_core::{
+    BoxedComponent, Component, ComponentId, FunctionTracker, SetupContext, Signal,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 use taffy::{AvailableSpace, RequestedAxis, RunMode, Size};
@@ -37,6 +39,7 @@ impl NativeViewRegistry<Retained<NSView>> for ViewRegistry {
         tree.remove_child(&view);
 
         let root_view = tree.root_view().unwrap();
+        view.removeFromSuperview();
         root_view.setNeedsLayout(true);
         root_view.setNeedsUpdateConstraints(true);
         root_view.invalidateIntrinsicContentSize();
@@ -47,6 +50,7 @@ struct FlexViewIvars {
     tree: Rc<RefCell<ViewTree>>,
     min_width_constraint: RefCell<Option<Retained<NSLayoutConstraint>>>,
     min_height_constraint: RefCell<Option<Retained<NSLayoutConstraint>>>,
+    tracker: RefCell<Option<FunctionTracker>>,
 }
 
 define_class!(
@@ -107,6 +111,7 @@ impl ReactiveFlexView {
             tree,
             min_width_constraint: RefCell::new(None),
             min_height_constraint: RefCell::new(None),
+            tracker: Default::default(),
         });
         let this: Retained<Self> = unsafe { msg_send![super(this), init] };
         this.install_min_size_constraints();
@@ -117,6 +122,10 @@ impl ReactiveFlexView {
         self.invalidateIntrinsicContentSize();
         self.setNeedsUpdateConstraints(true);
         self.setNeedsLayout(true);
+    }
+
+    fn set_layout_tracker(&self, tracker: FunctionTracker) {
+        self.ivars().tracker.borrow_mut().replace(tracker);
     }
 
     fn get_known_dimensions(modifier: &Modifier) -> Size<Option<f32>> {
@@ -157,15 +166,23 @@ impl ReactiveFlexView {
     fn measure_min_content_size(&self) -> NSSize {
         let mut tree = self.ivars().tree.borrow_mut();
         let known_dimensions = Self::get_known_dimensions(tree.root_modifier().unwrap());
-        let output = tree.compute_layout(
-            RunMode::ComputeSize,
-            known_dimensions,
-            Size {
-                width: AvailableSpace::MinContent,
-                height: AvailableSpace::MinContent,
-            },
-            RequestedAxis::Both,
-        );
+        let output = self
+            .ivars()
+            .tracker
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .run_tracking(|| {
+                tree.compute_layout(
+                    RunMode::ComputeSize,
+                    known_dimensions,
+                    Size {
+                        width: AvailableSpace::MinContent,
+                        height: AvailableSpace::MinContent,
+                    },
+                    RequestedAxis::Both,
+                )
+            });
 
         NSSize {
             width: CGFloat::from(output.size.width),
@@ -205,15 +222,23 @@ impl ReactiveFlexView {
     fn measure_size_that_fits(&self, proposed_size: NSSize) -> NSSize {
         let mut tree = self.ivars().tree.borrow_mut();
         let known_dimensions = Self::get_known_dimensions(tree.root_modifier().unwrap());
-        let output = tree.compute_layout(
-            RunMode::ComputeSize,
-            known_dimensions,
-            Size {
-                width: AvailableSpace::Definite(proposed_size.width as f32),
-                height: AvailableSpace::Definite(proposed_size.height as f32),
-            },
-            RequestedAxis::Both,
-        );
+        let output = self
+            .ivars()
+            .tracker
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .run_tracking(|| {
+                tree.compute_layout(
+                    RunMode::ComputeSize,
+                    known_dimensions,
+                    Size {
+                        width: AvailableSpace::Definite(proposed_size.width as f32),
+                        height: AvailableSpace::Definite(proposed_size.height as f32),
+                    },
+                    RequestedAxis::Both,
+                )
+            });
 
         NSSize {
             width: CGFloat::from(output.size.width),
@@ -224,18 +249,25 @@ impl ReactiveFlexView {
     #[instrument(skip(self), level = "debug")]
     fn layout_flex_subviews(&self, my_size: CGSize) {
         let mut tree = self.ivars().tree.borrow_mut();
-        tree.compute_layout(
-            RunMode::PerformLayout,
-            Size {
-                width: Some(my_size.width as f32),
-                height: Some(my_size.height as f32),
-            },
-            Size {
-                width: AvailableSpace::Definite(my_size.width as f32),
-                height: AvailableSpace::Definite(my_size.height as f32),
-            },
-            RequestedAxis::Both,
-        );
+        self.ivars()
+            .tracker
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .run_tracking(|| {
+                tree.compute_layout(
+                    RunMode::PerformLayout,
+                    Size {
+                        width: Some(my_size.width as f32),
+                        height: Some(my_size.height as f32),
+                    },
+                    Size {
+                        width: AvailableSpace::Definite(my_size.width as f32),
+                        height: AvailableSpace::Definite(my_size.height as f32),
+                    },
+                    RequestedAxis::Both,
+                );
+            });
 
         for (index, (n, output)) in tree.iter().enumerate() {
             let rect = output
@@ -287,21 +319,17 @@ fn measure_native_view(
         .unwrap_or(CGFloat::INFINITY);
 
     if let Some(text) = v.downcast_ref::<NSTextField>() {
-        let text_width = known_dimensions
-            .width
-            .unwrap_or(match available_space.width {
-                AvailableSpace::Definite(value) => value,
-                AvailableSpace::MinContent => 0.0,
-                AvailableSpace::MaxContent => f32::INFINITY,
-            });
-        let width = CGFloat::from(text_width);
-        text.setPreferredMaxLayoutWidth(width);
-
-        let fitted = if let Some(control) = v.downcast_ref::<NSControl>() {
-            control.sizeThatFits(NSSize::new(width, height))
-        } else {
-            v.fittingSize()
-        };
+        text.setPreferredMaxLayoutWidth(
+            known_dimensions
+                .width
+                .unwrap_or(match available_space.width {
+                    AvailableSpace::Definite(value) => value,
+                    AvailableSpace::MinContent => 0.0,
+                    AvailableSpace::MaxContent => f32::INFINITY,
+                })
+                .into(),
+        );
+        let fitted = text.fittingSize();
 
         return Size {
             width: known_dimensions
@@ -341,7 +369,7 @@ impl Component for Flex {
             measure_native_view,
         )));
 
-        {
+        let my_view = {
             let tree = tree.clone();
             let component_id = ctx.component_id();
             NativeView::new(
@@ -363,8 +391,17 @@ impl Component for Flex {
                 modifier,
                 &super::VIEW_REGISTRY_KEY,
             )
-            .setup_in_component(ctx);
+            .setup_in_component(ctx)
         };
+
+        let my_view_weak = Weak::from_retained(&my_view);
+        let tracker = ctx.create_fn_tracking(move || {
+            if let Some(my_view) = my_view_weak.load() {
+                my_view.setNeedsLayout(true);
+                my_view.invalidateIntrinsicContentSize();
+            }
+        });
+        my_view.set_layout_tracker(tracker);
 
         ctx.create_effect({
             let tree = tree.clone();

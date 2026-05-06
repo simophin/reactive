@@ -1,4 +1,4 @@
-use reactive_core::{Component, IntoSignal, SetupContext};
+use reactive_core::{IntoSignal, SetupContext, Show, Signal};
 use ui_core::widgets::{
     AlignContent, AlignItems, Button, CommonModifiers, EdgeInsets, Flex, FlexDirection, FlexProps,
     FlexUnit, FlexWrap, JustifyContent, Label, Modifier, Platform, TextAlignment, Window,
@@ -8,6 +8,13 @@ use ui_core::widgets::{
 fn main() {
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt::init();
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let _guard = rt.enter();
 
     #[cfg(feature = "appkit")]
     run::<ui_core::appkit::platform::AppKit>();
@@ -25,13 +32,13 @@ fn run<P: Platform>() {
 fn setup_demo<P: Platform>(ctx: &mut SetupContext) {
     ctx.child(P::Window::new(
         "ui-core flex demo",
-        flex_demo::<P>(),
+        flex_demo::<P>,
         560.0,
         360.0,
     ));
 }
 
-fn flex_demo<P: Platform>() -> impl Component {
+fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
     let root_props = FlexProps {
         direction: FlexDirection::Row,
         wrap: FlexWrap::Wrap,
@@ -41,39 +48,66 @@ fn flex_demo<P: Platform>() -> impl Component {
         align_content: AlignContent::Start,
     };
 
-    P::Flex::new(root_props.into_signal())
-        .modifier(Modifier::new().paddings(EdgeInsets::all(16)))
-        .with_child(|flex| {
-            P::Label::new("Flex layout")
-                .font_size(22.0)
-                .alignment(TextAlignment::Leading.into_signal())
+    let font_size = ctx.create_signal(15.0);
+
+    {
+        let font_size = font_size.clone();
+        ctx.create_resource(font_size.clone(), move |size| {
+            let font_size = font_size.clone();
+            async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                font_size.update(if size < 30.0 { size + 1.0 } else { size });
+            }
+        });
+    }
+
+    let show_first_line = ctx.create_signal(true);
+
+    ctx.child(
+        P::Flex::new(root_props.into_signal())
+            .modifier(Modifier::new().paddings(EdgeInsets::all(16)))
+            .with_child(|flex| {
+                P::Label::new("Flex layout")
+                    .font_size(font_size)
+                    .alignment(TextAlignment::Leading.into_signal())
+                    .modifier(
+                        Modifier::new()
+                            .with(flex.flex_basis(), FlexUnit::Absolute(480).into_signal())
+                            .with(flex.flex_grow(), 1.0_f32)
+                            .with(flex.flex_shrink(), 1.0_f32),
+                    )
+            })
+            .with_child({
+                let show_first_line = show_first_line.clone();
+                move |flex| {
+                    Show::new(
+                        move || show_first_line.read(),
+                        move || {
+                            Box::new(P::Label::new(
+                                "Items wrap as the window narrows, with a fixed gap between rows and columns.",
+                            )
+                                .font_size(14.0)
+                                .alignment(TextAlignment::Leading.into_signal())
+                                .modifier(
+                                    Modifier::new()
+                                        .with(flex.flex_grow(), 1.0_f32)
+                                        .with(flex.flex_shrink(), 1.0_f32),
+                                ))
+                        },
+                        || Box::new(()),
+                    )
+                }
+            })
+            .with_child(move |flex| {
+                P::Button::new("Primary", move || {
+                    println!("Primary clicked");
+                    show_first_line.update(!show_first_line.read());
+                })
                 .modifier(
                     Modifier::new()
-                        .with(flex.flex_basis(), FlexUnit::Absolute(480).into_signal())
-                        .with(flex.flex_grow(), 1.0_f32)
-                        .with(flex.flex_shrink(), 1.0_f32),
+                        .with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal())
+                        .with(flex.flex_shrink(), 0.0_f32),
                 )
-        })
-        .with_child(|flex| {
-            P::Label::new(
-                "Items wrap as the window narrows, with a fixed gap between rows and columns.",
-            )
-            .font_size(14.0)
-            .alignment(TextAlignment::Leading.into_signal())
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_grow(), 1.0_f32)
-                    .with(flex.flex_shrink(), 1.0_f32),
-            )
-        })
-        .with_child(|flex| {
-            P::Button::new("Primary", || {
-                println!("Primary clicked");
-            })
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal())
-                    .with(flex.flex_shrink(), 0.0_f32),
-            )
-        })
+            }),
+    );
 }

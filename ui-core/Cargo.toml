@@ -112,3 +112,4 @@ dexer-macros = { version = "0.1.0", path = "../dexer-macros", optional = true }
 [dev-dependencies]
 tracing-subscriber = "0.3.23"
 dotenvy = "0"
+tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "time"] }
