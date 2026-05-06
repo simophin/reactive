@@ -6,6 +6,8 @@ use ui_core::widgets::{
 };
 
 fn main() {
+    let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt::init();
     run();
 }
 
@@ -52,7 +54,8 @@ fn flex_demo<P: Platform>() -> impl Component {
                 .alignment(TextAlignment::Leading.into_signal())
                 .modifier(
                     Modifier::new()
-                        .width(480_usize)
+                        .with(flex.flex_basis(), FlexUnit::Absolute(480).into_signal())
+                        .with(flex.flex_grow(), 1.0_f32)
                         .with(flex.flex_shrink(), 1.0_f32),
                 )
         })
@@ -64,7 +67,8 @@ fn flex_demo<P: Platform>() -> impl Component {
             .alignment(TextAlignment::Leading.into_signal())
             .modifier(
                 Modifier::new()
-                    .width(480_usize)
+                    .with(flex.flex_basis(), FlexUnit::Absolute(480).into_signal())
+                    .with(flex.flex_grow(), 1.0_f32)
                     .with(flex.flex_shrink(), 1.0_f32),
             )
         })

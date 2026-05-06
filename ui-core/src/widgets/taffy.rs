@@ -2,9 +2,9 @@ use crate::widgets::taffy_modifier::ModifierAndFlexProps;
 use crate::widgets::{FlexProps, Modifier};
 use reactive_core::{ComponentId, ReactiveScope};
 use taffy::{
-    AvailableSpace, Cache, CacheTree, CoreStyle, Layout, LayoutFlexboxContainer, LayoutInput,
-    LayoutOutput, LayoutPartialTree, Line, NodeId, RequestedAxis, RunMode, Size, SizingMode,
-    TraversePartialTree, compute_cached_layout, compute_flexbox_layout,
+    compute_flexbox_layout, compute_leaf_layout, AvailableSpace, Cache, CacheTree, CoreStyle,
+    Layout, LayoutFlexboxContainer, LayoutInput, LayoutOutput, LayoutPartialTree, Line, NodeId,
+    RequestedAxis, RunMode, Size, SizingMode, TraversePartialTree,
 };
 
 struct NativeViewData<N> {
@@ -32,7 +32,7 @@ pub struct FlexTaffyContainer<N> {
     children: Vec<NativeViewData<N>>,
     root: Option<NativeViewData<N>>,
     props: FlexProps,
-    child_measurer: Box<dyn FnMut(&N, Size<AvailableSpace>) -> LayoutOutput>,
+    child_measurer: Box<dyn Fn(&N, Size<Option<f32>>, Size<AvailableSpace>) -> Size<f32>>,
 }
 
 pub const ROOT_ID: NodeId = NodeId::new(0);
@@ -112,6 +112,24 @@ impl<N: 'static> FlexTaffyContainer<N> {
         });
     }
 
+    pub fn set_props(&mut self, props: FlexProps) {
+        if self.props == props {
+            return;
+        }
+
+        self.props = props;
+        self.clear_cache();
+    }
+
+    pub fn clear_cache(&mut self) {
+        if let Some(root) = self.root.as_mut() {
+            root.cache.clear();
+        }
+        for child in &mut self.children {
+            child.cache.clear();
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&N, Option<&Layout>)> {
         NativeViewIter(self.children.iter())
     }
@@ -135,6 +153,7 @@ impl<N: 'static> FlexTaffyContainer<N> {
         available_space: Size<AvailableSpace>,
         axis: RequestedAxis,
     ) -> LayoutOutput {
+        self.clear_cache();
         compute_flexbox_layout(
             self,
             ROOT_ID,
@@ -153,7 +172,7 @@ impl<N: 'static> FlexTaffyContainer<N> {
     pub fn new(
         reactive_scope: ReactiveScope,
         props: FlexProps,
-        child_measurer: impl FnMut(&N, Size<AvailableSpace>) -> LayoutOutput + 'static,
+        child_measurer: impl Fn(&N, Size<Option<f32>>, Size<AvailableSpace>) -> Size<f32> + 'static,
     ) -> Self {
         Self {
             scope: reactive_scope,
@@ -244,15 +263,23 @@ impl<N: 'static> LayoutPartialTree for FlexTaffyContainer<N> {
     }
 
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
-        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let node = tree
-                .children
-                .iter()
-                .find(|c| c.node_id == node_id)
-                .expect("Invalid node id");
+        let node = self
+            .children
+            .iter()
+            .find(|c| c.node_id == node_id)
+            .expect("Invalid node id");
 
-            (tree.child_measurer)(&node.view, inputs.available_space)
-        })
+        compute_leaf_layout(
+            inputs,
+            &node.modifier,
+            |_, value| value,
+            |known_dimensions, available_space| {
+                (self.child_measurer)(&node.view, known_dimensions, available_space)
+            },
+        )
+        // compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+        //
+        // })
     }
 }
 
