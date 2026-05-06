@@ -1,11 +1,12 @@
 use crate::Prop;
 use crate::widgets::{Image, NativeView};
+use glib::object::Cast;
 use gtk4::accessible::AccessibleExtManual;
 use gtk4::gdk::Texture;
 use gtk4::prelude::AccessibleExt;
 use reactive_core::{Signal, SignalExt};
 
-pub type ImageView = NativeView<gtk4::Window, gtk4::Picture>;
+pub type ImageView = NativeView<gtk4::Widget, gtk4::Picture>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ImageHandle(pub(super) Texture);

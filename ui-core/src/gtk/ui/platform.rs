@@ -3,7 +3,6 @@ use super::flex::Flex;
 use super::image_codec::GtkImageCodec;
 use super::image_view::ImageView;
 use super::label::Label;
-use super::list_view::ListView;
 use super::progress_indicator::ProgressIndicator;
 use super::slider::Slider;
 use super::stack::GtkStack;
@@ -11,7 +10,6 @@ use super::text_input::GtkTextInputWidget;
 use super::window::Window;
 use crate::widgets::{NativeViewRegistry, Platform};
 use gtk4::Widget;
-use gtk4::ffi::{GtkBox, GtkWidget};
 use reactive_core::{ContextKey, SetupContext};
 use std::rc::Rc;
 

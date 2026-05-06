@@ -111,6 +111,6 @@ impl TextInput for GtkTextInputWidget {
     }
 
     fn font_size(self, size: impl Signal<Value = f64> + 'static) -> Self {
-        self.bind(PROP_FONT_SIZE, size)
+        todo!()
     }
 }

@@ -41,7 +41,7 @@ impl NativeViewRegistry<gtk4::Widget> for WindowViewRegistry {
 
     fn clear_view(&self, component_id: ComponentId, view: gtk4::Widget) {
         if self.0.child().as_ref() == Some(&view) {
-            self.0.set_child(None);
+            self.0.set_child(None::<&gtk4::Widget>);
         }
     }
 }

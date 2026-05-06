@@ -8,23 +8,18 @@ use ui_core::widgets::{
 fn main() {
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt::init();
-    run();
+
+    #[cfg(feature = "appkit")]
+    run::<ui_core::appkit::platform::AppKit>();
+
+    #[cfg(feature = "gtk")]
+    run::<ui_core::gtk::platform::Gtk>();
 }
 
-#[cfg(all(feature = "appkit", target_os = "macos"))]
-fn run() {
-    use ui_core::appkit::platform::AppKit;
-
-    <AppKit as Platform>::run_app(|ctx| {
-        setup_demo::<AppKit>(ctx);
+fn run<P: Platform>() {
+    P::run_app(|ctx| {
+        setup_demo::<P>(ctx);
     });
-}
-
-#[cfg(not(all(feature = "appkit", target_os = "macos")))]
-fn run() {
-    eprintln!(
-        "Run this demo on macOS with: cargo run -p ui-core --features appkit --bin flex_demo"
-    );
 }
 
 fn setup_demo<P: Platform>(ctx: &mut SetupContext) {
