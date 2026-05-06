@@ -6,7 +6,6 @@ use super::progress_indicator::ProgressIndicator;
 use super::slider::Slider;
 use super::stack::Stack as AppKitStack;
 use super::window::Window;
-use crate::appkit::collection_view::CollectionView;
 use crate::appkit::flex::Flex;
 use crate::appkit::text_view::TextView;
 use crate::widgets::{NativeViewRegistry, Platform};
@@ -29,7 +28,6 @@ impl Platform for AppKit {
     type Slider = Slider;
     type Stack = AppKitStack;
     type Window = Window;
-    type List = CollectionView;
     type Flex = Flex;
 
     fn native_view_registry_key()

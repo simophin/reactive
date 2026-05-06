@@ -1,14 +1,17 @@
 use crate::widgets::taffy::FlexTaffyContainer;
 use crate::widgets::{
-    FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, WithModifier,
+    CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, SizeSpec,
+    WithModifier,
 };
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSView, NSViewNoIntrinsicMetric};
-use objc2_foundation::{NSObjectProtocol, NSSize};
+use objc2_app_kit::{NSControl, NSTextField, NSView};
+use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
+use objc2_foundation::{NSObjectProtocol, NSRect, NSSize};
 use reactive_core::{BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use taffy::{AvailableSpace, LayoutOutput, RequestedAxis, RunMode, Size};
 
 type ViewTree = FlexTaffyContainer<Retained<NSView>>;
 
@@ -19,17 +22,21 @@ struct ViewRegistry {
 impl NativeViewRegistry<Retained<NSView>> for ViewRegistry {
     fn update_view(&self, component_id: ComponentId, view: Retained<NSView>, modifier: Modifier) {
         let mut tree = self.tree.borrow_mut();
-        tree.root_view().addSubview(&view);
+        let root_view = tree.root_view().unwrap();
+        root_view.addSubview(&view);
+        root_view.setNeedsLayout(true);
+        root_view.invalidateIntrinsicContentSize();
+
         tree.insert_child(view, modifier, component_id);
-        tree.root_view().setNeedsLayout(true);
-        tree.root_view().invalidateIntrinsicContentSize();
     }
 
     fn clear_view(&self, _component_id: ComponentId, view: Retained<NSView>) {
         let mut tree = self.tree.borrow_mut();
         tree.remove_child(&view);
-        tree.root_view().setNeedsLayout(true);
-        tree.root_view().invalidateIntrinsicContentSize();
+
+        let root_view = tree.root_view().unwrap();
+        root_view.setNeedsLayout(true);
+        root_view.invalidateIntrinsicContentSize();
     }
 }
 
@@ -39,7 +46,7 @@ struct FlexViewIvars {
 }
 
 define_class!(
-    #[unsafe(super(NSView))]
+    #[unsafe(super(NSControl))]
     #[thread_kind = MainThreadOnly]
     #[name = "ReactiveFlexView"]
     #[ivars = FlexViewIvars]
@@ -53,7 +60,7 @@ define_class!(
             unsafe {
                 let _: () = msg_send![super(self), layout];
             }
-            self.layout_flex_subviews();
+            self.layout_flex_subviews(self.frame().size);
         }
 
         #[unsafe(method(intrinsicContentSize))]
@@ -96,28 +103,85 @@ impl ReactiveFlexView {
         self.setNeedsLayout(true);
     }
 
-    fn measure_intrinsic_size(&self) -> NSSize {
-        let _props = self.ivars().props.get();
+    fn get_known_dimensions(modifier: &Modifier) -> Size<Option<f32>> {
+        let size_spec_fixed = |spec: SizeSpec| match spec {
+            SizeSpec::Fixed(s) => Some(s as f32),
+            SizeSpec::Unspecified => None,
+        };
 
-        // Placeholder until Flex measurement is implemented.
+        let (width, height) = modifier.get_size().read();
+
+        Size {
+            width: size_spec_fixed(width),
+            height: size_spec_fixed(height),
+        }
+    }
+
+    fn measure_intrinsic_size(&self) -> NSSize {
+        let mut tree = self.ivars().tree.borrow_mut();
+        let known_dimensions = Self::get_known_dimensions(tree.root_modifier().unwrap());
+        let output = tree.compute_layout(
+            RunMode::ComputeSize,
+            known_dimensions,
+            Size {
+                width: AvailableSpace::MaxContent,
+                height: AvailableSpace::MaxContent,
+            },
+            RequestedAxis::Both,
+        );
+
         NSSize {
-            width: unsafe { NSViewNoIntrinsicMetric },
-            height: unsafe { NSViewNoIntrinsicMetric },
+            width: CGFloat::from(output.size.width),
+            height: CGFloat::from(output.size.height),
         }
     }
 
     fn measure_size_that_fits(&self, proposed_size: NSSize) -> NSSize {
-        let _props = self.ivars().props.get();
-        let _proposed_size = proposed_size;
+        let mut tree = self.ivars().tree.borrow_mut();
+        let known_dimensions = Self::get_known_dimensions(tree.root_modifier().unwrap());
+        let output = tree.compute_layout(
+            RunMode::ComputeSize,
+            known_dimensions,
+            Size {
+                width: AvailableSpace::Definite(proposed_size.width as f32),
+                height: AvailableSpace::Definite(proposed_size.height as f32),
+            },
+            RequestedAxis::Both,
+        );
 
-        // Placeholder until Flex measurement is implemented.
-        self.measure_intrinsic_size()
+        NSSize {
+            width: CGFloat::from(output.size.width),
+            height: CGFloat::from(output.size.height),
+        }
     }
 
-    fn layout_flex_subviews(&self) {
-        let _props = self.ivars().props.get();
+    fn layout_flex_subviews(&self, my_size: CGSize) {
+        let mut tree = self.ivars().tree.borrow_mut();
+        tree.compute_layout(
+            RunMode::PerformLayout,
+            Size {
+                width: Some(my_size.width as f32),
+                height: Some(my_size.height as f32),
+            },
+            Size {
+                width: AvailableSpace::Definite(my_size.width as f32),
+                height: AvailableSpace::Definite(my_size.height as f32),
+            },
+            RequestedAxis::Both,
+        );
 
-        // Placeholder until Flex child measurement and placement is implemented.
+        for (n, output) in tree.iter() {
+            n.setFrame(
+                output
+                    .map(|layout| {
+                        NSRect::new(
+                            CGPoint::new(layout.location.x.into(), layout.location.y.into()),
+                            CGSize::new(layout.size.width.into(), layout.size.height.into()),
+                        )
+                    })
+                    .unwrap_or_default(),
+            );
+        }
     }
 }
 
@@ -125,6 +189,30 @@ pub struct Flex {
     props: Box<dyn Signal<Value = FlexProps>>,
     children: Vec<BoxedComponent>,
     modifier: Modifier,
+}
+
+fn width_for_height(v: &NSView, height: f32) -> f32 {
+    if let Some(control) = v.downcast_ref::<NSControl>() {
+        return control
+            .sizeThatFits(NSSize::new(CGFloat::INFINITY, height.into()))
+            .width as f32;
+    }
+
+    v.fittingSize().width as f32
+}
+
+fn height_for_width(v: &NSView, width: f32) -> f32 {
+    if let Some(control) = v.downcast_ref::<NSControl>() {
+        return control
+            .sizeThatFits(NSSize::new(width.into(), CGFloat::INFINITY))
+            .height as f32;
+    }
+
+    if let Some(text) = v.downcast_ref::<NSTextField>() {
+        text.setPreferredMaxLayoutWidth(width.into());
+    }
+
+    v.fittingSize().height as f32
 }
 
 impl Component for Flex {
@@ -135,7 +223,32 @@ impl Component for Flex {
             modifier,
         } = *self;
 
-        let tree = Rc::new(RefCell::new(ViewTree::new(ctx.scope(), props.read())));
+        let tree = Rc::new(RefCell::new(ViewTree::new(
+            ctx.scope(),
+            props.read(),
+            |view, available_space| match (available_space.width, available_space.height) {
+                (AvailableSpace::Definite(width), AvailableSpace::Definite(height)) => {
+                    LayoutOutput::from_outer_size(Size { width, height })
+                }
+                (_, AvailableSpace::Definite(height)) => LayoutOutput::from_outer_size(Size {
+                    width: height_for_width(&view, height),
+                    height,
+                }),
+
+                (AvailableSpace::Definite(width), _) => LayoutOutput::from_outer_size(Size {
+                    width,
+                    height: width_for_height(&view, width),
+                }),
+
+                _ => {
+                    let size = view.intrinsicContentSize();
+                    LayoutOutput::from_outer_size(Size {
+                        width: size.width as f32,
+                        height: size.height as f32,
+                    })
+                }
+            },
+        )));
 
         {
             let tree = tree.clone();
@@ -146,7 +259,7 @@ impl Component for Flex {
                     move |_| {
                         let view = ReactiveFlexView::new(tree.clone());
                         tree.borrow_mut().set_root(
-                            view.clone().into_super(),
+                            view.clone().into_super().into_super(),
                             modifier,
                             component_id,
                         );
@@ -154,7 +267,7 @@ impl Component for Flex {
                         view
                     }
                 },
-                |view: Retained<ReactiveFlexView>| view.into_super(),
+                |view: Retained<ReactiveFlexView>| view.into_super().into_super(),
                 |_, _| {},
                 modifier,
                 &super::VIEW_REGISTRY_KEY,
@@ -165,8 +278,8 @@ impl Component for Flex {
         for child in children {
             let tree = tree.clone();
             ctx.child(move |child_ctx: &mut SetupContext| {
-                let registry: Rc<dyn NativeViewRegistry<_>> = Rc::new(ViewRegistry { tree });
-                child_ctx.set_context(&super::VIEW_REGISTRY_KEY, registry.into_signal());
+                child_ctx
+                    .set_static_context(&super::VIEW_REGISTRY_KEY, Rc::new(ViewRegistry { tree }));
                 child_ctx.boxed_child(child);
             });
         }

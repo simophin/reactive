@@ -2,7 +2,7 @@ use crate::component_scope::ComponentId;
 use crate::reactive_scope::FunctionTracker;
 use crate::signal::StoredSignal;
 use crate::signal::stored::ReadStoredSignal;
-use crate::{ContextKey, ReactiveScope, ResourceState, Signal};
+use crate::{ContextKey, IntoSignal, ReactiveScope, ResourceState, Signal};
 use futures::Stream;
 use std::rc::Rc;
 
@@ -123,6 +123,10 @@ impl SetupContext {
         value: impl Signal<Value = T> + 'static,
     ) {
         self.scope.set_context(self.component_id, key, value);
+    }
+
+    pub fn set_static_context<T: Clone + 'static>(&self, key: &'static ContextKey<T>, value: T) {
+        self.set_context(key, value.into_signal())
     }
 
     pub fn use_context<T: Clone + 'static>(

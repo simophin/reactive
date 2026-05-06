@@ -1,9 +1,10 @@
 use crate::widgets::taffy_modifier::ModifierAndFlexProps;
-use crate::widgets::{FlexProps, Modifier};
+use crate::widgets::{FlexDirection, FlexProps, Modifier};
 use reactive_core::{ComponentId, ReactiveScope};
 use taffy::{
-    Cache, CacheTree, CoreStyle, Layout, LayoutFlexboxContainer, LayoutInput, LayoutOutput,
-    LayoutPartialTree, NodeId, TraversePartialTree, compute_cached_layout, compute_flexbox_layout,
+    AvailableSpace, Cache, CacheTree, CoreStyle, Dimension, Layout, LayoutFlexboxContainer,
+    LayoutInput, LayoutOutput, LayoutPartialTree, Line, NodeId, RequestedAxis, RunMode, Size,
+    SizingMode, TraversePartialTree, compute_cached_layout, compute_flexbox_layout,
 };
 
 struct NativeViewData<N> {
@@ -31,11 +32,12 @@ pub struct FlexTaffyContainer<N> {
     children: Vec<NativeViewData<N>>,
     root: Option<NativeViewData<N>>,
     props: FlexProps,
+    child_measurer: Box<dyn FnMut(&N, Size<AvailableSpace>) -> LayoutOutput>,
 }
 
 pub const ROOT_ID: NodeId = NodeId::new(0);
 
-impl<N> FlexTaffyContainer<N> {
+impl<N: 'static> FlexTaffyContainer<N> {
     fn get_node_by_id(&self, node_id: NodeId) -> Option<&NativeViewData<N>> {
         match self.root.as_ref() {
             Some(root) if root.node_id == node_id => Some(root),
@@ -122,13 +124,44 @@ impl<N> FlexTaffyContainer<N> {
         self.root.as_ref().map(|root| &root.view)
     }
 
-    pub fn new(reactive_scope: ReactiveScope, props: FlexProps) -> Self {
+    pub fn root_modifier(&self) -> Option<&Modifier> {
+        self.root.as_ref().map(|root| &root.modifier)
+    }
+
+    pub fn compute_layout(
+        &mut self,
+        run_mode: RunMode,
+        known_dimensions: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        axis: RequestedAxis,
+    ) -> LayoutOutput {
+        compute_flexbox_layout(
+            self,
+            ROOT_ID,
+            LayoutInput {
+                run_mode,
+                sizing_mode: SizingMode::InherentSize,
+                axis,
+                known_dimensions,
+                parent_size: Default::default(),
+                available_space,
+                vertical_margins_are_collapsible: Line::FALSE,
+            },
+        )
+    }
+
+    pub fn new(
+        reactive_scope: ReactiveScope,
+        props: FlexProps,
+        child_measurer: impl FnMut(&N, Size<AvailableSpace>) -> LayoutOutput + 'static,
+    ) -> Self {
         Self {
             scope: reactive_scope,
             children: Default::default(),
             root: None,
             node_id_seq: 1,
             props,
+            child_measurer: Box::new(child_measurer),
         }
     }
 }
@@ -212,7 +245,13 @@ impl<N: 'static> LayoutPartialTree for FlexTaffyContainer<N> {
 
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            compute_flexbox_layout(tree, node_id, inputs)
+            let node = tree
+                .children
+                .iter()
+                .find(|c| c.node_id == node_id)
+                .expect("Invalid node id");
+
+            (tree.child_measurer)(&node.view, inputs.available_space)
         })
     }
 }

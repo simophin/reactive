@@ -5,7 +5,7 @@ use reactive_core::ContextKey;
 use std::rc::Rc;
 
 pub mod button;
-pub mod collection_view;
+// pub mod collection_view;
 pub mod flex;
 pub mod image_codec;
 pub mod image_view;

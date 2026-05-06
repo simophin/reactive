@@ -18,7 +18,7 @@ pub trait Platform: 'static {
     type Slider: Slider;
     type Stack: Stack;
     type Window: Window;
-    type List: List;
+    // type List: List;
     type Flex: Flex;
 
     fn native_view_registry_key()
