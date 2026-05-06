@@ -1,3 +1,4 @@
+use crate::widgets::{Alignment, Modifier, NativeView, NativeViewRegistry, Stack};
 use glib::object::Cast;
 use gtk4::prelude::DialogExtManual;
 use gtk4::{Overlay, Widget};
@@ -7,7 +8,6 @@ use reactive_core::{
 };
 use std::collections::HashSet;
 use std::rc::Rc;
-use ui_core::widgets::{Alignment, Modifier, NativeView, NativeViewRegistry, Stack};
 
 pub struct GtkStack {
     children: Vec<BoxedComponent>,
@@ -100,7 +100,6 @@ impl Component for GtkStack {
             for (_, view, modifier) in children_view.read().iter() {
                 if !added_children.contains(view) {
                     added_children.insert(view.clone());
-                    overlay.ins
                     overlay.add_overlay(view);
                 }
             }

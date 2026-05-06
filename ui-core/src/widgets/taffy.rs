@@ -133,7 +133,7 @@ impl<N> FlexTaffyContainer<N> {
     }
 }
 
-struct TreeChildIter<'a, N>(std::slice::Iter<'a, NativeViewData<N>>);
+pub struct TreeChildIter<'a, N>(std::slice::Iter<'a, NativeViewData<N>>);
 
 impl<'a, N> Iterator for TreeChildIter<'a, N> {
     type Item = NodeId;

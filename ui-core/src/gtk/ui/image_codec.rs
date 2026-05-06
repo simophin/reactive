@@ -1,8 +1,8 @@
 use super::image_view::ImageHandle;
+use crate::widgets::ImageCodec;
 use gtk4::gdk::Texture;
 use gtk4::glib::Bytes;
 use std::error::Error;
-use ui_core::widgets::ImageCodec;
 
 fn decode_bytes(bytes: Bytes) -> Result<ImageHandle, Box<dyn Error + Send + Sync>> {
     Texture::from_bytes(&bytes)

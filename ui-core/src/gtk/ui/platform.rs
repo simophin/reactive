@@ -9,11 +9,11 @@ use super::slider::Slider;
 use super::stack::GtkStack;
 use super::text_input::GtkTextInputWidget;
 use super::window::Window;
+use crate::widgets::{NativeViewRegistry, Platform};
 use gtk4::Widget;
 use gtk4::ffi::{GtkBox, GtkWidget};
 use reactive_core::{ContextKey, SetupContext};
 use std::rc::Rc;
-use ui_core::widgets::{NativeViewRegistry, Platform};
 
 pub struct Gtk;
 

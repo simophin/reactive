@@ -1,9 +1,8 @@
-use crate::gtk::ui::gtk_view::GtkViewComponent;
+use crate::Prop;
+use crate::widgets;
+use crate::widgets::{Modifier, NativeView, WithModifier};
 use glib::object::Cast;
 use reactive_core::{Component, SetupContext, Signal, SignalExt};
-use ui_core::Prop;
-use ui_core::widgets;
-use ui_core::widgets::{Modifier, NativeView, WithModifier};
 
 pub enum ProgressIndicator {
     Bar(NativeView<gtk4::Widget, gtk4::ProgressBar>),

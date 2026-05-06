@@ -1,13 +1,12 @@
-use crate::gtk::ui::gtk_view::GtkViewComponent;
+use crate::Prop;
+use crate::widgets;
+use crate::widgets::NativeView;
 use glib::object::Cast;
 use gtk4::prelude::{RangeExt, ScaleExt};
 use reactive_core::Signal;
 use std::ops::Range;
-use ui_core::Prop;
-use ui_core::widgets;
-use ui_core::widgets::NativeView;
 
-pub type Slider = GtkViewComponent<gtk4::Scale>;
+pub type Slider = NativeView<gtk4::Widget, gtk4::Scale>;
 
 pub static PROP_VALUE: Prop<Slider, gtk4::Scale, usize> =
     Prop::new(|scale, value| scale.set_value(value as f64));
@@ -22,24 +21,21 @@ impl widgets::Slider for Slider {
         range: impl Signal<Value = Range<usize>> + 'static,
         on_change: impl Fn(usize) + 'static,
     ) -> Self {
-        Self(
-            NativeView::new(
-                move |_| {
-                    let scale =
-                        gtk4::Scale::new(gtk4::Orientation::Horizontal, gtk4::Adjustment::NONE);
-                    scale.set_draw_value(false);
-                    scale.connect_value_changed(move |s| {
-                        on_change(s.value() as usize);
-                    });
-                    scale
-                },
-                |s| s.upcast(),
-                |_, _| {},
-                Default::default(),
-                &super::VIEW_REGISTRY_KEY,
-            )
-            .bind(PROP_VALUE, value)
-            .bind(PROP_RANGE, range),
+        NativeView::new(
+            move |_| {
+                let scale = gtk4::Scale::new(gtk4::Orientation::Horizontal, gtk4::Adjustment::NONE);
+                scale.set_draw_value(false);
+                scale.connect_value_changed(move |s| {
+                    on_change(s.value() as usize);
+                });
+                scale
+            },
+            |s| s.upcast(),
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
         )
+        .bind(PROP_VALUE, value)
+        .bind(PROP_RANGE, range)
     }
 }

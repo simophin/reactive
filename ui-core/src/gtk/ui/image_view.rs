@@ -1,11 +1,11 @@
-use crate::gtk::ui::gtk_view::GtkViewComponent;
+use crate::Prop;
+use crate::widgets::{Image, NativeView};
+use gtk4::accessible::AccessibleExtManual;
 use gtk4::gdk::Texture;
-use gtk4::prelude::*;
+use gtk4::prelude::AccessibleExt;
 use reactive_core::{Signal, SignalExt};
-use ui_core::Prop;
-use ui_core::widgets::{Image, NativeView};
 
-pub type ImageView = GtkViewComponent<gtk4::Picture>;
+pub type ImageView = NativeView<gtk4::Window, gtk4::Picture>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ImageHandle(pub(super) Texture);
@@ -30,24 +30,22 @@ impl Image for ImageView {
         image: impl Signal<Value = ImageHandle> + 'static,
         desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
-        Self(
-            NativeView::new(
-                |_| {
-                    let picture = gtk4::Picture::new();
-                    picture.set_can_shrink(true);
-                    picture.set_content_fit(gtk4::ContentFit::ScaleDown);
-                    picture
-                },
-                |p| p.upcast(),
-                |_, _| {},
-                Default::default(),
-                &super::VIEW_REGISTRY_KEY,
-            )
-            .bind(PROP_IMAGE, image)
-            .bind(
-                PROP_ACCESSIBILITY_LABEL,
-                desc.map_value(|r| r.map(Into::into)),
-            ),
+        NativeView::new(
+            |_| {
+                let picture = gtk4::Picture::new();
+                picture.set_can_shrink(true);
+                picture.set_content_fit(gtk4::ContentFit::ScaleDown);
+                picture
+            },
+            |p| p.upcast(),
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
+        )
+        .bind(PROP_IMAGE, image)
+        .bind(
+            PROP_ACCESSIBILITY_LABEL,
+            desc.map_value(|r| r.map(Into::into)),
         )
     }
 }
