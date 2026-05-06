@@ -25,22 +25,29 @@ Format code with `cargo fmt` after changes.
 
 ## Workspace Structure
 
-13 crates organized by platform and functionality:
+7 Rust workspace crates plus Android Gradle support:
 
 ```
-core/              — Core reactive framework (primary logic)
-ui-utils/          — Cross-platform UI utility patterns (RecyclingList)
-apple/             — macOS/iOS FFI, prop bindings, action targets, GCD app loop
-appkit/            — macOS AppKit widget bindings
-uikit/             — iOS UIKit bindings
-android/           — Android JNI entrypoints
-android-macros/    — Android prop descriptor codegen
-android-lib/       — Android library support
-ui/                — Legacy UI module
-resources/         — Resource loading infrastructure
-resources-build/   — Build-time resource utilities
-demo/              — macOS demo application
-demo-app/          — Android demo application
+core/                     — Core reactive framework (primary logic)
+ui-core/                  — Cross-platform widget traits plus platform backends
+resources/                — Runtime resource loading infrastructure
+resources-build/          — Build-time resource utilities
+android-macros/           — Android JNI binding / prop descriptor codegen
+dexer/                    — DEX/class generation utilities for Android support
+dexer-macros/             — Macros for DEX/class generation
+android-lib/              — Kotlin Android library wrapper for ReactiveScope
+reactive-gradle-plugin/   — Gradle plugin that builds Rust for Android targets
+```
+
+`ui-core` owns the platform-specific UI modules behind feature gates:
+
+```
+ui-core/src/widgets/      — Shared widget traits, modifiers, list diffing, Taffy bridge
+ui-core/src/apple/        — Shared Apple helpers such as action targets
+ui-core/src/appkit/       — macOS AppKit backend
+ui-core/src/uikit/        — iOS UIKit backend
+ui-core/src/android/      — Android JNI runtime and widget backend
+ui-core/src/gtk/          — GTK backend
 ```
 
 ## Core Architecture (`core/`)
@@ -135,40 +142,61 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 - **`Show`** — Thin wrapper over Switch for boolean conditions
 - **`Match`** (`match_component.rs`) — Pattern-matching over enum values. Per-case extractor `&mut T → Option<E>` (uses `std::mem::take`); per-case factory `ReadSignal<E> → BoxedComponent`. Rebuilds only on branch change; extracted value propagates through signal otherwise. `extract!` macro simplifies extractor syntax.
 
-## Platform Bindings
+## UI Core (`ui-core/`)
 
-### Apple Platform (`apple/`)
+`ui-core` provides the shared widget API and all current platform backends. Platform modules are feature- and target-gated in `ui-core/src/lib.rs`.
 
-- **`AppLoop`** — GCD `dispatch_async_f()` integration. `AppState` holds `ReactiveScope` + `AtomicBool tick_scheduled`. Custom `Waker` routes signals to GCD main queue.
-- **`Prop<RustType, ObjCType, ObjCValueType>`** — Static descriptor for a setter (fn pointer). `bind(ctx, view, signal)` creates an effect calling the setter on changes.
-- **`ViewBuilder`** — Stores creator closure + property binder closures; `setup(ctx)` creates view and applies all binders.
+### Shared Widgets (`ui-core/src/widgets/`)
+
+- **Widget traits** — `Button`, `Label`, `TextInput`, `Image`, `Slider`, `ProgressIndicator`, `Stack`, `Flex`, `Window`, and `Platform`
+- **`NativeView<BN, N>`** (`widgets/native.rs`) — Generic component wrapper. Creates a platform view, registers it with the nearest `NativeViewRegistry`, binds reactive props, and unregisters on cleanup.
+- **`Prop<FrameworkType, Target, ValueType>`** (`prop.rs`) — Static prop descriptor wrapping a setter function. `bind()` creates an effect that applies the signal value to the native target.
+- **Modifiers** — `Modifier` / `ModifierKey` plus common size and padding modifiers. `SizeSpec::Fixed` maps to Taffy `Dimension::length`; unspecified maps to `auto`.
+- **Flex layout** — Shared `FlexProps` and item modifier keys (`flex_grow`, `flex_shrink`, `flex_basis`, `align_self`) feed into the Taffy-backed layout bridge.
+- **Lists** — `ListModel`, `DiffResult`, and `diff()` provide reusable list snapshot/diff behavior for platform list views.
+- **Encoding** (`encoding.rs`) — Helpers for platform text offset conversions: Apple/Android use UTF-16 code units; GTK uses Unicode codepoints.
+
+### Taffy Layout (`ui-core/src/widgets/taffy.rs`)
+
+`FlexTaffyContainer<N>` adapts native child views to Taffy:
+- Stores root and child native views with `Modifier`, `ComponentId`, cached layout, and Taffy `NodeId`
+- Maintains child order by comparing component positions in `ReactiveScope`
+- Uses `compute_flexbox_layout` for the root and `compute_leaf_layout` for native leaves
+- Delegates leaf measurement to the platform backend via `child_measurer`
+
+### Apple Helpers (`ui-core/src/apple/`)
+
 - **`ActionTarget`** — Custom NSObject subclass wrapping `Box<dyn Fn(&AnyObject)>`; attached via associated objects; implements action selector.
-- **`view_props!` macro** — Generates static `Prop` descriptors; handles `String → NSString`; generates camelCase setter names.
 
-### AppKit Widgets (`appkit/src/ui/`)
+### AppKit Backend (`ui-core/src/appkit/`)
 
-- **`Window`** — NSWindow wrapper with delegate for close; sets content view as context parent
-- **`Button`** — Props: `title`, `enabled`, `highlighted`; takes `on_click` callback
-- **`TextView`** (`text_view.rs`) — Custom `ReactiveTextStorage` (NSTextStorage subclass). Implements TextKit primitives. `label()` mode (read-only) or `TextInputState` mode (editable, with UTF-16 selection). Notifies signal on edit commit.
-- **`Stack`** — NSStackView wrapper; propagates `ViewParent` context
-- **`CollectionView`** — Cell recycling pattern. Create path: allocate `StoredSignal<Item>`, call `on_create`, setup component, return opaque token. Reuse path: update signal (no-op if unchanged). Cleanup via component disposal.
-- **`Checkbox`**, **`ImageView`**, **`ProgressIndicator`**, **`Slider`** — Standard prop-based widgets
-- **`AppKitViewComponent<V, Children>`** — Generic wrapper; converts to `NSView`, adds to parent from context; supports `Vec`, `Option`, or `()` children
+- **`appkit/ui/app_loop.rs`** — GCD `dispatch_async_f()` integration. `AppState` holds `ReactiveScope` + `AtomicBool tick_scheduled`; custom `Waker` routes signals to the macOS main queue.
+- **`ReactiveFlexView`** (`appkit/ui/flex.rs`) — Owns a Taffy view tree and performs layout by setting native child frames directly. Implements `intrinsicContentSize` and `sizeThatFits:` by running Taffy measurements.
+- **Leaf measurement** — AppKit controls use `sizeThatFits(NSSize)`, other views use `fittingSize()`.
+- **Widgets** — `Window`, `Button`, `Label`, `TextView`, `Stack`, `Flex`, `ImageView`, `ProgressIndicator`, and `Slider`.
+- **View registry** — AppKit `Flex` provides a `NativeViewRegistry<Retained<NSView>>` context so child `NativeView`s can insert/remove themselves from the flex tree.
 
-**`ViewParent` context** (`appkit/src/ui/context.rs`) — `Window | Stack`; `add_child()` / `remove_child()` polymorphic operations.
+### UIKit Backend (`ui-core/src/uikit/`)
 
-### Android (`android/`, `android-macros/`)
+- iOS backend with `UIView`/`UIViewController` support and widgets for button, label, stack, text, and view controller integration.
+- Uses the same shared widget traits and `NativeView`/registry pattern as other backends.
 
-JNI entrypoints: `nativeCreate`, `nativeDestroy`, `nativeTick` (uses `Waker::noop()`).
-`PropDescriptor` — static descriptors with JNI class/method/signature strings.
-`view_props!` macro generates `PropDescriptor` instances with Rust→JNI type mapping.
+### Android Backend (`ui-core/src/android/`, `android-lib/`, `android-macros/`)
 
-## UI Utilities (`ui-utils/`)
+- **JNI entrypoints** (`ui-core/src/android/mod.rs`) — `nativeCreate`, `nativeDestroy`, `nativeAttachActivity`, and `nativeTick`.
+- **App loop** (`ui-core/src/android/app_loop.rs`) — Android waker integration; `nativeTick` clears `tick_scheduled`, builds a waker, and ticks the `ReactiveScope`.
+- **Bindings/descriptors** (`ui-core/src/android/bindings.rs`, `desc.rs`) — Android class/method/property descriptors and generated binding support.
+- **Widgets** (`ui-core/src/android/ui/`) — Button, label, flex/flex layout, image, list view, progress indicator, slider, stack, text input, window, listeners/watchers, and view component support.
+- **`android-lib/`** — Kotlin wrapper exposing `ReactiveScope` to Android.
+- **`android-macros/`** — Procedural macros for declaring JNI bindings.
 
-**`RecyclingList<Item>`** (`ui-utils/src/recycling_list.rs`) — Cross-platform recycling/collection view pattern:
-- `item_count()` — Current snapshot size
-- `create_cell(scope, parent, index, on_create)` → `*const ()` opaque token — Allocates per-cell `StoredSignal<Item>`, builds component tree, registers cleanup
-- `reuse_cell(token, index)` — Recovers signal via pointer, updates value (reactive if changed)
-- Reconciliation effect snapshots items on every change, invokes `on_reload()` callback for platform refresh
+### GTK Backend (`ui-core/src/gtk/`)
 
-Used by `CollectionView` in AppKit; designed for reuse in UIKit/Android.
+- GTK backend for macOS/Linux with widgets for button, flex, image view/codec, label, list view, progress indicator, slider, stack, text input, and window.
+- Uses `NativeViewRegistry<gtk4::Widget>` and the shared widget traits.
+
+## Android Build Support
+
+- **`reactive-gradle-plugin/`** — Gradle plugin and tests for building Rust artifacts for Android ABIs.
+- **`dexer/`** — DEX/class definition writer utilities.
+- **`dexer-macros/`** — Validation and codegen macros for DEX generation.

@@ -4,7 +4,7 @@ use crate::widgets::{
     WithModifier,
 };
 use objc2::rc::Retained;
-use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSControl, NSTextField, NSView};
 use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
 use objc2_foundation::{NSObjectProtocol, NSRect, NSSize};
@@ -181,10 +181,6 @@ impl ReactiveFlexView {
                 .unwrap_or_default();
 
             tracing::debug!(?rect, index, "Layout output");
-            if let Some(text) = n.downcast_ref::<NSTextField>() {
-                text.setPreferredMaxLayoutWidth(rect.size.width);
-                text.invalidateIntrinsicContentSize();
-            }
             n.setFrame(rect);
         }
     }

@@ -2,9 +2,9 @@ use crate::widgets::taffy_modifier::ModifierAndFlexProps;
 use crate::widgets::{FlexProps, Modifier};
 use reactive_core::{ComponentId, ReactiveScope};
 use taffy::{
-    compute_flexbox_layout, compute_leaf_layout, AvailableSpace, Cache, CacheTree, CoreStyle,
-    Layout, LayoutFlexboxContainer, LayoutInput, LayoutOutput, LayoutPartialTree, Line, NodeId,
-    RequestedAxis, RunMode, Size, SizingMode, TraversePartialTree,
+    AvailableSpace, Cache, CacheTree, CoreStyle, Layout, LayoutFlexboxContainer, LayoutInput,
+    LayoutOutput, LayoutPartialTree, Line, NodeId, RequestedAxis, RunMode, Size, SizingMode,
+    TraversePartialTree, compute_cached_layout, compute_flexbox_layout, compute_leaf_layout,
 };
 
 struct NativeViewData<N> {
@@ -263,23 +263,22 @@ impl<N: 'static> LayoutPartialTree for FlexTaffyContainer<N> {
     }
 
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
-        let node = self
-            .children
-            .iter()
-            .find(|c| c.node_id == node_id)
-            .expect("Invalid node id");
+        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+            let node = tree
+                .children
+                .iter()
+                .find(|c| c.node_id == node_id)
+                .expect("Invalid node id");
 
-        compute_leaf_layout(
-            inputs,
-            &node.modifier,
-            |_, value| value,
-            |known_dimensions, available_space| {
-                (self.child_measurer)(&node.view, known_dimensions, available_space)
-            },
-        )
-        // compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-        //
-        // })
+            compute_leaf_layout(
+                inputs,
+                &node.modifier,
+                |_, value| value,
+                |known_dimensions, available_space| {
+                    (tree.child_measurer)(&node.view, known_dimensions, available_space)
+                },
+            )
+        })
     }
 }
 

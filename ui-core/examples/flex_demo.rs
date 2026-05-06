@@ -67,7 +67,6 @@ fn flex_demo<P: Platform>() -> impl Component {
             .alignment(TextAlignment::Leading.into_signal())
             .modifier(
                 Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(480).into_signal())
                     .with(flex.flex_grow(), 1.0_f32)
                     .with(flex.flex_shrink(), 1.0_f32),
             )
@@ -79,53 +78,6 @@ fn flex_demo<P: Platform>() -> impl Component {
             .modifier(
                 Modifier::new()
                     .with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal())
-                    .with(flex.flex_shrink(), 0.0_f32),
-            )
-        })
-        .with_child(|flex| {
-            P::Button::new("Secondary", || {
-                println!("Secondary clicked");
-            })
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(140).into_signal())
-                    .with(flex.flex_shrink(), 0.0_f32),
-            )
-        })
-        .with_child(|flex| {
-            P::Button::new("Disabled", || {
-                println!("Disabled clicked");
-            })
-            .enabled(false)
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal())
-                    .with(flex.flex_shrink(), 0.0_f32),
-            )
-        })
-        .with_child(|flex| {
-            P::Label::new("Short text").font_size(13.0).modifier(
-                Modifier::new().with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal()),
-            )
-        })
-        .with_child(|flex| {
-            P::Label::new(
-                "A longer label that should measure naturally and wrap to another flex line.",
-            )
-            .font_size(13.0)
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(220).into_signal())
-                    .with(flex.flex_shrink(), 1.0_f32),
-            )
-        })
-        .with_child(|flex| {
-            P::Button::new("Another Button", || {
-                println!("Another Button clicked");
-            })
-            .modifier(
-                Modifier::new()
-                    .with(flex.flex_basis(), FlexUnit::Absolute(160).into_signal())
                     .with(flex.flex_shrink(), 0.0_f32),
             )
         })
