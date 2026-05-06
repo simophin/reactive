@@ -2,7 +2,6 @@ use super::{
     Button, Flex, Image, ImageCodec, Label, NativeViewRegistry, ProgressIndicator, Slider, Stack,
     TextInput, Window,
 };
-use crate::widgets::list::List;
 use reactive_core::{ContextKey, SetupContext};
 use std::rc::Rc;
 

@@ -6,9 +6,9 @@ use crate::widgets::{
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSControl, NSTextField, NSView};
-use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
+use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
 use objc2_foundation::{NSObjectProtocol, NSRect, NSSize};
-use reactive_core::{BoxedComponent, Component, ComponentId, IntoSignal, SetupContext, Signal};
+use reactive_core::{BoxedComponent, Component, ComponentId, SetupContext, Signal};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use taffy::{AvailableSpace, LayoutOutput, RequestedAxis, RunMode, Size};

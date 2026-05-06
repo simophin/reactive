@@ -41,7 +41,7 @@ futures = "0.3.32"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2 = { version = "0.6", optional = true }
-objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet", "NSNotification", "NSAttributedString", "NSDictionary", "NSRange"] }
+objc2-foundation = { version = "0", optional = true, features = ["NSString", "NSGeometry", "NSThread", "NSIndexPath", "NSSet", "NSNotification", "NSAttributedString", "NSDictionary", "NSRange"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = { version = "0.6", optional = true }

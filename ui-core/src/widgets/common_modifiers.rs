@@ -1,5 +1,5 @@
 use crate::widgets::modifier::{Modifier, ModifierKey};
-use reactive_core::{IntoSignal, Signal, SignalExt};
+use reactive_core::{Signal, SignalExt};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EdgeInsets {

@@ -1,4 +1,4 @@
-use reactive_core::{Component, ContextKey, SetupContext, Signal};
+use reactive_core::Signal;
 use std::any::Any;
 use std::marker::PhantomData;
 use std::rc::Rc;
