@@ -32,4 +32,4 @@ pub use progress_indicator::ProgressIndicator;
 pub use slider::Slider;
 pub use stack::*;
 pub use text_input::*;
-pub use window::Window;
+pub use window::*;

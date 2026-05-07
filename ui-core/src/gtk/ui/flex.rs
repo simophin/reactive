@@ -1,11 +1,11 @@
 use crate::widgets::taffy::FlexTaffyContainer;
 use crate::widgets::{
-    CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry, SizeSpec,
-    WithModifier,
+    CommonFlex, CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry,
+    SizeSpec, WithModifier,
 };
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
-use gtk4::{glib, graphene, gsk, Orientation, SizeRequestMode, Widget};
+use gtk4::{Orientation, SizeRequestMode, Widget, glib, graphene, gsk};
 use reactive_core::{BoxedComponent, Component, ComponentId, SetupContext, Signal};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -198,11 +198,7 @@ impl NativeViewRegistry<Widget> for ViewRegistry {
     }
 }
 
-pub struct Flex {
-    props: Box<dyn Signal<Value = FlexProps>>,
-    children: Vec<BoxedComponent>,
-    modifier: Modifier,
-}
+pub type Flex = CommonFlex<gtk4::Widget>;
 
 fn f32_to_i32(value: f32) -> i32 {
     if value.is_finite() {
@@ -337,6 +333,7 @@ impl Component for Flex {
             props,
             children,
             modifier,
+            ..
         } = *self;
 
         let flex_view = ReactiveFlexView::new();
@@ -379,27 +376,5 @@ impl Component for Flex {
                 child_ctx.boxed_child(child);
             });
         }
-    }
-}
-
-impl WithModifier for Flex {
-    fn modifier(mut self, modifier: Modifier) -> Self {
-        self.modifier = modifier;
-        self
-    }
-}
-
-impl crate::widgets::Flex for Flex {
-    fn new(props: impl Signal<Value = FlexProps> + 'static) -> Self {
-        Self {
-            props: Box::new(props),
-            children: Default::default(),
-            modifier: Default::default(),
-        }
-    }
-
-    fn with_child<C: Component + 'static>(mut self, factory: impl FnOnce(FlexScope) -> C) -> Self {
-        self.children.push(Box::new(factory(FlexScope)));
-        self
     }
 }

@@ -1,4 +1,4 @@
-use reactive_core::{IntoSignal, SetupContext, Show, Signal};
+use reactive_core::{IntoSignal, SetupContext, Show, Signal, SignalExt};
 use ui_core::widgets::{
     AlignContent, AlignItems, Button, CommonModifiers, EdgeInsets, Flex, FlexDirection, FlexProps,
     FlexUnit, FlexWrap, JustifyContent, Label, Modifier, Platform, TextAlignment, Window,
@@ -39,14 +39,14 @@ fn setup_demo<P: Platform>(ctx: &mut SetupContext) {
 }
 
 fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
-    let root_props = FlexProps {
+    let root_props = ctx.create_signal(FlexProps {
         direction: FlexDirection::Row,
         wrap: FlexWrap::Wrap,
-        gap: FlexUnit::Absolute(12),
+        gap: FlexUnit::Percent(1),
         justify_content: JustifyContent::Start,
         align_items: AlignItems::Center,
         align_content: AlignContent::Start,
-    };
+    });
 
     let font_size = ctx.create_signal(15.0);
 
@@ -64,7 +64,7 @@ fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
     let show_first_line = ctx.create_signal(true);
 
     ctx.child(
-        P::Flex::new(root_props.into_signal())
+        P::Flex::new(root_props.clone())
             .modifier(Modifier::new().paddings(EdgeInsets::all(16)))
             .with_child(|flex| {
                 P::Label::new("Flex layout")
@@ -98,16 +98,27 @@ fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
                     )
                 }
             })
-            .with_child(move |flex| {
-                P::Button::new("Primary", move || {
+            .with_child(move |_| {
+                P::Button::new(show_first_line.clone().map_value(|v| if v {
+                    "Hide text".into()
+                } else {
+                    "Show text".into()
+                }), move || {
                     println!("Primary clicked");
                     show_first_line.update(!show_first_line.read());
                 })
-                .modifier(
-                    Modifier::new()
-                        .with(flex.flex_basis(), FlexUnit::Absolute(120).into_signal())
-                        .with(flex.flex_shrink(), 0.0_f32),
-                )
+            })
+            .with_child(move |_| {
+                P::Button::new("Add gap", move || {
+                    println!("Secondary clicked");
+                    let mut props = root_props.read();
+                    match &mut props.gap {
+                        FlexUnit::Absolute(gap) => *gap += 4,
+                        FlexUnit::Percent(gap) => *gap += 1,
+                    }
+
+                    root_props.update_if_changes(props);
+                })
             }),
     );
 }

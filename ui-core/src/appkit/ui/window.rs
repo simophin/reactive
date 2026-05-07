@@ -1,6 +1,6 @@
 use crate::apple_view_props;
 use crate::widgets;
-use crate::widgets::{CommonModifiers, EdgeInsets, Modifier, NativeViewRegistry};
+use crate::widgets::{CommonModifiers, CommonWindow, EdgeInsets, Modifier, NativeViewRegistry};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{MainThreadOnly, define_class, msg_send};
@@ -33,32 +33,11 @@ impl AppWindowDelegate {
     }
 }
 
-pub struct Window {
-    child: BoxedComponent,
-    title: Box<dyn Signal<Value = String>>,
-    initial_width: f64,
-    initial_height: f64,
-}
+pub type Window = CommonWindow<Retained<NSView>>;
 
 apple_view_props! {
     Window on NSWindow {
         pub title: String;
-    }
-}
-
-impl widgets::Window for Window {
-    fn new(
-        title: impl Signal<Value = String> + 'static,
-        child: impl Component + 'static,
-        width: f64,
-        height: f64,
-    ) -> Self {
-        Self {
-            child: Box::new(child),
-            title: Box::new(title),
-            initial_width: width,
-            initial_height: height,
-        }
     }
 }
 
@@ -83,15 +62,15 @@ impl Component for Window {
         let Self {
             title,
             child,
-            initial_width,
-            initial_height,
+            initial_size: (initial_width, initial_height),
+            ..
         } = *self;
 
         let mtm = MainThreadMarker::new().expect("must be on main thread");
         let delegate = AppWindowDelegate::new(mtm);
         let rect = NSRect::new(
             NSPoint::new(0.0, 0.0),
-            NSSize::new(initial_width, initial_height),
+            NSSize::new(initial_width.into(), initial_height.into()),
         );
         let style =
             NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Resizable;
@@ -121,18 +100,25 @@ impl Component for Window {
 
         ctx.boxed_child(child);
 
-        ctx.create_effect(move |_, _| {
-            let current_view = current_view.read();
-            let Some((current_view, modifier)) = current_view else {
-                window.setContentView(None);
-                return;
-            };
+        {
+            let window = window.clone();
+            ctx.create_effect(move |_, _| {
+                let current_view = current_view.read();
+                let Some((current_view, modifier)) = current_view else {
+                    window.setContentView(None);
+                    return;
+                };
 
-            apply_content_view(
-                &window,
-                &current_view,
-                modifier.get_paddings().read().unwrap_or_default(),
-            );
+                apply_content_view(
+                    &window,
+                    &current_view,
+                    modifier.get_paddings().read().unwrap_or_default(),
+                );
+            });
+        }
+
+        ctx.create_effect(move |_, _| {
+            window.setTitle(&NSString::from_str(&title.read()));
         });
     }
 }

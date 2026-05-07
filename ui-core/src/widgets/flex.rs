@@ -1,5 +1,6 @@
-use crate::widgets::{ModifierKey, WithModifier};
-use reactive_core::{Component, Signal};
+use crate::widgets::{Modifier, ModifierKey, WithModifier};
+use reactive_core::{BoxedComponent, Component, Signal};
+use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum FlexDirection {
@@ -108,8 +109,41 @@ impl FlexScope {
     }
 }
 
+pub struct CommonFlex<N> {
+    pub(crate) props: Box<dyn Signal<Value = FlexProps>>,
+    pub(crate) children: Vec<BoxedComponent>,
+    pub(crate) modifier: Modifier,
+    pub(crate) phantom_data: PhantomData<N>,
+}
+
 pub trait Flex: WithModifier + Component + 'static {
     fn new(props: impl Signal<Value = FlexProps> + 'static) -> Self;
 
     fn with_child<C: Component + 'static>(self, factory: impl FnOnce(FlexScope) -> C) -> Self;
+}
+
+impl<N> WithModifier for CommonFlex<N> {
+    fn modifier(mut self, modifier: Modifier) -> Self {
+        self.modifier = modifier;
+        self
+    }
+}
+
+impl<N> Flex for CommonFlex<N>
+where
+    Self: WithModifier + Component + 'static,
+{
+    fn new(props: impl Signal<Value = FlexProps> + 'static) -> Self {
+        Self {
+            props: Box::new(props),
+            children: Default::default(),
+            modifier: Default::default(),
+            phantom_data: Default::default(),
+        }
+    }
+
+    fn with_child<C: Component + 'static>(mut self, factory: impl FnOnce(FlexScope) -> C) -> Self {
+        self.children.push(Box::new(factory(FlexScope)));
+        self
+    }
 }
