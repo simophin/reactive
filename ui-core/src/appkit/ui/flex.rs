@@ -7,13 +7,15 @@ use objc2::rc::{Retained, Weak};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSControl, NSLayoutConstraint, NSTextField, NSView};
 use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
-use objc2_foundation::{NSArray, NSObjectProtocol, NSRect, NSSize};
+use objc2_foundation::{
+    NSArray, NSObjectNSScriptClassDescription, NSObjectProtocol, NSRect, NSSize,
+};
 use reactive_core::{
     BoxedComponent, Component, ComponentId, FunctionTracker, SetupContext, Signal,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use taffy::{AvailableSpace, RequestedAxis, RunMode, Size};
+use taffy::{AvailableSpace, LayoutOutput, RequestedAxis, RunMode, Size};
 use tracing::instrument;
 
 type ViewTree = FlexTaffyContainer<Retained<NSView>>;
@@ -269,7 +271,7 @@ impl ReactiveFlexView {
                 );
             });
 
-        for (index, (n, output)) in tree.iter().enumerate() {
+        for (n, output) in tree.iter() {
             let rect = output
                 .map(|layout| {
                     NSRect::new(
@@ -279,75 +281,100 @@ impl ReactiveFlexView {
                 })
                 .unwrap_or_default();
 
-            tracing::debug!(?rect, index, "Layout output");
+            tracing::debug!(?rect, view = view_debug_name(n), "Layout output");
             n.setFrame(rect);
         }
+    }
+
+    fn measure(
+        &self,
+        known_dimensions: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+    ) -> LayoutOutput {
+        let mut tree = self.ivars().tree.borrow_mut();
+        tree.compute_layout(
+            RunMode::ComputeSize,
+            known_dimensions,
+            available_space,
+            RequestedAxis::Both,
+        )
     }
 }
 
 pub type Flex = CommonFlex<Retained<NSView>>;
 
-fn proposed_dimension(space: AvailableSpace) -> Option<f32> {
-    match space {
-        AvailableSpace::Definite(value) => Some(value),
-        AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+fn propose_size(v: AvailableSpace) -> CGFloat {
+    match v {
+        AvailableSpace::Definite(width) => width as CGFloat,
+        AvailableSpace::MinContent => 1.0,
+        AvailableSpace::MaxContent => CGFloat::INFINITY,
     }
 }
 
-#[instrument(skip(v), ret, level = "debug")]
+fn view_debug_name(v: &Retained<NSView>) -> String {
+    if let Some(v) = v.downcast_ref::<NSTextField>() {
+        format!("{}(text = {})", v.className(), v.stringValue())
+    } else {
+        v.className().to_string()
+    }
+}
+
+#[instrument(skip(v), ret, level = "debug", fields(view = view_debug_name(v)))]
 fn measure_native_view(
     v: &Retained<NSView>,
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
 ) -> Size<f32> {
-    let proposed_width = known_dimensions
-        .width
-        .or_else(|| proposed_dimension(available_space.width));
-    let proposed_height = known_dimensions
-        .height
-        .or_else(|| proposed_dimension(available_space.height));
-
-    let width = proposed_width
-        .map(CGFloat::from)
-        .unwrap_or(CGFloat::INFINITY);
-    let height = proposed_height
-        .map(CGFloat::from)
-        .unwrap_or(CGFloat::INFINITY);
-
-    if let Some(text) = v.downcast_ref::<NSTextField>() {
-        text.setPreferredMaxLayoutWidth(
-            known_dimensions
-                .width
-                .unwrap_or(match available_space.width {
-                    AvailableSpace::Definite(value) => value,
-                    AvailableSpace::MinContent => 0.0,
-                    AvailableSpace::MaxContent => f32::INFINITY,
-                })
-                .into(),
-        );
-        let fitted = text.fittingSize();
-
-        return Size {
-            width: known_dimensions
-                .width
-                .unwrap_or(match available_space.width {
-                    AvailableSpace::Definite(value) => value,
-                    AvailableSpace::MinContent => 0.0,
-                    AvailableSpace::MaxContent => fitted.width as f32,
-                }),
-            height: known_dimensions.height.unwrap_or(fitted.height as f32),
-        };
+    // If we are measuring our own, just use measure
+    if let Some(v) = v.downcast_ref::<ReactiveFlexView>() {
+        return v.measure(known_dimensions, available_space).size;
     }
 
-    let fitted = if let Some(control) = v.downcast_ref::<NSControl>() {
+    match (
+        known_dimensions.width,
+        known_dimensions.height,
+        available_space.width,
+        available_space.height,
+    ) {
+        (Some(width), Some(height), _, _) => Size { width, height },
+
+        // Given no fixed size, want to know natural size
+        (None, None, available_width, available_height) => size_that_fits(
+            v,
+            propose_size(available_width),
+            propose_size(available_height),
+        ),
+
+        // Given a fixed width, and wanting to know a height
+        (Some(width), None, _, _) => {
+            let height = size_that_fits(v, width.into(), CGFloat::INFINITY).height;
+            Size { width, height }
+        }
+
+        // Given a fixed height, wanting to know a width (this should be rare)
+        (None, Some(height), _, _) => {
+            let width = size_that_fits(v, CGFloat::INFINITY, height.into()).width;
+            Size { width, height }
+        }
+    }
+}
+
+fn size_that_fits(v: &NSView, width: CGFloat, height: CGFloat) -> Size<f32> {
+    let size = if let Some(field) = v.downcast_ref::<NSTextField>() {
+        let old = field.preferredMaxLayoutWidth();
+        field.setPreferredMaxLayoutWidth(width);
+        let value = field.fittingSize();
+        field.setPreferredMaxLayoutWidth(old);
+        value
+    } else if let Some(control) = v.downcast_ref::<NSControl>() {
         control.sizeThatFits(NSSize::new(width, height))
     } else {
         v.fittingSize()
     };
 
     Size {
-        width: known_dimensions.width.unwrap_or(fitted.width as f32),
-        height: known_dimensions.height.unwrap_or(fitted.height as f32),
+        width: size.width as f32,
+        height: size.height as f32,
     }
 }
 

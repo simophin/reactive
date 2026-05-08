@@ -55,7 +55,7 @@ fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
         ctx.create_resource(font_size.clone(), move |size| {
             let font_size = font_size.clone();
             async move {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
                 font_size.update(if size < 30.0 { size + 1.0 } else { size });
             }
         });
