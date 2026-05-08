@@ -306,7 +306,7 @@ pub type Flex = CommonFlex<Retained<NSView>>;
 fn propose_size(v: AvailableSpace) -> CGFloat {
     match v {
         AvailableSpace::Definite(width) => width as CGFloat,
-        AvailableSpace::MinContent => 1.0,
+        AvailableSpace::MinContent => 0.5, // 0 is special - it means no constraint, so we use a very small number to get the min content size
         AvailableSpace::MaxContent => CGFloat::INFINITY,
     }
 }
@@ -360,13 +360,7 @@ fn measure_native_view(
 }
 
 fn size_that_fits(v: &NSView, width: CGFloat, height: CGFloat) -> Size<f32> {
-    let size = if let Some(field) = v.downcast_ref::<NSTextField>() {
-        let old = field.preferredMaxLayoutWidth();
-        field.setPreferredMaxLayoutWidth(width);
-        let value = field.fittingSize();
-        field.setPreferredMaxLayoutWidth(old);
-        value
-    } else if let Some(control) = v.downcast_ref::<NSControl>() {
+    let size = if let Some(control) = v.downcast_ref::<NSControl>() {
         control.sizeThatFits(NSSize::new(width, height))
     } else {
         v.fittingSize()
