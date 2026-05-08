@@ -1,18 +1,14 @@
 use crate::widgets::taffy::FlexTaffyContainer;
 use crate::widgets::{
-    CommonFlex, CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry,
-    SizeSpec, WithModifier,
+    CommonFlex, CommonModifiers, FlexScope, Modifier, NativeView, NativeViewRegistry, SizeSpec,
+    WithModifier,
 };
 use objc2::rc::{Retained, Weak};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSControl, NSLayoutConstraint, NSTextField, NSView};
+use objc2_app_kit::{NSControl, NSTextField, NSView};
 use objc2_core_foundation::{CGFloat, CGPoint, CGSize};
-use objc2_foundation::{
-    NSArray, NSObjectNSScriptClassDescription, NSObjectProtocol, NSRect, NSSize,
-};
-use reactive_core::{
-    BoxedComponent, Component, ComponentId, FunctionTracker, SetupContext, Signal,
-};
+use objc2_foundation::{NSObjectNSScriptClassDescription, NSObjectProtocol, NSRect, NSSize};
+use reactive_core::{Component, ComponentId, FunctionTracker, SetupContext, Signal};
 use std::cell::RefCell;
 use std::rc::Rc;
 use taffy::{AvailableSpace, LayoutOutput, RequestedAxis, RunMode, Size};
@@ -50,8 +46,6 @@ impl NativeViewRegistry<Retained<NSView>> for ViewRegistry {
 
 struct FlexViewIvars {
     tree: Rc<RefCell<ViewTree>>,
-    min_width_constraint: RefCell<Option<Retained<NSLayoutConstraint>>>,
-    min_height_constraint: RefCell<Option<Retained<NSLayoutConstraint>>>,
     tracker: RefCell<Option<FunctionTracker>>,
 }
 
@@ -88,14 +82,6 @@ define_class!(
             self.measure_size_that_fits(proposed_size)
         }
 
-        #[unsafe(method(updateConstraints))]
-        fn update_constraints(&self) {
-            self.update_min_size_constraints();
-            unsafe {
-                let _: () = msg_send![super(self), updateConstraints];
-            }
-        }
-
         #[unsafe(method(setFrameSize:))]
         fn set_frame_size(&self, new_size: NSSize) {
             unsafe {
@@ -111,12 +97,9 @@ impl ReactiveFlexView {
     fn new(tree: Rc<RefCell<ViewTree>>) -> Retained<Self> {
         let this = Self::alloc(MainThreadMarker::new().unwrap()).set_ivars(FlexViewIvars {
             tree,
-            min_width_constraint: RefCell::new(None),
-            min_height_constraint: RefCell::new(None),
             tracker: Default::default(),
         });
         let this: Retained<Self> = unsafe { msg_send![super(this), init] };
-        this.install_min_size_constraints();
         this
     }
 
@@ -161,62 +144,6 @@ impl ReactiveFlexView {
         NSSize {
             width: CGFloat::from(output.size.width),
             height: CGFloat::from(output.size.height),
-        }
-    }
-
-    #[instrument(skip(self), ret, level = "debug")]
-    fn measure_min_content_size(&self) -> NSSize {
-        let mut tree = self.ivars().tree.borrow_mut();
-        let known_dimensions = Self::get_known_dimensions(tree.root_modifier().unwrap());
-        let output = self
-            .ivars()
-            .tracker
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .run_tracking(|| {
-                tree.compute_layout(
-                    RunMode::ComputeSize,
-                    known_dimensions,
-                    Size {
-                        width: AvailableSpace::MinContent,
-                        height: AvailableSpace::MinContent,
-                    },
-                    RequestedAxis::Both,
-                )
-            });
-
-        NSSize {
-            width: CGFloat::from(output.size.width),
-            height: CGFloat::from(output.size.height),
-        }
-    }
-
-    fn install_min_size_constraints(&self) {
-        let min_width = self
-            .widthAnchor()
-            .constraintGreaterThanOrEqualToConstant(0.0);
-        let min_height = self
-            .heightAnchor()
-            .constraintGreaterThanOrEqualToConstant(0.0);
-
-        let constraints = NSArray::from_retained_slice(&[min_width.clone(), min_height.clone()]);
-        NSLayoutConstraint::activateConstraints(&constraints);
-
-        self.ivars().min_width_constraint.replace(Some(min_width));
-        self.ivars().min_height_constraint.replace(Some(min_height));
-        self.setNeedsUpdateConstraints(true);
-    }
-
-    fn update_min_size_constraints(&self) {
-        let min_size = self.measure_min_content_size();
-
-        if let Some(constraint) = self.ivars().min_width_constraint.borrow().as_ref() {
-            constraint.setConstant(min_size.width);
-        }
-
-        if let Some(constraint) = self.ivars().min_height_constraint.borrow().as_ref() {
-            constraint.setConstant(min_size.height);
         }
     }
 
