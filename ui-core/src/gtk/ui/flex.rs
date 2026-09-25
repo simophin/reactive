@@ -32,26 +32,6 @@ mod layout_imp {
     impl ObjectImpl for ReactiveFlexLayout {}
 
     impl LayoutManagerImpl for ReactiveFlexLayout {
-        fn request_mode(&self, _widget: &Widget) -> SizeRequestMode {
-            SizeRequestMode::HeightForWidth
-        }
-
-        fn measure(
-            &self,
-            _widget: &Widget,
-            orientation: Orientation,
-            for_size: i32,
-        ) -> (i32, i32, i32, i32) {
-            let Some(tree) = self.tree.borrow().clone() else {
-                return (0, 0, -1, -1);
-            };
-
-            let minimum = measure_tree(&tree, orientation, for_size, AvailableSpace::MinContent);
-            let natural = measure_tree(&tree, orientation, for_size, AvailableSpace::MaxContent);
-
-            (minimum, natural.max(minimum), -1, -1)
-        }
-
         fn allocate(&self, _widget: &Widget, width: i32, height: i32, _baseline: i32) {
             let Some(tree) = self.tree.borrow().clone() else {
                 return;
@@ -85,6 +65,26 @@ mod layout_imp {
                     Some(transform),
                 );
             }
+        }
+
+        fn request_mode(&self, _widget: &Widget) -> SizeRequestMode {
+            SizeRequestMode::HeightForWidth
+        }
+
+        fn measure(
+            &self,
+            _widget: &Widget,
+            orientation: Orientation,
+            for_size: i32,
+        ) -> (i32, i32, i32, i32) {
+            let Some(tree) = self.tree.borrow().clone() else {
+                return (0, 0, -1, -1);
+            };
+
+            let minimum = measure_tree(&tree, orientation, for_size, AvailableSpace::MinContent);
+            let natural = measure_tree(&tree, orientation, for_size, AvailableSpace::MaxContent);
+
+            (minimum, natural.max(minimum), -1, -1)
         }
     }
 }
