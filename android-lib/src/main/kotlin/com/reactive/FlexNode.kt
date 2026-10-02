@@ -39,6 +39,9 @@ class FlexNode : Node() {
 
     private var currentMeasurables: Map<Any?, IntrinsicMeasurable> = emptyMap()
     private var currentDensity = 1f
+    private val sizeCache = HashMap<SizeQuery, FloatArray>()
+    private val intrinsicCache = HashMap<IntrinsicQuery, Float>()
+    private var cacheGeneration = -1L
 
     fun insertChild(index: Int, child: Node) {
         children.add(index, child)
@@ -60,13 +63,24 @@ class FlexNode : Node() {
     fun intrinsic(child: Node, kind: Int, cross: Float): Float {
         val m = currentMeasurables[child] ?: return 0f
         val c = if (cross < 0) Constraints.Infinity else (cross * currentDensity).roundToInt()
+        syncCaches()
+        val query = IntrinsicQuery(child, kind, c)
+        intrinsicCache[query]?.let { return it }
         val px = when (kind) {
             0 -> m.minIntrinsicWidth(c)
             1 -> m.maxIntrinsicWidth(c)
             2 -> m.minIntrinsicHeight(c)
             else -> m.maxIntrinsicHeight(c)
         }
-        return px / currentDensity
+        return (px / currentDensity).also { intrinsicCache[query] = it }
+    }
+
+    private fun syncCaches() {
+        if (cacheGeneration != generation) {
+            sizeCache.clear()
+            intrinsicCache.clear()
+            cacheGeneration = generation
+        }
     }
 
     @Composable
@@ -80,8 +94,8 @@ class FlexNode : Node() {
 
     /**
      * Runs Rust layout. Known sizes are NaN when free; available sizes are dp, or [MIN_CONTENT]
-     * / [MAX_CONTENT]. Returns `[width, height]`, followed by `x, y, width, height` for each
-     * child when [layout] is true.
+     * / [MAX_CONTENT]. Returns `[width, height]`, followed for each child, when [layout] is
+     * true, by its border box `x, y, width, height` and padding `left, top, right, bottom`.
      */
     private fun runLayout(
         density: Float,
@@ -94,12 +108,24 @@ class FlexNode : Node() {
     ): FloatArray? {
         layoutVersion // Read so Compose re-measures when Rust invalidates.
         if (handle == 0L) return null
+
+        // Sizing queries, and the child intrinsics behind them (see [intrinsic]), are cached
+        // for the rest of the outermost layout call: nested flexes are asked for the same
+        // sizes many times while their parent runs, and nothing can change in between.
+        if (depth == 0) generation++
+        val key = if (layout) null else SizeQuery(knownWidth, knownHeight, availableWidth, availableHeight)
+        syncCaches()
+        if (key != null) sizeCache[key]?.let { return it }
+
         val saved = currentMeasurables to currentDensity
         currentMeasurables = measurables.associateBy { (it.parentData as? LayoutIdParentData)?.layoutId }
         currentDensity = density
+        depth++
         try {
             return nativeMeasure(handle, knownWidth, knownHeight, availableWidth, availableHeight, layout)
+                .also { if (key != null) sizeCache[key] = it }
         } finally {
+            depth--
             currentMeasurables = saved.first
             currentDensity = saved.second
         }
@@ -139,10 +165,19 @@ class FlexNode : Node() {
             fun px(dp: Float) = (dp * density).roundToInt().coerceAtLeast(0)
             val byNode = measurables.associateBy { it.layoutId }
             val placed = children.mapIndexedNotNull { i, child ->
-                val base = 2 + i * 4
-                if (base + 3 >= out.size) return@mapIndexedNotNull null
+                val base = 2 + i * CHILD_STRIDE
+                if (base + CHILD_STRIDE > out.size) return@mapIndexedNotNull null
                 val m = byNode[child] ?: return@mapIndexedNotNull null
-                Triple(m.measure(Constraints.fixed(px(out[base + 2]), px(out[base + 3]))), px(out[base]), px(out[base + 1]))
+                var (x, y, w, h) = List(4) { out[base + it] }
+                // Leaves get their content box; a nested flex applies its own padding.
+                if (child !is FlexNode) {
+                    val (left, top, right, bottom) = List(4) { out[base + 4 + it] }
+                    x += left
+                    y += top
+                    w -= left + right
+                    h -= top + bottom
+                }
+                Triple(m.measure(Constraints.fixed(px(w), px(h))), px(x), px(y))
             }
 
             return layout(
@@ -175,8 +210,17 @@ class FlexNode : Node() {
         layout: Boolean,
     ): FloatArray
 
+    private data class IntrinsicQuery(val child: Node, val kind: Int, val cross: Int)
+
+    private data class SizeQuery(val knownWidth: Float, val knownHeight: Float, val availableWidth: Float, val availableHeight: Float)
+
     private companion object {
+        /** Nesting of [runLayout] calls, and a counter bumped by each outermost one. */
+        var depth = 0
+        var generation = 0L
+
         const val MIN_CONTENT = -1f
         const val MAX_CONTENT = -2f
+        const val CHILD_STRIDE = 8
     }
 }

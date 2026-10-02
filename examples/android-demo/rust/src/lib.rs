@@ -8,9 +8,9 @@ use std::time::Duration;
 use ui_core::android::ui::platform::Android;
 use ui_core::android::ui::text_input::TextInput as AndroidTextInput;
 use ui_core::widgets::{
-    AlignItems, Button, CommonModifiers, EdgeInsets, Flex, FlexDirection, FlexProps, FlexUnit,
-    FlexWrap, Label, Modifier, Platform, ProgressIndicator, Slider, TextCommand, TextInput, Window,
-    WithModifier,
+    AlignItems, Alignment, Button, CommonModifiers, EdgeInsets, Flex, FlexDirection, FlexProps,
+    FlexUnit, FlexWrap, Image, ImageCodec, Label, Modifier, Platform, ProgressIndicator, Slider,
+    Stack, TextCommand, TextInput, Window, WithModifier,
 };
 
 ui_core::android_main!(|ctx| {
@@ -49,6 +49,7 @@ fn demo<P: Platform>(ctx: &mut SetupContext) {
     let text = ctx.create_signal(String::new());
     let progress = ctx.create_signal(30usize);
     let chips = ctx.create_signal(5usize);
+    let padded = ctx.create_signal(false);
     let (commands, command_rx) = mpsc::channel(4);
 
     // A background thread drives a signal through a stream, exercising cross-thread wakeups.
@@ -136,6 +137,36 @@ fn demo<P: Platform>(ctx: &mut SetupContext) {
         .with_child({
             let progress = progress.clone();
             move |_| P::ProgressIndicator::new_bar(progress)
+        })
+        .with_child({
+            let padded = padded.clone();
+            move |_| {
+                let image = <P::ImageCodec as ImageCodec>::decode_static(include_bytes!(
+                    "../assets/circle.png"
+                ))
+                .expect("decode demo image");
+                P::Flex::new(row(FlexWrap::Wrap).into_signal())
+                    .with_child(move |_| {
+                        P::Stack::new()
+                            .alignment(Alignment::Center)
+                            .child(P::Image::new(image.into_signal(), Some("A circle")))
+                            .child(P::Label::new("Stack").font_size(16.0))
+                    })
+                    .with_child(|_| P::ProgressIndicator::new_spinner())
+                    .with_child({
+                        let padded = padded.clone();
+                        move |_| {
+                            P::Button::new("Toggle padding", move || padded.update(!padded.read()))
+                        }
+                    })
+                    .with_child(move |_| {
+                        P::Label::new("Padded label").modifier(
+                            Modifier::new().paddings(move || {
+                                EdgeInsets::all(if padded.read() { 24 } else { 0 })
+                            }),
+                        )
+                    })
+            }
         })
         .with_child({
             let chips = chips.clone();

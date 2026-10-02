@@ -1,4 +1,4 @@
-use crate::widgets::taffy::{Axis, FlexTaffyContainer, measure_leaf};
+use crate::widgets::taffy::{Axis, Extent, FlexTaffyContainer, measure_leaf};
 use crate::widgets::{
     CommonFlex, CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry,
     SizeSpec, WithModifier,
@@ -288,14 +288,17 @@ fn measure_native_view(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
 ) -> Size<f32> {
-    measure_leaf(known_dimensions, available_space, |axis, cross| {
+    measure_leaf(known_dimensions, available_space, |axis, extent, cross| {
         let orientation = match axis {
             Axis::Horizontal => Orientation::Horizontal,
             Axis::Vertical => Orientation::Vertical,
         };
         let (minimum, natural, _, _) =
             view.measure(orientation, cross.map(f32_to_i32).unwrap_or(-1));
-        (minimum as f32, natural as f32)
+        match extent {
+            Extent::Min => minimum as f32,
+            Extent::Natural => natural as f32,
+        }
     })
 }
 

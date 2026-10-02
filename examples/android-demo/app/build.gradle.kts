@@ -17,6 +17,13 @@ android {
         versionName = "0.1.0"
     }
 
+    buildTypes {
+        release {
+            // Signed with the debug key so the optimised build can be installed for profiling.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

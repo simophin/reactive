@@ -1,5 +1,7 @@
+use crate::widgets::EdgeInsets;
 use jni::objects::{GlobalRef, JObject, JValue};
 use jni::{JNIEnv, JavaVM};
+use std::rc::Weak;
 use std::sync::OnceLock;
 
 static JAVA_VM: OnceLock<JavaVM> = OnceLock::new();
@@ -32,15 +34,23 @@ pub(crate) fn check<T>(env: &mut JNIEnv, result: jni::errors::Result<T>, what: &
     }
 }
 
+/// A container whose Rust layout applies its own padding (see `measure_child` in `flex.rs`).
+pub(crate) trait RustLayout {
+    fn padding(&self) -> EdgeInsets;
+}
+
 /// A JVM object owned from Rust, usually a Kotlin `com.reactive.Node`.
 ///
 /// Equality is identity of the underlying global reference, which clones share.
 #[derive(Clone)]
-pub struct Node(GlobalRef);
+pub struct Node {
+    obj: GlobalRef,
+    layout: Option<Weak<dyn RustLayout>>,
+}
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
-        self.0.as_obj().as_raw() == other.0.as_obj().as_raw()
+        self.obj.as_obj().as_raw() == other.obj.as_obj().as_raw()
     }
 }
 
@@ -63,11 +73,24 @@ impl Node {
         let global = env.new_global_ref(&obj);
         let global = check(env, global, "new_global_ref");
         let _ = env.delete_local_ref(obj);
-        Self(global)
+        Self {
+            obj: global,
+            layout: None,
+        }
     }
 
     pub fn as_obj(&self) -> &JObject<'static> {
-        self.0.as_obj()
+        self.obj.as_obj()
+    }
+
+    /// Attaches the Rust layout that sizes this node.
+    pub(crate) fn with_layout(mut self, layout: Weak<dyn RustLayout>) -> Self {
+        self.layout = Some(layout);
+        self
+    }
+
+    pub(crate) fn layout(&self) -> Option<std::rc::Rc<dyn RustLayout>> {
+        self.layout.as_ref()?.upgrade()
     }
 
     /// Calls a single-argument `void` method, typically a Kotlin property setter.

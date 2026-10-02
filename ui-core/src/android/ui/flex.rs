@@ -1,7 +1,8 @@
 use super::VIEW_REGISTRY_KEY;
 use crate::android::Node;
-use crate::widgets::taffy::{Axis, FlexTaffyContainer, measure_leaf};
-use crate::widgets::{CommonFlex, Modifier, NativeView, NativeViewRegistry};
+use crate::android::node::RustLayout;
+use crate::widgets::taffy::{Axis, Extent, FlexTaffyContainer, measure_leaf};
+use crate::widgets::{CommonFlex, CommonModifiers, Modifier, NativeView, NativeViewRegistry};
 use jni::JNIEnv;
 use jni::objects::{JObject, JValue};
 use jni::sys::{jboolean, jfloat, jfloatArray, jlong};
@@ -63,35 +64,53 @@ impl NativeViewRegistry<Node> for FlexRegistry {
 }
 
 /// Sizes a child through `FlexNode.intrinsic`, i.e. Compose intrinsic measurements, which
-/// unlike `measure()` may be queried any number of times per layout pass.
+/// unlike `measure()` may be queried any number of times per layout pass. Going through
+/// Compose also lets it re-measure this flex when the child's content changes.
 fn measure_child(
     flex: &Node,
     child: &Node,
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
 ) -> Size<f32> {
-    let intrinsic = |kind: i32, cross: f32| {
-        flex.call(
-            "intrinsic",
-            "(Lcom/reactive/Node;IF)F",
-            &[
-                JValue::Object(child.as_obj()),
-                JValue::Int(kind),
-                JValue::Float(cross),
-            ],
-        )
-        .f()
-        .expect("FlexNode.intrinsic")
-    };
+    // Taffy sizes leaves by their content box and adds their padding, but a nested flex
+    // applies its padding itself, so convert to and from its border box.
+    let padding = child.layout().map(|l| l.padding()).unwrap_or_default();
+    let (horizontal, vertical) = (
+        (padding.left + padding.right) as f32,
+        (padding.top + padding.bottom) as f32,
+    );
 
-    measure_leaf(known_dimensions, available_space, |axis, cross| {
-        let cross = cross.unwrap_or(-1.0);
-        let (min, max) = match axis {
-            Axis::Horizontal => (0, 1),
-            Axis::Vertical => (2, 3),
+    measure_leaf(known_dimensions, available_space, |axis, extent, cross| {
+        let (kind, own, other) = match (axis, extent) {
+            (Axis::Horizontal, Extent::Min) => (0, horizontal, vertical),
+            (Axis::Horizontal, Extent::Natural) => (1, horizontal, vertical),
+            (Axis::Vertical, Extent::Min) => (2, vertical, horizontal),
+            (Axis::Vertical, Extent::Natural) => (3, vertical, horizontal),
         };
-        (intrinsic(min, cross), intrinsic(max, cross))
+        let size = flex
+            .call(
+                "intrinsic",
+                "(Lcom/reactive/Node;IF)F",
+                &[
+                    JValue::Object(child.as_obj()),
+                    JValue::Int(kind),
+                    JValue::Float(cross.map_or(-1.0, |c| c + other)),
+                ],
+            )
+            .f()
+            .expect("FlexNode.intrinsic");
+        (size - own).max(0.0)
     })
+}
+
+impl RustLayout for FlexHandle {
+    fn padding(&self) -> crate::widgets::EdgeInsets {
+        self.tree
+            .try_borrow()
+            .ok()
+            .and_then(|tree| tree.root_modifier()?.get_paddings().read())
+            .unwrap_or_default()
+    }
 }
 
 impl Component for Flex {
@@ -115,12 +134,13 @@ impl Component for Flex {
             move || node.invalidate_layout()
         });
 
-        let handle = Rc::new(FlexHandle {
-            node: node.clone(),
+        let handle = Rc::new_cyclic(|this: &std::rc::Weak<FlexHandle>| FlexHandle {
+            node: node.clone().with_layout(this.clone()),
             tree: RefCell::new(tree),
             tracker,
         });
         node.set("setHandle", Rc::as_ptr(&handle) as i64);
+        let node = handle.node.clone();
 
         NativeView::new(
             move |_| node,
@@ -151,8 +171,12 @@ impl Component for Flex {
 const MIN_CONTENT: f32 = -1.0;
 const MAX_CONTENT: f32 = -2.0;
 
-/// Runs layout for `FlexNode.runLayout`. Sizes are dp. Returns `[width, height]`, then
-/// `x, y, width, height` per child (in `FlexNode.children` order) when `layout` is set.
+/// Floats per child in the `nativeMeasure` result.
+const CHILD_STRIDE: usize = 8;
+
+/// Runs layout for `FlexNode.runLayout`. Sizes are dp. Returns `[width, height]`, then per
+/// child (in `FlexNode.children` order), when `layout` is set, its border box
+/// `x, y, width, height` and padding `left, top, right, bottom`.
 #[unsafe(no_mangle)]
 extern "system" fn Java_com_reactive_FlexNode_nativeMeasure<'local>(
     env: JNIEnv<'local>,
@@ -201,10 +225,17 @@ extern "system" fn Java_com_reactive_FlexNode_nativeMeasure<'local>(
         if layout {
             for (_, child) in tree.iter() {
                 match child {
-                    Some(l) => {
-                        out.extend([l.location.x, l.location.y, l.size.width, l.size.height])
-                    }
-                    None => out.extend([0.0; 4]),
+                    Some(l) => out.extend([
+                        l.location.x,
+                        l.location.y,
+                        l.size.width,
+                        l.size.height,
+                        l.padding.left,
+                        l.padding.top,
+                        l.padding.right,
+                        l.padding.bottom,
+                    ]),
+                    None => out.extend([0.0; CHILD_STRIDE]),
                 }
             }
         }

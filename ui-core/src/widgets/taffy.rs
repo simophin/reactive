@@ -320,37 +320,49 @@ pub enum Axis {
     Vertical,
 }
 
-/// Sizes a native leaf for Taffy from its per-axis `(minimum, natural)` sizes.
+/// Which size of a native view along one axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Extent {
+    /// The smallest size the view can take (e.g. the longest word of a text).
+    Min,
+    /// The size the view prefers when unconstrained (e.g. a text on one line).
+    Natural,
+}
+
+/// Sizes a native leaf for Taffy from its per-axis minimum and natural sizes.
 ///
-/// `min_natural(axis, cross)` measures along `axis`, given the size on the other axis when it
-/// is known. Width is resolved first and then fed into height, so wrapping text gets
+/// `measure(axis, extent, cross)` measures along `axis`, given the size on the other axis
+/// when it is known. Only the extents needed to resolve `available_space` are requested.
+/// Width is resolved first and then fed into height, so wrapping text gets
 /// height-for-width behaviour.
 pub fn measure_leaf(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
-    mut min_natural: impl FnMut(Axis, Option<f32>) -> (f32, f32),
+    mut measure: impl FnMut(Axis, Extent, Option<f32>) -> f32,
 ) -> Size<f32> {
-    fn resolve((min, natural): (f32, f32), space: AvailableSpace) -> f32 {
-        match space {
-            AvailableSpace::MinContent => min,
-            AvailableSpace::MaxContent => natural,
-            AvailableSpace::Definite(value) => natural.min(value).max(min),
+    let mut resolve = |axis: Axis, cross: Option<f32>, space: AvailableSpace| match space {
+        AvailableSpace::MinContent => measure(axis, Extent::Min, cross),
+        AvailableSpace::MaxContent => measure(axis, Extent::Natural, cross),
+        AvailableSpace::Definite(value) => {
+            let natural = measure(axis, Extent::Natural, cross);
+            if natural <= value {
+                natural
+            } else {
+                value.max(measure(axis, Extent::Min, cross))
+            }
         }
-    }
+    };
 
     let width = known_dimensions.width.unwrap_or_else(|| {
         let cross = known_dimensions
             .height
             .or(available_space.height.into_option());
-        resolve(min_natural(Axis::Horizontal, cross), available_space.width)
+        resolve(Axis::Horizontal, cross, available_space.width)
     });
 
-    let height = known_dimensions.height.unwrap_or_else(|| {
-        resolve(
-            min_natural(Axis::Vertical, Some(width)),
-            available_space.height,
-        )
-    });
+    let height = known_dimensions
+        .height
+        .unwrap_or_else(|| resolve(Axis::Vertical, Some(width), available_space.height));
 
     Size { width, height }
 }
@@ -360,13 +372,11 @@ mod tests {
     use super::*;
 
     /// A fake wrapping text: 100 wide on one line, 40 at its longest word, 20 per line.
-    fn text(axis: Axis, cross: Option<f32>) -> (f32, f32) {
-        match axis {
-            Axis::Horizontal => (40.0, 100.0),
-            Axis::Vertical => {
-                let lines = (100.0 / cross.unwrap_or(100.0)).ceil();
-                (lines * 20.0, lines * 20.0)
-            }
+    fn text(axis: Axis, extent: Extent, cross: Option<f32>) -> f32 {
+        match (axis, extent) {
+            (Axis::Horizontal, Extent::Min) => 40.0,
+            (Axis::Horizontal, Extent::Natural) => 100.0,
+            (Axis::Vertical, _) => (100.0 / cross.unwrap_or(100.0)).ceil() * 20.0,
         }
     }
 
