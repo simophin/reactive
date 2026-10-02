@@ -1,6 +1,6 @@
 # Android: Jetpack Compose Backend Research
 
-Status: research / not started. Captured 2026-09-28.
+Status: implemented as the Android backend; see [android.md](./android.md). Captured 2026-09-28.
 
 This note records the investigation into whether the Android backend can target Jetpack Compose instead of (or alongside) legacy Android Views, and the design we converged on.
 

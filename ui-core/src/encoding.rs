@@ -7,7 +7,7 @@
 ///
 /// # Examples
 /// ```
-/// use ui_utils::encoding::utf16_offset_to_codepoint;
+/// use ui_core::encoding::utf16_offset_to_codepoint;
 /// let s = "A🦀B"; // 🦀 is U+1F980, a surrogate pair in UTF-16
 /// assert_eq!(utf16_offset_to_codepoint(s, 0), 0); // before 'A'
 /// assert_eq!(utf16_offset_to_codepoint(s, 1), 1); // before 🦀
@@ -32,7 +32,7 @@ pub fn utf16_offset_to_codepoint(s: &str, utf16_offset: usize) -> usize {
 ///
 /// # Examples
 /// ```
-/// use ui_utils::encoding::codepoint_to_utf16_offset;
+/// use ui_core::encoding::codepoint_to_utf16_offset;
 /// let s = "A🦀B";
 /// assert_eq!(codepoint_to_utf16_offset(s, 0), 0); // before 'A'
 /// assert_eq!(codepoint_to_utf16_offset(s, 1), 1); // before 🦀

@@ -147,11 +147,9 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 **`ViewParent` context** (`appkit/src/ui/context.rs`) — `Window | Stack`; `add_child()` / `remove_child()` polymorphic operations.
 
-### Android (`android/`, `android-macros/`)
+### Android (`ui-core/src/android/`, `android-lib/`)
 
-JNI entrypoints: `nativeCreate`, `nativeDestroy`, `nativeTick` (uses `Waker::noop()`).
-`PropDescriptor` — static descriptors with JNI class/method/signature strings.
-`view_props!` macro generates `PropDescriptor` instances with Rust→JNI type mapping.
+Jetpack Compose backend: Kotlin node classes hold Compose state, Rust calls their setters. Kotlin calls into Rust only through `ReactiveHost`, `NativeCallback` and `FlexNode.nativeMeasure`. See `docs/android.md` and AGENTS.md.
 
 ## UI Utilities (`ui-utils/`)
 

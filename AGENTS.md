@@ -25,18 +25,19 @@ Format code with `cargo fmt` after changes.
 
 ## Workspace Structure
 
-7 Rust workspace crates plus Android Gradle support:
+8 Rust workspace crates plus Android Gradle support:
 
 ```
 core/                     — Core reactive framework (primary logic)
 ui-core/                  — Cross-platform widget traits plus platform backends
 resources/                — Runtime resource loading infrastructure
 resources-build/          — Build-time resource utilities
-android-macros/           — Android JNI binding / prop descriptor codegen
-dexer/                    — DEX/class generation utilities for Android support
-dexer-macros/             — Macros for DEX/class generation
-android-lib/              — Kotlin Android library wrapper for ReactiveScope
+android-macros/           — Android JNI binding / prop descriptor codegen (unused by ui-core)
+dexer/                    — DEX/class generation utilities (unused by ui-core)
+dexer-macros/             — Macros for DEX/class generation (unused by ui-core)
+android-lib/              — Kotlin/Compose bridge: ReactiveHost and one node class per widget
 reactive-gradle-plugin/   — Gradle plugin that builds Rust for Android targets
+examples/android-demo/    — Android demo app (Rust cdylib in rust/, Gradle app in app/)
 ```
 
 `ui-core` owns the platform-specific UI modules behind feature gates:
@@ -46,7 +47,7 @@ ui-core/src/widgets/      — Shared widget traits, modifiers, list diffing, Taf
 ui-core/src/apple/        — Shared Apple helpers such as action targets
 ui-core/src/appkit/       — macOS AppKit backend
 ui-core/src/uikit/        — iOS UIKit backend
-ui-core/src/android/      — Android JNI runtime and widget backend
+ui-core/src/android/      — Android backend rendering through Jetpack Compose
 ui-core/src/gtk/          — GTK backend
 ```
 
@@ -181,14 +182,15 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 - iOS backend with `UIView`/`UIViewController` support and widgets for button, label, stack, text, and view controller integration.
 - Uses the same shared widget traits and `NativeView`/registry pattern as other backends.
 
-### Android Backend (`ui-core/src/android/`, `android-lib/`, `android-macros/`)
+### Android Backend (`ui-core/src/android/`, `android-lib/`)
 
-- **JNI entrypoints** (`ui-core/src/android/mod.rs`) — `nativeCreate`, `nativeDestroy`, `nativeAttachActivity`, and `nativeTick`.
-- **App loop** (`ui-core/src/android/app_loop.rs`) — Android waker integration; `nativeTick` clears `tick_scheduled`, builds a waker, and ticks the `ReactiveScope`.
-- **Bindings/descriptors** (`ui-core/src/android/bindings.rs`, `desc.rs`) — Android class/method/property descriptors and generated binding support.
-- **Widgets** (`ui-core/src/android/ui/`) — Button, label, flex/flex layout, image, list view, progress indicator, slider, stack, text input, window, listeners/watchers, and view component support.
-- **`android-lib/`** — Kotlin wrapper exposing `ReactiveScope` to Android.
-- **`android-macros/`** — Procedural macros for declaring JNI bindings.
+Renders through Jetpack Compose by writing snapshot state; see [docs/android.md](docs/android.md).
+
+- **Nodes** — Each widget is a Kotlin class in `android-lib` (`TextNode`, `ButtonNode`, `FlexNode`, ...) whose setters write `mutableStateOf` fields read by a fixed `Content()` composable. Rust holds them as `Node` (`android/node.rs`) and binds props with `node.set("setText", value)`.
+- **Entry points** — Kotlin calls Rust only through `ReactiveHost` (`nativeCreate`/`nativeTick`/`nativeDestroy`, `android/host.rs`), `NativeCallback.nativeInvoke` (all events, `android/callback.rs`) and `FlexNode.nativeMeasure` (layout, `android/ui/flex.rs`). Apps declare their setup with `ui_core::android_main!`.
+- **Ticks** — `TickScheduler` implements `std::task::Wake`; waking posts `ReactiveHost.scheduleTick()` to the main looper, from any thread.
+- **Flex** — Taffy runs inside the Compose measure pass. Leaves are sized through Compose intrinsics (any number of calls), then each child is measured once at its final size. Leaves are placed at their content box; nested flexes apply their own padding.
+- **Text** — `TextFieldNode` wraps `TextFieldState`; offsets are UTF-16 (`encoding::Utf16String`).
 
 ### GTK Backend (`ui-core/src/gtk/`)
 
@@ -197,6 +199,6 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 ## Android Build Support
 
-- **`reactive-gradle-plugin/`** — Gradle plugin and tests for building Rust artifacts for Android ABIs.
-- **`dexer/`** — DEX/class definition writer utilities.
-- **`dexer-macros/`** — Validation and codegen macros for DEX generation.
+- **`reactive-gradle-plugin/`** — Gradle plugin and tests for building Rust artifacts for Android ABIs (`cargo build --target-dir build/cargo`, linked through the NDK).
+- **`examples/android-demo/`** — `./gradlew installDebug` builds the Rust library and installs the demo; `assembleRelease` is signed with the debug key for profiling.
+- **`dexer/`**, **`dexer-macros/`** — DEX/class definition writer utilities; not used by the Compose backend.
