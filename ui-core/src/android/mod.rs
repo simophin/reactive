@@ -1,68 +1,44 @@
-pub mod app_loop;
-pub mod bindings;
-pub mod desc;
+//! Android backend rendering through Jetpack Compose.
+//!
+//! Every widget is a small Kotlin node object (`android-lib`, package `com.reactive`) whose
+//! setters write Compose snapshot state. Rust creates the nodes, binds reactive props to their
+//! setters and keeps the tree structure; Compose recomposes only the nodes whose state changed.
+//! Kotlin reaches back into Rust through `NativeCallback` (events), `FlexNode.nativeMeasure`
+//! (layout) and `ReactiveHost` (ticks).
+
+mod callback;
+mod host;
+mod logcat;
+mod node;
 pub mod ui;
 
-use jni::objects::{JClass, JObject};
-use jni::sys::jlong;
-use jni::JNIEnv;
-use reactive_core::ReactiveScope;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::task::Context;
+pub use callback::Callback;
+pub use host::create_host;
+pub use logcat::LogcatWriter;
+pub use node::{JniArg, Node, env};
 
-use crate::android::app_loop::AppState;
+#[doc(hidden)]
+pub use jni;
 
-#[no_mangle]
-pub extern "C" fn Java_com_reactive_ReactiveScope_nativeCreate(
-    env: JNIEnv,
-    _class: JClass,
-) -> jlong {
-    let scope = ReactiveScope::default();
-    let tick_scheduled = Arc::new(AtomicBool::new(false));
-    crate::android::ui::view_component::AndroidView::set_java_vm(
-        env.get_java_vm().expect("load JavaVM for view runtime"),
-    );
-    let state = Arc::new(AppState {
-        scope,
-        tick_scheduled: tick_scheduled.clone(),
-        java_vm: env.get_java_vm().expect("load JavaVM"),
-    });
-    Arc::into_raw(state) as jlong
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_reactive_ReactiveScope_nativeDestroy(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-) {
-    if ptr != 0 {
-        crate::android::ui::view_component::AndroidView::clear_activity();
-        unsafe { drop(Arc::from_raw(ptr as *const AppState)) };
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_reactive_ReactiveScope_nativeAttachActivity(
-    mut env: JNIEnv,
-    _class: JClass,
-    _ptr: jlong,
-    activity: JObject,
-) {
-    crate::android::ui::view_component::AndroidView::set_activity(&mut env, activity);
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_reactive_ReactiveScope_nativeTick(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-) {
-    unsafe { Arc::increment_strong_count(ptr as *const AppState) };
-    let state = unsafe { Arc::from_raw(ptr as *const AppState) };
-    state.tick_scheduled.store(false, Ordering::SeqCst);
-    let waker = crate::android::app_loop::make_android_waker(state.clone());
-    let mut ctx = Context::from_waker(&waker);
-    state.scope.tick(&mut ctx);
+/// Declares the Android entry point of an app library.
+///
+/// `setup` builds the component tree once `ReactiveHost.create()` loads the library:
+///
+/// ```ignore
+/// ui_core::android_main!(|ctx| {
+///     ctx.child(<Android as Platform>::Label::new("Hello"));
+/// });
+/// ```
+#[macro_export]
+macro_rules! android_main {
+    ($setup:expr) => {
+        #[unsafe(no_mangle)]
+        pub extern "system" fn Java_com_reactive_ReactiveHost_nativeCreate<'local>(
+            env: $crate::android::jni::JNIEnv<'local>,
+            _class: $crate::android::jni::objects::JClass<'local>,
+            host: $crate::android::jni::objects::JObject<'local>,
+        ) -> $crate::android::jni::sys::jlong {
+            $crate::android::create_host(env, host, $setup)
+        }
+    };
 }

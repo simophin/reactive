@@ -1,6 +1,6 @@
 plugins {
     `java-gradle-plugin`
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.4.20"
 }
 
 group = "com.reactive"
@@ -12,10 +12,10 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.android.tools.build:gradle:9.0.0")
+    compileOnly("com.android.tools.build:gradle:9.3.3")
 
     testImplementation(gradleTestKit())
-    testImplementation("com.android.tools.build:gradle:9.0.0")
+    testImplementation("com.android.tools.build:gradle:9.3.3")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
 }

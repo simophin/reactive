@@ -1,4 +1,4 @@
-use crate::widgets::taffy::FlexTaffyContainer;
+use crate::widgets::taffy::{Axis, FlexTaffyContainer, measure_leaf};
 use crate::widgets::{
     CommonFlex, CommonModifiers, FlexProps, FlexScope, Modifier, NativeView, NativeViewRegistry,
     SizeSpec, WithModifier,
@@ -282,49 +282,21 @@ fn measure_tree(
     }
 }
 
-fn measure_axis(
-    view: &Widget,
-    orientation: Orientation,
-    for_size: Option<f32>,
-    available_space: AvailableSpace,
-) -> f32 {
-    let (minimum, natural, _, _) =
-        view.measure(orientation, for_size.map(f32_to_i32).unwrap_or(-1));
-    match available_space {
-        AvailableSpace::MinContent => minimum as f32,
-        AvailableSpace::MaxContent => natural as f32,
-        AvailableSpace::Definite(value) => (natural as f32).min(value).max(minimum as f32),
-    }
-}
-
 #[instrument(skip(view), ret, level = "debug")]
 fn measure_native_view(
     view: &Widget,
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
 ) -> Size<f32> {
-    let width = known_dimensions.width.unwrap_or_else(|| {
-        measure_axis(
-            view,
-            Orientation::Horizontal,
-            known_dimensions.height.or(match available_space.height {
-                AvailableSpace::Definite(value) => Some(value),
-                AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
-            }),
-            available_space.width,
-        )
-    });
-
-    let height = known_dimensions.height.unwrap_or_else(|| {
-        measure_axis(
-            view,
-            Orientation::Vertical,
-            Some(width),
-            available_space.height,
-        )
-    });
-
-    Size { width, height }
+    measure_leaf(known_dimensions, available_space, |axis, cross| {
+        let orientation = match axis {
+            Axis::Horizontal => Orientation::Horizontal,
+            Axis::Vertical => Orientation::Vertical,
+        };
+        let (minimum, natural, _, _) =
+            view.measure(orientation, cross.map(f32_to_i32).unwrap_or(-1));
+        (minimum as f32, natural as f32)
+    })
 }
 
 impl Component for Flex {

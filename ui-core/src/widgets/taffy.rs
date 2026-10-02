@@ -61,16 +61,25 @@ impl<N: 'static> FlexTaffyContainer<N> {
         NodeId::new(id)
     }
 
-    pub fn insert_child(&mut self, view: N, modifier: Modifier, component_id: ComponentId) {
+    /// Inserts `view` at its component-order position, or updates the entry already
+    /// registered for `component_id`. Returns the child index and, when an existing entry
+    /// was updated, the view it held before.
+    pub fn insert_child(
+        &mut self,
+        view: N,
+        modifier: Modifier,
+        component_id: ComponentId,
+    ) -> (usize, Option<N>) {
         match self.children.binary_search_by(|child| {
             self.scope
                 .compare_components(child.component_id, component_id)
         }) {
             Ok(index) => {
                 let child = &mut self.children[index];
-                child.view = view;
+                let previous = std::mem::replace(&mut child.view, view);
                 child.modifier = modifier;
                 child.cache.clear();
+                (index, Some(previous))
             }
 
             Err(index) => {
@@ -85,20 +94,20 @@ impl<N: 'static> FlexTaffyContainer<N> {
                         layout: None,
                         node_id,
                     },
-                )
+                );
+                (index, None)
             }
         }
     }
 
-    pub fn remove_child(&mut self, view: &N) -> bool
+    /// Removes `view`, returning the index it occupied.
+    pub fn remove_child(&mut self, view: &N) -> Option<usize>
     where
         N: PartialEq,
     {
-        self.children
-            .iter()
-            .position(|child| &child.view == view)
-            .map(|index| self.children.remove(index))
-            .is_some()
+        let index = self.children.iter().position(|child| &child.view == view)?;
+        self.children.remove(index);
+        Some(index)
     }
 
     pub fn set_root(&mut self, view: N, modifier: Modifier, component_id: ComponentId) {
@@ -302,5 +311,151 @@ impl<N: 'static> LayoutFlexboxContainer for FlexTaffyContainer<N> {
             .get_node_by_id(child_node_id)
             .expect("Invalid child node id")
             .modifier
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    Horizontal,
+    Vertical,
+}
+
+/// Sizes a native leaf for Taffy from its per-axis `(minimum, natural)` sizes.
+///
+/// `min_natural(axis, cross)` measures along `axis`, given the size on the other axis when it
+/// is known. Width is resolved first and then fed into height, so wrapping text gets
+/// height-for-width behaviour.
+pub fn measure_leaf(
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+    mut min_natural: impl FnMut(Axis, Option<f32>) -> (f32, f32),
+) -> Size<f32> {
+    fn resolve((min, natural): (f32, f32), space: AvailableSpace) -> f32 {
+        match space {
+            AvailableSpace::MinContent => min,
+            AvailableSpace::MaxContent => natural,
+            AvailableSpace::Definite(value) => natural.min(value).max(min),
+        }
+    }
+
+    let width = known_dimensions.width.unwrap_or_else(|| {
+        let cross = known_dimensions
+            .height
+            .or(available_space.height.into_option());
+        resolve(min_natural(Axis::Horizontal, cross), available_space.width)
+    });
+
+    let height = known_dimensions.height.unwrap_or_else(|| {
+        resolve(
+            min_natural(Axis::Vertical, Some(width)),
+            available_space.height,
+        )
+    });
+
+    Size { width, height }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fake wrapping text: 100 wide on one line, 40 at its longest word, 20 per line.
+    fn text(axis: Axis, cross: Option<f32>) -> (f32, f32) {
+        match axis {
+            Axis::Horizontal => (40.0, 100.0),
+            Axis::Vertical => {
+                let lines = (100.0 / cross.unwrap_or(100.0)).ceil();
+                (lines * 20.0, lines * 20.0)
+            }
+        }
+    }
+
+    #[test]
+    fn measure_leaf_uses_natural_size_when_unconstrained() {
+        let size = measure_leaf(
+            Size::NONE,
+            Size {
+                width: AvailableSpace::MaxContent,
+                height: AvailableSpace::MaxContent,
+            },
+            text,
+        );
+        assert_eq!(
+            size,
+            Size {
+                width: 100.0,
+                height: 20.0
+            }
+        );
+    }
+
+    #[test]
+    fn measure_leaf_wraps_within_definite_width() {
+        let size = measure_leaf(
+            Size::NONE,
+            Size {
+                width: AvailableSpace::Definite(50.0),
+                height: AvailableSpace::MaxContent,
+            },
+            text,
+        );
+        assert_eq!(
+            size,
+            Size {
+                width: 50.0,
+                height: 40.0
+            }
+        );
+    }
+
+    #[test]
+    fn measure_leaf_never_goes_below_min_content() {
+        let size = measure_leaf(
+            Size::NONE,
+            Size {
+                width: AvailableSpace::Definite(10.0),
+                height: AvailableSpace::MaxContent,
+            },
+            text,
+        );
+        assert_eq!(size.width, 40.0);
+
+        let min = measure_leaf(
+            Size::NONE,
+            Size {
+                width: AvailableSpace::MinContent,
+                height: AvailableSpace::MaxContent,
+            },
+            text,
+        );
+        assert_eq!(
+            min,
+            Size {
+                width: 40.0,
+                height: 60.0
+            }
+        );
+    }
+
+    #[test]
+    fn measure_leaf_respects_known_dimensions() {
+        let size = measure_leaf(
+            Size {
+                width: Some(25.0),
+                height: None,
+            },
+            Size {
+                width: AvailableSpace::MaxContent,
+                height: AvailableSpace::MaxContent,
+            },
+            text,
+        );
+        assert_eq!(
+            size,
+            Size {
+                width: 25.0,
+                height: 80.0
+            }
+        );
     }
 }

@@ -1,7 +1,6 @@
 package com.reactive.gradle
 
 import com.android.build.api.variant.AndroidComponentsExtension
-import com.android.build.gradle.BaseExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.DirectoryProperty
@@ -27,7 +26,6 @@ class ReactivePlugin : Plugin<Project> {
 
     private fun configureAndroid(project: Project, ext: ReactiveExtension) {
         val androidComponents = project.extensions.getByType(AndroidComponentsExtension::class.java)
-        val androidBase = project.extensions.getByType(BaseExtension::class.java)
 
         androidComponents.onVariants { variant ->
             val variantName = variant.name.replaceFirstChar { it.uppercase() }
@@ -38,11 +36,12 @@ class ReactivePlugin : Plugin<Project> {
                 CargoAndroidBuildTask::class.java,
             ) { task ->
                 task.rustProjectDir.set(ext.rustProjectDir)
+                task.cargoTargetDir.set(project.layout.buildDirectory.dir("cargo"))
                 task.targets.set(ext.targets)
                 task.libName.set(ext.libName)
                 task.release.set(variant.buildType == "release")
                 task.minSdk.set(variant.minSdk.apiLevel)
-                task.ndkDir.set(project.layout.dir(project.provider { androidBase.ndkDirectory }))
+                task.ndkDir.set(androidComponents.sdkComponents.ndkDirectory)
                 task.outputDir.set(outputDir)
             }
 

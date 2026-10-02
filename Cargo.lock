@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "android-demo"
+version = "0.1.0"
+dependencies = [
+ "core",
+ "futures",
+ "tracing",
+ "tracing-subscriber",
+ "ui-core",
+]
+
+[[package]]
 name = "android-macros"
 version = "0.1.0"
 dependencies = [
@@ -1284,12 +1295,9 @@ dependencies = [
 name = "ui-core"
 version = "0.1.0"
 dependencies = [
- "android-macros",
  "block2",
  "core",
  "derive_more",
- "dexer",
- "dexer-macros",
  "dotenvy",
  "futures",
  "glib",

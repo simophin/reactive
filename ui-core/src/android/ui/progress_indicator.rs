@@ -1,70 +1,30 @@
+use super::leaf;
+use crate::Prop;
+use crate::android::Node;
+use crate::widgets::{self, NativeView};
 use jni::objects::JValue;
-use reactive_core::{IntoSignal, Signal, SignalExt};
-use ui_core::widgets::ProgressIndicator;
-use ui_core::Prop;
+use reactive_core::{Signal, SignalExt};
 
-use crate::android::bindings;
-use crate::android::ui::view_component::{AndroidView, AndroidViewBuilder, AndroidViewComponent};
+pub type ProgressIndicator = NativeView<Node, Node>;
 
-pub type AndroidProgressIndicator = AndroidViewComponent<AndroidView, ui_core::NoChild>;
+pub static PROP_PROGRESS: Prop<ProgressIndicator, Node, f32> =
+    Prop::new(|n, v| n.set("setProgress", v));
 
-pub static PROP_PROGRESS: &Prop<AndroidProgressIndicator, AndroidView, i32> =
-    &Prop::new(|view, value| {
-        let mut env = view.env();
-        bindings::call_void::<bindings::progress_bar::setProgress, (jni::sys::jint,)>(
-            &mut env,
-            view.as_obj(),
-            &[JValue::Int(value)],
-        )
-        .expect("set progress");
-    });
-
-pub static PROP_MAX: &Prop<AndroidProgressIndicator, AndroidView, i32> = &Prop::new(|view, max| {
-    let mut env = view.env();
-    bindings::call_void::<bindings::progress_bar::setMax, (jni::sys::jint,)>(
-        &mut env,
-        view.as_obj(),
-        &[JValue::Int(max)],
+fn progress_node(spinner: bool) -> Node {
+    Node::new_with(
+        "com/reactive/ProgressNode",
+        "(Z)V",
+        &[JValue::Bool(spinner as u8)],
     )
-    .expect("set progress max");
-});
-
-fn create_progress_bar(indeterminate: bool) -> AndroidView {
-    let java_vm = AndroidView::java_vm();
-    let mut env = java_vm
-        .attach_current_thread_permanently()
-        .expect("attach thread");
-    let activity = AndroidView::activity();
-    let progress_bar = bindings::new_object::<bindings::progress_bar::ProgressBar>(
-        &mut env,
-        "(Landroid/content/Context;)V",
-        &[JValue::Object(activity.as_obj())],
-    )
-    .expect("create ProgressBar");
-
-    bindings::call_void::<bindings::progress_bar::setIndeterminate, (jni::sys::jboolean,)>(
-        &mut env,
-        &progress_bar,
-        &[JValue::Bool(indeterminate as u8)],
-    )
-    .expect("set progress mode");
-
-    AndroidView::new(&mut env, &progress_bar)
 }
 
-impl ProgressIndicator for AndroidProgressIndicator {
+impl widgets::ProgressIndicator for ProgressIndicator {
+    /// `value` is a percentage, 0 to 100.
     fn new_bar(value: impl Signal<Value = usize> + 'static) -> Self {
-        AndroidViewComponent(
-            AndroidViewBuilder::create_no_child(|_| create_progress_bar(false), |v| v)
-                .bind(PROP_MAX, 100_i32.into_signal())
-                .bind(PROP_PROGRESS, value.map_value(|v| v as i32)),
-        )
+        leaf(|_| progress_node(false)).bind(PROP_PROGRESS, value.map_value(|v| v as f32 / 100.0))
     }
 
     fn new_spinner() -> Self {
-        AndroidViewComponent(AndroidViewBuilder::create_no_child(
-            |_| create_progress_bar(true),
-            |v| v,
-        ))
+        leaf(|_| progress_node(true))
     }
 }
