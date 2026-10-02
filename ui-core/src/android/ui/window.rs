@@ -1,89 +1,59 @@
-use jni::objects::{JObject, JValue};
-use reactive_core::{BoxedComponent, Component, SetupContext, Signal};
-use ui_core::widgets::Window;
+use super::{ContentFrame, VIEW_REGISTRY_KEY};
+use crate::android::JavaObject;
+use crate::widgets::{CommonWindow, Modifier, NativeViewRegistry};
+use jni::objects::JValue;
+use reactive_core::{Component, ComponentId, SetupContext, Signal};
+use std::rc::Rc;
 
-use crate::android::bindings;
-use crate::android::ui::flex_layout::AndroidChildrenHost;
-use crate::android::ui::view_component::{AndroidView, AndroidViewBuilder, CHILDREN_VIEWS};
+/// On Android the window is the hosting activity: its content view and title.
+/// The initial size is ignored.
+pub type Window = CommonWindow<JavaObject>;
 
-const ANDROID_CONTENT_VIEW_ID: i32 = 0x0102_0002;
+struct ContentRegistry(ContentFrame);
 
-pub struct AndroidWindow {
-    child: BoxedComponent,
-    title: Box<dyn Signal<Value = String>>,
-    _initial_width: f64,
-    _initial_height: f64,
-}
-
-impl Window for AndroidWindow {
-    fn new(
-        title: impl Signal<Value = String> + 'static,
-        child: impl Component + 'static,
-        width: f64,
-        height: f64,
-    ) -> Self {
-        Self {
-            child: Box::new(child),
-            title: Box::new(title),
-            _initial_width: width,
-            _initial_height: height,
+impl NativeViewRegistry<JavaObject> for ContentRegistry {
+    fn update_view(&self, _component_id: ComponentId, view: JavaObject, _modifier: Modifier) {
+        let parent = view.call_object("getParent", "()Landroid/view/ViewParent;", &[]);
+        if parent.is_none_or(|parent| !self.0.is_same(parent.as_obj())) {
+            self.0.call_void(
+                "addView",
+                "(Landroid/view/View;)V",
+                &[JValue::Object(view.as_obj())],
+            );
         }
+    }
+
+    fn clear_view(&self, _component_id: ComponentId, view: JavaObject) {
+        self.0.call_void(
+            "removeView",
+            "(Landroid/view/View;)V",
+            &[JValue::Object(view.as_obj())],
+        );
     }
 }
 
-impl Component for AndroidWindow {
+impl Component for Window {
     fn setup(self: Box<Self>, ctx: &mut SetupContext) {
-        let Self { child, title, .. } = *self;
+        let Self { title, child, .. } = *self;
+        let activity = super::activity(ctx);
 
-        let activity = AndroidView::activity();
-        let activity_for_view = activity.clone();
-        let activity_for_title = activity.clone();
-        let container = AndroidViewBuilder::create_with_child(
-            move |_ctx| {
-                let mut env = activity_for_view.env();
-                let content =
-                    bindings::call_object::<bindings::activity::findViewById, (jni::sys::jint,)>(
-                        &mut env,
-                        activity_for_view.as_obj(),
-                        &[JValue::Int(ANDROID_CONTENT_VIEW_ID)],
-                    )
-                    .expect("find activity content view");
-                AndroidView::new(&mut env, &content)
-            },
-            |v| v,
-            child,
-        )
-        .setup(ctx);
+        // A FrameLayout gives the child the full content area (its default
+        // layout params are MATCH_PARENT) and, with fitsSystemWindows, keeps it
+        // clear of the system bars under the enforced edge-to-edge mode.
+        let frame = ContentFrame(super::new_view(ctx, "android/widget/FrameLayout"));
+        frame.call_void("setFitsSystemWindows", "(Z)V", &[JValue::Bool(1)]);
+        activity.call_void(
+            "setContentView",
+            "(Landroid/view/View;)V",
+            &[JValue::Object(frame.as_obj())],
+        );
 
-        ctx.create_effect(move |_, _| {
-            let mut env = activity_for_title.env();
-            let java_title = bindings::new_java_string(&mut env, &title.read()).expect("title");
-            let java_title_obj = JObject::from(java_title);
-            bindings::call_void::<bindings::activity::setTitle, (jni::sys::jobject,)>(
-                &mut env,
-                activity_for_title.as_obj(),
-                &[JValue::Object(&java_title_obj)],
-            )
-            .expect("set activity title");
-        });
+        ctx.create_effect(move |_, _| activity.set_text("setTitle", &title.read()));
 
-        if let Some(children_views) = ctx.use_context(&CHILDREN_VIEWS) {
-            ctx.create_effect(
-                move |_, prev: Option<Vec<ui_core::ChildEntry<AndroidView>>>| {
-                    let next = children_views
-                        .read()
-                        .iter()
-                        .filter_map(|slot| slot.read())
-                        .take(1)
-                        .collect::<Vec<_>>();
-                    let mut current = prev.unwrap_or_default();
-                    let host = AndroidChildrenHost {
-                        parent: container.clone(),
-                    };
-                    ui_core::sync_children(&host, &mut current, next);
-                    current
-                },
-            );
-        }
+        ctx.set_static_context(
+            &VIEW_REGISTRY_KEY,
+            Rc::new(ContentRegistry(frame)) as Rc<dyn NativeViewRegistry<_>>,
+        );
+        ctx.boxed_child(child);
     }
 }

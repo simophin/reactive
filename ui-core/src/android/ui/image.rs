@@ -1,89 +1,105 @@
-use jni::objects::{JObject, JValue};
+use super::ImageView;
+use crate::Prop;
+use crate::android::JavaObject;
+use crate::android::java;
+use crate::widgets::{self, ImageCodec, NativeView};
+use jni::objects::JValue;
 use reactive_core::{Signal, SignalExt};
-use ui_core::widgets::Image;
-use ui_core::Prop;
+use std::error::Error;
 
-use crate::android::bindings;
-use crate::android::ui::view_component::{AndroidView, AndroidViewBuilder, AndroidViewComponent};
+pub type Image = NativeView<JavaObject, ImageView>;
 
-pub type AndroidImageView = AndroidViewComponent<AndroidView, ui_core::NoChild>;
-pub type AndroidImage = AndroidImageView;
+/// A decoded `android.graphics.Bitmap`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bitmap(pub JavaObject);
 
-pub struct AndroidImageCodec;
+pub static PROP_IMAGE: Prop<Image, ImageView, Bitmap> = Prop::new(|view, bitmap| {
+    view.call_void(
+        "setImageBitmap",
+        "(Landroid/graphics/Bitmap;)V",
+        &[JValue::Object(bitmap.0.as_obj())],
+    )
+});
 
-impl ui_core::widgets::ImageCodec for AndroidImageCodec {
-    type NativeHandle = AndroidView;
+pub static PROP_CONTENT_DESCRIPTION: Prop<Image, ImageView, Option<String>> =
+    Prop::new(|view, desc| match desc {
+        Some(desc) => view.set_text("setContentDescription", &desc),
+        None => view.call_void(
+            "setContentDescription",
+            "(Ljava/lang/CharSequence;)V",
+            &[JValue::Object(&jni::objects::JObject::null())],
+        ),
+    });
 
-    fn decode_static(
-        _data: &'static [u8],
-    ) -> Result<Self::NativeHandle, Box<dyn std::error::Error + Send + Sync>> {
-        Err("Android image decoding is not wired up yet".into())
-    }
+impl widgets::Image for Image {
+    type NativeHandle = Bitmap;
 
-    fn decode_owned(
-        _data: Vec<u8>,
-    ) -> Result<Self::NativeHandle, Box<dyn std::error::Error + Send + Sync>> {
-        Err("Android image decoding is not wired up yet".into())
+    fn new<S: Into<String>>(
+        image: impl Signal<Value = Bitmap> + 'static,
+        desc: Option<impl Signal<Value = S> + 'static>,
+    ) -> Self {
+        NativeView::new(
+            |ctx| {
+                let view = ImageView(super::new_view(ctx, "android/widget/ImageView"));
+                // Keep the measured size in the bitmap's aspect ratio when
+                // only one dimension is constrained.
+                view.call_void("setAdjustViewBounds", "(Z)V", &[JValue::Bool(1)]);
+                view
+            },
+            Into::into,
+            |_, _| {},
+            Default::default(),
+            &super::VIEW_REGISTRY_KEY,
+        )
+        .bind(PROP_IMAGE, image)
+        .bind(
+            PROP_CONTENT_DESCRIPTION,
+            desc.map_value(|d| d.map(Into::into)),
+        )
     }
 }
 
-pub static PROP_IMAGE: &Prop<AndroidImage, AndroidView, AndroidView> =
-    &Prop::new(|view, handle| {
-        let mut env = view.env();
-        bindings::call_void::<bindings::image_view::setImageDrawable, (jni::sys::jobject,)>(
-            &mut env,
-            view.as_obj(),
-            &[JValue::Object(handle.as_obj())],
-        )
-        .expect("set image drawable");
-    });
+/// Decodes images with `BitmapFactory`. Safe to call from any thread.
+pub struct BitmapCodec;
 
-pub static PROP_CONTENT_DESCRIPTION: &Prop<AndroidImage, AndroidView, String> =
-    &Prop::new(|view, desc| {
-        let mut env = view.env();
-        let java_desc = bindings::new_java_string(&mut env, &desc).expect("content description");
-        let java_desc_obj = JObject::from(java_desc);
-        bindings::call_void::<bindings::image_view::setContentDescription, (jni::sys::jobject,)>(
-            &mut env,
-            view.as_obj(),
-            &[JValue::Object(&java_desc_obj)],
-        )
-        .expect("set content description");
-    });
-
-impl Image for AndroidImage {
-    type NativeHandle = AndroidView;
-
-    fn new<S: Into<String>>(
-        image: impl Signal<Value = Self::NativeHandle> + 'static,
-        desc: Option<impl Signal<Value = S> + 'static>,
-    ) -> Self {
-        let mut builder = AndroidViewBuilder::create_no_child(
-            |_ctx| {
-                let java_vm = AndroidView::java_vm();
-                let mut env = java_vm
-                    .attach_current_thread_permanently()
-                    .expect("attach thread");
-                let activity = AndroidView::activity();
-                let image_view = bindings::new_object::<bindings::image_view::ImageView>(
-                    &mut env,
-                    "(Landroid/content/Context;)V",
-                    &[JValue::Object(activity.as_obj())],
+impl BitmapCodec {
+    fn decode(data: &[u8]) -> Result<Bitmap, Box<dyn Error + Send + Sync>> {
+        let mut env = java::vm().attach_current_thread()?;
+        env.with_local_frame(4, |env| {
+            let bytes = env.byte_array_from_slice(data)?;
+            let bitmap = env
+                .call_static_method(
+                    "android/graphics/BitmapFactory",
+                    "decodeByteArray",
+                    "([BII)Landroid/graphics/Bitmap;",
+                    &[
+                        JValue::Object(&bytes),
+                        JValue::Int(0),
+                        JValue::Int(data.len() as i32),
+                    ],
                 )
-                .expect("create ImageView");
-                AndroidView::new(&mut env, &image_view)
-            },
-            |v| v,
-        )
-        .bind(PROP_IMAGE, image);
+                .and_then(|v| v.l());
 
-        if let Some(desc) = desc {
-            builder = builder.bind(
-                PROP_CONTENT_DESCRIPTION,
-                desc.map_value(|value| value.into()),
-            );
-        }
+            match bitmap {
+                Ok(bitmap) if !bitmap.is_null() => Ok(Bitmap(JavaObject::new(env, &bitmap))),
+                Ok(_) => Err("BitmapFactory could not decode the image".into()),
+                Err(err) => {
+                    let _ = env.exception_clear();
+                    Err(err.into())
+                }
+            }
+        })
+    }
+}
 
-        AndroidViewComponent(builder)
+impl ImageCodec for BitmapCodec {
+    type NativeHandle = Bitmap;
+
+    fn decode_static(data: &'static [u8]) -> Result<Bitmap, Box<dyn Error + Send + Sync>> {
+        Self::decode(data)
+    }
+
+    fn decode_owned(data: Vec<u8>) -> Result<Bitmap, Box<dyn Error + Send + Sync>> {
+        Self::decode(&data)
     }
 }

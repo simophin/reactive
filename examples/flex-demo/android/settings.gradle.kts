@@ -13,4 +13,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "android-lib"
+rootProject.name = "flex-demo-android"
+
+// Provides com.reactive:android-lib.
+includeBuild("../../../android-lib")

@@ -25,17 +25,18 @@ Format code with `cargo fmt` after changes.
 
 ## Workspace Structure
 
-7 Rust workspace crates plus Android Gradle support:
+Rust workspace crates plus Android Gradle support:
 
 ```
 core/                     — Core reactive framework (primary logic)
 ui-core/                  — Cross-platform widget traits plus platform backends
 resources/                — Runtime resource loading infrastructure
 resources-build/          — Build-time resource utilities
-android-macros/           — Android JNI binding / prop descriptor codegen
-dexer/                    — DEX/class generation utilities for Android support
+examples/flex-demo/       — Shared flex demo: desktop bin, Android cdylib + Gradle app (android/)
+android-lib/              — Java support classes for the Android backend
+android-macros/           — Android JNI binding codegen (not used by ui-core currently)
+dexer/                    — DEX/class generation utilities (not used by ui-core currently)
 dexer-macros/             — Macros for DEX/class generation
-android-lib/              — Kotlin Android library wrapper for ReactiveScope
 reactive-gradle-plugin/   — Gradle plugin that builds Rust for Android targets
 ```
 
@@ -46,7 +47,7 @@ ui-core/src/widgets/      — Shared widget traits, modifiers, list diffing, Taf
 ui-core/src/apple/        — Shared Apple helpers such as action targets
 ui-core/src/appkit/       — macOS AppKit backend
 ui-core/src/uikit/        — iOS UIKit backend
-ui-core/src/android/      — Android JNI runtime and widget backend
+ui-core/src/android/      — Android View-system backend (JNI)
 ui-core/src/gtk/          — GTK backend
 ```
 
@@ -181,14 +182,17 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 - iOS backend with `UIView`/`UIViewController` support and widgets for button, label, stack, text, and view controller integration.
 - Uses the same shared widget traits and `NativeView`/registry pattern as other backends.
 
-### Android Backend (`ui-core/src/android/`, `android-lib/`, `android-macros/`)
+### Android Backend (`ui-core/src/android/`, `android-lib/`)
 
-- **JNI entrypoints** (`ui-core/src/android/mod.rs`) — `nativeCreate`, `nativeDestroy`, `nativeAttachActivity`, and `nativeTick`.
-- **App loop** (`ui-core/src/android/app_loop.rs`) — Android waker integration; `nativeTick` clears `tick_scheduled`, builds a waker, and ticks the `ReactiveScope`.
-- **Bindings/descriptors** (`ui-core/src/android/bindings.rs`, `desc.rs`) — Android class/method/property descriptors and generated binding support.
-- **Widgets** (`ui-core/src/android/ui/`) — Button, label, flex/flex layout, image, list view, progress indicator, slider, stack, text input, window, listeners/watchers, and view component support.
-- **`android-lib/`** — Kotlin wrapper exposing `ReactiveScope` to Android.
-- **`android-macros/`** — Procedural macros for declaring JNI bindings.
+Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, no codegen).
+
+- **Entry point** — `ui_core::android_main!(setup_fn)` expands to `JNI_OnLoad`, which registers native methods and stores the setup fn. `com.reactive.ReactiveActivity` (named by `com.reactive.lib_name` manifest meta-data) calls `nativeCreate`/`nativeDestroy`; the activity is provided via the `ACTIVITY` context key.
+- **Tick loop** (`app.rs`) — a pipe registered on the main thread's `ALooper`; wakers (any thread) write one byte, the looper callback ticks the scope inside a JNI local frame.
+- **`java.rs`** — `JavaObject` (`GlobalRef` wrapper) and call helpers; Java exceptions are described and cleared before panicking. Panics are logged to logcat (tag `reactive`).
+- **Widgets** (`ui/`) — `Label` (TextView), `Image` (ImageView, `BitmapCodec` via `BitmapFactory`), `Button` (click via `NativeCallback`), `Flex`, `Window` (activity content `FrameLayout` with `fitsSystemWindows`, title). ProgressIndicator/Slider/Stack/TextInput are `Unsupported` placeholders.
+- **Flex** — `com.reactive.ReactiveFlexLayout` (ViewGroup) forwards `onMeasure`/`onLayout` to Rust, which runs `FlexTaffyContainer` in dp and measures children with `View.measure` (min-content approximated as `AT_MOST 0`).
+- **`android-lib/`** — Java only (`ReactiveActivity`, `ReactiveFlexLayout`, `NativeCallback`); no Kotlin plugin needed.
+- **Demo** — `cd examples/flex-demo/android && ./gradlew installDebug` (`-Preactive.abis=arm64-v8a,x86_64` for emulators); requires `cargo-ndk`.
 
 ### GTK Backend (`ui-core/src/gtk/`)
 

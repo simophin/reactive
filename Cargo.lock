@@ -201,6 +201,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flex-demo"
+version = "0.1.0"
+dependencies = [
+ "core",
+ "dotenvy",
+ "tokio",
+ "tracing-subscriber",
+ "ui-core",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1284,13 +1295,9 @@ dependencies = [
 name = "ui-core"
 version = "0.1.0"
 dependencies = [
- "android-macros",
  "block2",
  "core",
  "derive_more",
- "dexer",
- "dexer-macros",
- "dotenvy",
  "futures",
  "glib",
  "gtk4",
@@ -1306,9 +1313,7 @@ dependencies = [
  "smallvec",
  "taffy",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

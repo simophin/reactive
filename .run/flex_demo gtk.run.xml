@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="flex_demo gtk" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
     <option name="buildProfileId" value="dev" />
-    <option name="command" value="run --package ui-core --example flex_demo -F gtk" />
+    <option name="command" value="run --package flex-demo -F gtk" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <envs />
     <option name="emulateTerminal" value="true" />
