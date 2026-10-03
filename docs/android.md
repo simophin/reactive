@@ -44,7 +44,7 @@ Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add
 - Children are measured with `View.measure`:
   - a known size becomes `EXACTLY`
   - a definite available size becomes `AT_MOST`
-  - max-content becomes `UNSPECIFIED`
+  - max-content becomes `UNSPECIFIED`. This means "no constraint": the view reports its natural size. For most leaf widgets that matches max-content (text lays out on a single line), but that's a consequence of how each view measures itself, not part of the spec's meaning.
   - min-content becomes `AT_MOST 0` (see below)
 - `onLayout` collects placements first, then re-measures each child with `EXACTLY` at its final size before calling `layout`. TextView builds its text layout during measure.
 - Edges are rounded rather than sizes, so adjacent children never gap or overlap.
@@ -61,7 +61,7 @@ Measured against [architecture-principles.md](./architecture-principles.md):
 
 - **Direct native ownership holds.** Every visible widget is a real `View` that Rust creates and holds as a `GlobalRef`. Signals call its setters synchronously, with no intermediate tree or serialization. The Java side contains no widget logic: it only forwards lifecycle, layout and listener calls.
 - **Layout runs in the real native pass.** Flex takes part in Android's own `measure`/`layout` traversal through a `ViewGroup` subclass, and nests with any other `View`. Native widgets measure themselves, and Taffy only arranges them. The shared Taffy container ran unchanged; only the measure bridge and the px/dp conversion are Android-specific.
-- **The native parent-driven model maps cleanly, with one gap.** Android's `MeasureSpec` covers known sizes (`EXACTLY`), definite available space (`AT_MOST`) and max-content (`UNSPECIFIED`). It has no min-content query. Offering `AT_MOST 0` makes views report their minimum (a button's `minWidth`; zero for text), which behaves like CSS `min-width: 0`. Using the natural size instead would stop wrapping text from ever shrinking.
+- **The native parent-driven model maps cleanly, with one gap.** Android's `MeasureSpec` covers known sizes (`EXACTLY`) and definite available space (`AT_MOST`). `UNSPECIFIED` asks for the view's natural size, which stands in for max-content: for text and most leaf widgets the two match, since nothing forces a wrap. `MeasureSpec` has no min-content query. Offering `AT_MOST 0` makes views report their minimum (a button's `minWidth`; zero for text), which behaves like CSS `min-width: 0`. Using the natural size instead would stop wrapping text from ever shrinking.
 - **Layout units need one boundary.** Modifier values are platform-neutral numbers. Treating them as dp and converting only inside the Flex bridge keeps them consistent with points on Apple and logical pixels on GTK.
 - **Modifier changes are not yet reactive for layout.** Prop setters such as `setText` invalidate layout natively through `requestLayout`. Modifier signals are only read during layout, so changing one doesn't trigger a relayout. This applies to every backend, not just Android.
 - **The window concept maps to the activity.** `Window` becomes the activity's content view and title; the initial size has no meaning. Edge-to-edge (enforced from API 35) means the window must keep content clear of system bars, done here with `fitsSystemWindows`.
