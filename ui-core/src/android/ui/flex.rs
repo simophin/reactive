@@ -1,22 +1,21 @@
-//! `Flex` backed by `com.reactive.ReactiveFlexLayout`, a `ViewGroup` whose
-//! `onMeasure`/`onLayout` call into Rust and run Taffy over its children.
+//! `Flex` as a [`ViewGroupLayout`] that runs Taffy over the children of a
+//! `ReactiveLayout`.
 //!
 //! Taffy works in dp so modifier values mean the same on every platform; the
 //! conversion to and from pixels happens only at this boundary.
 
+use super::layout::{
+    ViewGroupLayout, attach, layout_view, measure_spec, measure_view, new_layout_view, resolve_size,
+};
 use super::{FlexLayout, VIEW_REGISTRY_KEY};
 use crate::android::JavaObject;
-use crate::android::app::register;
 use crate::widgets::taffy::FlexTaffyContainer;
 use crate::widgets::{
     CommonFlex, CommonModifiers, Modifier, NativeView, NativeViewRegistry, SizeSpec,
 };
-use jni::JNIEnv;
-use jni::objects::{JClass, JValue};
-use jni::sys::{jint, jlong};
+use jni::objects::JValue;
 use reactive_core::{Component, ComponentId, SetupContext, Signal};
 use std::cell::RefCell;
-use std::ffi::c_void;
 use std::rc::Rc;
 use taffy::{AvailableSpace, RequestedAxis, RunMode, Size};
 
@@ -24,51 +23,10 @@ pub type Flex = CommonFlex<JavaObject>;
 
 type ViewTree = FlexTaffyContainer<JavaObject>;
 
-const CLASS: &str = "com/reactive/ReactiveFlexLayout";
-
 struct FlexState {
     tree: RefCell<ViewTree>,
     /// Pixels per dp.
     density: f32,
-}
-
-pub(crate) fn register_natives(env: &mut JNIEnv) {
-    register(
-        env,
-        CLASS,
-        &[
-            ("nativeMeasure", "(JII)J", native_measure as *mut c_void),
-            ("nativeLayout", "(JII)V", native_layout as *mut c_void),
-        ],
-    );
-}
-
-// --- View.MeasureSpec ------------------------------------------------------
-
-const MODE_MASK: i32 = 0b11 << 30;
-const UNSPECIFIED: i32 = 0;
-const EXACTLY: i32 = 1 << 30;
-const AT_MOST: i32 = 2 << 30;
-
-fn measure_spec(size: i32, mode: i32) -> i32 {
-    (size.max(0) & !MODE_MASK) | mode
-}
-
-fn spec_mode(spec: i32) -> i32 {
-    spec & MODE_MASK
-}
-
-fn spec_size(spec: i32) -> i32 {
-    spec & !MODE_MASK
-}
-
-/// Equivalent of `View.resolveSize`.
-fn resolve_size(desired: i32, spec: i32) -> i32 {
-    match spec_mode(spec) {
-        EXACTLY => spec_size(spec),
-        AT_MOST => desired.min(spec_size(spec)),
-        _ => desired,
-    }
 }
 
 impl FlexState {
@@ -94,146 +52,113 @@ fn measure_child(
     known: Size<Option<f32>>,
     available: Size<AvailableSpace>,
 ) -> Size<f32> {
+    use measure_spec::{AT_MOST, EXACTLY, UNSPECIFIED};
     let spec = |known: Option<f32>, available: AvailableSpace| match (known, available) {
-        (Some(size), _) => measure_spec((size * density).round() as i32, EXACTLY),
+        (Some(size), _) => measure_spec::make((size * density).round() as i32, EXACTLY),
         (None, AvailableSpace::Definite(size)) => {
-            measure_spec((size * density).floor() as i32, AT_MOST)
+            measure_spec::make((size * density).floor() as i32, AT_MOST)
         }
-        (None, AvailableSpace::MinContent) => measure_spec(0, AT_MOST),
-        (None, AvailableSpace::MaxContent) => measure_spec(0, UNSPECIFIED),
+        (None, AvailableSpace::MinContent) => measure_spec::make(0, AT_MOST),
+        (None, AvailableSpace::MaxContent) => measure_spec::make(0, UNSPECIFIED),
     };
 
-    view.call_void(
-        "measure",
-        "(II)V",
-        &[
-            JValue::Int(spec(known.width, available.width)),
-            JValue::Int(spec(known.height, available.height)),
-        ],
+    let (width, height) = measure_view(
+        view,
+        spec(known.width, available.width),
+        spec(known.height, available.height),
     );
 
     Size {
-        width: known
-            .width
-            .unwrap_or_else(|| view.call_int("getMeasuredWidth") as f32 / density),
-        height: known
-            .height
-            .unwrap_or_else(|| view.call_int("getMeasuredHeight") as f32 / density),
+        width: known.width.unwrap_or(width as f32 / density),
+        height: known.height.unwrap_or(height as f32 / density),
     }
 }
 
-// --- ReactiveFlexLayout natives ------------------------------------------------
+// --- Measure and layout passes -------------------------------------------------
 
-extern "system" fn native_measure(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-    width_spec: jint,
-    height_spec: jint,
-) -> jlong {
-    let state = unsafe { &*(handle as *const FlexState) };
-    let mut tree = state.tree.borrow_mut();
+impl ViewGroupLayout for FlexState {
+    fn measure(&self, width_spec: i32, height_spec: i32) -> (i32, i32) {
+        let mut tree = self.tree.borrow_mut();
 
-    let (fixed_width, fixed_height) = tree.root_modifier().unwrap().get_size().read();
-    let axis = |spec: i32, fixed: SizeSpec| {
-        let known = match (spec_mode(spec), fixed) {
-            (EXACTLY, _) => Some(state.to_dp(spec_size(spec))),
-            (_, SizeSpec::Fixed(size)) => Some(size as f32),
-            _ => None,
+        let (fixed_width, fixed_height) = tree.root_modifier().unwrap().get_size().read();
+        let axis = |spec: i32, fixed: SizeSpec| {
+            let known = match (measure_spec::mode(spec), fixed) {
+                (measure_spec::EXACTLY, _) => Some(self.to_dp(measure_spec::size(spec))),
+                (_, SizeSpec::Fixed(size)) => Some(size as f32),
+                _ => None,
+            };
+            let available = match measure_spec::mode(spec) {
+                measure_spec::UNSPECIFIED => AvailableSpace::MaxContent,
+                _ => AvailableSpace::Definite(self.to_dp(measure_spec::size(spec))),
+            };
+            (known, available)
         };
-        let available = match spec_mode(spec) {
-            UNSPECIFIED => AvailableSpace::MaxContent,
-            _ => AvailableSpace::Definite(state.to_dp(spec_size(spec))),
-        };
-        (known, available)
-    };
 
-    let (known_width, available_width) = axis(width_spec, fixed_width);
-    let (known_height, available_height) = axis(height_spec, fixed_height);
+        let (known_width, available_width) = axis(width_spec, fixed_width);
+        let (known_height, available_height) = axis(height_spec, fixed_height);
 
-    let output = tree.compute_layout(
-        RunMode::ComputeSize,
-        Size {
-            width: known_width,
-            height: known_height,
-        },
-        Size {
-            width: available_width,
-            height: available_height,
-        },
-        RequestedAxis::Both,
-    );
-
-    let width = resolve_size(
-        (output.size.width * state.density).ceil() as i32,
-        width_spec,
-    );
-    let height = resolve_size(
-        (output.size.height * state.density).ceil() as i32,
-        height_spec,
-    );
-    ((width as jlong) << 32) | (height as u32 as jlong)
-}
-
-extern "system" fn native_layout(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-    width: jint,
-    height: jint,
-) {
-    let state = unsafe { &*(handle as *const FlexState) };
-
-    // Collect placements first so no borrow is held while calling back into
-    // the View system.
-    let placements: Vec<_> = {
-        let mut tree = state.tree.borrow_mut();
-        let size = Size {
-            width: state.to_dp(width),
-            height: state.to_dp(height),
-        };
-        tree.compute_layout(
-            RunMode::PerformLayout,
-            size.map(Some),
-            size.map(AvailableSpace::Definite),
+        let output = tree.compute_layout(
+            RunMode::ComputeSize,
+            Size {
+                width: known_width,
+                height: known_height,
+            },
+            Size {
+                width: available_width,
+                height: available_height,
+            },
             RequestedAxis::Both,
         );
 
-        tree.iter()
-            .filter_map(|(view, layout)| {
-                let layout = layout?;
-                // Round edges rather than sizes so adjacent children never
-                // leave a gap or overlap by a pixel.
-                let left = state.to_px(layout.location.x);
-                let top = state.to_px(layout.location.y);
-                let right = state.to_px(layout.location.x + layout.size.width);
-                let bottom = state.to_px(layout.location.y + layout.size.height);
-                Some((view.clone(), left, top, right, bottom))
-            })
-            .collect()
-    };
+        (
+            resolve_size((output.size.width * self.density).ceil() as i32, width_spec),
+            resolve_size(
+                (output.size.height * self.density).ceil() as i32,
+                height_spec,
+            ),
+        )
+    }
 
-    for (view, left, top, right, bottom) in placements {
-        // Re-measure at the final size: views such as TextView lay out their
-        // content during measure.
-        view.call_void(
-            "measure",
-            "(II)V",
-            &[
-                JValue::Int(measure_spec(right - left, EXACTLY)),
-                JValue::Int(measure_spec(bottom - top, EXACTLY)),
-            ],
-        );
-        view.call_void(
-            "layout",
-            "(IIII)V",
-            &[
-                JValue::Int(left),
-                JValue::Int(top),
-                JValue::Int(right),
-                JValue::Int(bottom),
-            ],
-        );
+    fn layout(&self, width: i32, height: i32) {
+        // Collect placements first so no borrow is held while calling back
+        // into the View system.
+        let placements: Vec<_> = {
+            let mut tree = self.tree.borrow_mut();
+            let size = Size {
+                width: self.to_dp(width),
+                height: self.to_dp(height),
+            };
+            tree.compute_layout(
+                RunMode::PerformLayout,
+                size.map(Some),
+                size.map(AvailableSpace::Definite),
+                RequestedAxis::Both,
+            );
+
+            tree.iter()
+                .filter_map(|(view, layout)| {
+                    let layout = layout?;
+                    // Round edges rather than sizes so adjacent children never
+                    // leave a gap or overlap by a pixel.
+                    let left = self.to_px(layout.location.x);
+                    let top = self.to_px(layout.location.y);
+                    let right = self.to_px(layout.location.x + layout.size.width);
+                    let bottom = self.to_px(layout.location.y + layout.size.height);
+                    Some((view.clone(), left, top, right, bottom))
+                })
+                .collect()
+        };
+
+        for (view, left, top, right, bottom) in placements {
+            // Re-measure at the final size: views such as TextView lay out
+            // their content during measure.
+            measure_view(
+                &view,
+                measure_spec::make(right - left, measure_spec::EXACTLY),
+                measure_spec::make(bottom - top, measure_spec::EXACTLY),
+            );
+            layout_view(&view, left, top, right, bottom);
+        }
     }
 }
 
@@ -289,7 +214,7 @@ impl Component for Flex {
             ..
         } = *self;
 
-        let layout = FlexLayout(super::new_view(ctx, CLASS));
+        let layout = FlexLayout(new_layout_view(ctx));
         let density = display_density(ctx);
         let mut tree = ViewTree::new(ctx.scope(), props.read(), move |view, known, available| {
             measure_child(view, density, known, available)
@@ -301,15 +226,7 @@ impl Component for Flex {
             density,
         });
 
-        layout.set_long_field("nativeHandle", Rc::as_ptr(&state) as jlong);
-        ctx.on_cleanup({
-            let layout = layout.clone();
-            let state = state.clone();
-            move || {
-                layout.set_long_field("nativeHandle", 0);
-                drop(state);
-            }
-        });
+        attach(ctx, &layout, state.clone());
 
         NativeView::new(
             {

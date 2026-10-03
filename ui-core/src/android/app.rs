@@ -104,7 +104,7 @@ pub unsafe fn on_load(vm: *mut jni::sys::JavaVM, setup: fn(&mut SetupContext)) -
             ("nativeDestroy", "(J)V", native_destroy as *mut c_void),
         ],
     );
-    super::ui::flex::register_natives(&mut env);
+    super::ui::layout::register_natives(&mut env);
     super::callback::register_natives(&mut env);
 
     java::init_vm(vm);

@@ -11,8 +11,8 @@ The backend drives the classic `android.view.View` system from Rust through JNI.
 | `ui-core/src/android/app.rs` | `JNI_OnLoad` handling, activity create/destroy, tick loop, panic hook |
 | `ui-core/src/android/java.rs` | `JavaObject` (`GlobalRef` wrapper) and JNI call helpers |
 | `ui-core/src/android/callback.rs` | `NativeCallback` trampoline: Java listener → Rust closure |
-| `ui-core/src/android/ui/` | Widgets: `label`, `image`, `button`, `flex`, `window`, `unsupported`, `platform` |
-| `android-lib/` | Java support classes: `ReactiveActivity`, `ReactiveFlexLayout`, `NativeCallback` |
+| `ui-core/src/android/ui/` | Widgets: `label`, `image`, `button`, `flex`, `window`, `unsupported`, `platform`; `layout` for custom `ViewGroup` layouts |
+| `android-lib/` | Java support classes: `ReactiveActivity`, `ReactiveLayout`, `NativeCallback` |
 | `examples/flex-demo/` | Shared demo crate (desktop bin plus Android cdylib); Gradle app in `android/` |
 
 Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add `-Preactive.abis=arm64-v8a,x86_64` when targeting an emulator. It needs `cargo-ndk` and an Android SDK/NDK.
@@ -37,8 +37,13 @@ Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add
 - Props are plain `Prop` setters calling methods by name and signature.
 - `JavaObject` equality compares references. Clones of one `GlobalRef` compare equal, which is all the view registries need.
 
+**Custom layouts.**
+- `ReactiveLayout` is a generic `ViewGroup`. Its `onMeasure` and `onLayout` call `nativeMeasure` and `nativeLayout` with a handle held in a Java field. The class has no layout logic of its own.
+- On the Rust side, any container implements `ViewGroupLayout` (`measure` from two measure specs, `layout` into a width and height, all in px) and calls `layout::attach` to install it on a view from `new_layout_view`. The handle points to a boxed `Rc<dyn ViewGroupLayout>` and is cleared on cleanup.
+- `layout.rs` also has the `MeasureSpec` helpers, `resolve_size`, and `measure_view`/`layout_view` for children.
+
 **Flex.**
-- `ReactiveFlexLayout` is a `ViewGroup`. Its `onMeasure` and `onLayout` call `nativeMeasure` and `nativeLayout` with a handle (an `Rc<FlexState>` pointer) held in a Java field.
+- Flex is one `ViewGroupLayout` over a `ReactiveLayout`.
 - Rust runs the shared `FlexTaffyContainer`, the same one GTK and AppKit use.
 - Taffy works in dp. Conversion to and from px happens only at this boundary, so modifier values mean the same on every platform.
 - Children are measured with `View.measure`:

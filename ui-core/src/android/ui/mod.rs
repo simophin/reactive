@@ -7,6 +7,7 @@ pub mod button;
 pub mod flex;
 pub mod image;
 pub mod label;
+pub mod layout;
 pub mod platform;
 pub mod unsupported;
 pub mod window;
@@ -63,7 +64,7 @@ java_view_types! {
     ImageView,
     /// `android.widget.Button`
     ButtonView,
-    /// `com.reactive.ReactiveFlexLayout`
+    /// `com.reactive.ReactiveLayout` driven by [`flex::Flex`]
     FlexLayout,
     /// `android.widget.FrameLayout` hosting the activity content.
     ContentFrame,

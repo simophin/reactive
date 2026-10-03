@@ -1,8 +1,8 @@
 //! Android backend built on the classic `android.view.View` system.
 //!
 //! Rust owns real `View` objects through JNI. The only Java support code lives
-//! in `android-lib`: `ReactiveActivity` (lifecycle), `ReactiveFlexLayout`
-//! (a `ViewGroup` whose measure/layout run Taffy in Rust) and `NativeCallback`
+//! in `android-lib`: `ReactiveActivity` (lifecycle), `ReactiveLayout`
+//! (a `ViewGroup` whose measure/layout run in Rust, e.g. Flex) and `NativeCallback`
 //! (listener trampolines).
 
 mod app;

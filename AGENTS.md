@@ -190,8 +190,9 @@ Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, 
 - **Tick loop** (`app.rs`) — a pipe registered on the main thread's `ALooper`; wakers (any thread) write one byte, the looper callback ticks the scope inside a JNI local frame.
 - **`java.rs`** — `JavaObject` (`GlobalRef` wrapper) and call helpers; Java exceptions are described and cleared before panicking. Panics are logged to logcat (tag `reactive`).
 - **Widgets** (`ui/`) — `Label` (TextView), `Image` (ImageView, `BitmapCodec` via `BitmapFactory`), `Button` (click via `NativeCallback`), `Flex`, `Window` (activity content `FrameLayout` with `fitsSystemWindows`, title). ProgressIndicator/Slider/Stack/TextInput are `Unsupported` placeholders.
-- **Flex** — `com.reactive.ReactiveFlexLayout` (ViewGroup) forwards `onMeasure`/`onLayout` to Rust, which runs `FlexTaffyContainer` in dp and measures children with `View.measure` (min-content approximated as `AT_MOST 0`).
-- **`android-lib/`** — Java only (`ReactiveActivity`, `ReactiveFlexLayout`, `NativeCallback`); no Kotlin plugin needed.
+- **Custom layouts** — `com.reactive.ReactiveLayout` (ViewGroup) forwards `onMeasure`/`onLayout` to any Rust `ViewGroupLayout` installed with `layout::attach` (`ui-core/src/android/ui/layout.rs`).
+- **Flex** — a `ViewGroupLayout` that runs `FlexTaffyContainer` in dp and measures children with `View.measure` (min-content approximated as `AT_MOST 0`).
+- **`android-lib/`** — Java only (`ReactiveActivity`, `ReactiveLayout`, `NativeCallback`); no Kotlin plugin needed.
 - **Demo** — `cd examples/flex-demo/android && ./gradlew installDebug` (`-Preactive.abis=arm64-v8a,x86_64` for emulators); requires `cargo-ndk`.
 
 ### GTK Backend (`ui-core/src/gtk/`)

@@ -3,12 +3,16 @@ package com.reactive;
 import android.content.Context;
 import android.view.ViewGroup;
 
-/** A ViewGroup whose measure and layout passes run the Rust flex layout. */
-public final class ReactiveFlexLayout extends ViewGroup {
-    /** Owned by Rust; zero once the component is disposed. */
+/**
+ * A ViewGroup whose measure and layout passes are delegated to a Rust layout
+ * object. It knows nothing about any particular layout algorithm: Flex is one
+ * such layout, and any custom container can use the same class.
+ */
+public final class ReactiveLayout extends ViewGroup {
+    /** Owned by Rust; zero when no layout is attached. */
     long nativeHandle;
 
-    public ReactiveFlexLayout(Context context) {
+    public ReactiveLayout(Context context) {
         super(context);
     }
 
