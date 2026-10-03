@@ -55,15 +55,20 @@ Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add
 
 **Java, not Kotlin.** The support classes are plain Java. AGP 9's built-in Kotlin pulls in `kotlin-stdlib` and needs extra configuration, while Java needs no plugin at all.
 
-## Discoveries
+## Findings against the architecture
 
-- **The old backend was dead code.** `ui-core/src/android/` targeted an older API (`ui_core::layout`, `PlatformViewBuilder`, `Row`/`Column`) and failed to compile with 76 errors.
-- **The old waker was broken.** It called `java_vm.get_env()` to post a tick. That fails on threads not attached to the JVM, which is exactly where async runtimes wake from. The looper pipe avoids JNI on wake entirely.
-- **Pipe lifetime matters.** Writing to a pipe whose read end is closed raises `SIGPIPE`. Both ends live in the shared `TickSignal`, so a waker that outlives the activity writes into an unread pipe instead.
-- **Views have no min-content query.** Offering `AT_MOST 0` makes views report their minimum (a button's `minWidth`; zero for text). This matches CSS `min-width: 0` closely enough for flex shrinking. Using the natural size instead stops wrapping text from ever shrinking.
-- **Gradle 9 removed `Project.exec`.** `reactive-gradle-plugin` uses it, so the plugin is likely broken. The demo uses a ~30-line `cargo ndk` task built on `ExecOperations` instead.
-- **AGP 9 needs repositories in included builds.** It resolves `aapt2` per build, so `android-lib` needs its own `dependencyResolutionManagement` repositories when pulled in via `includeBuild`.
-- **`ui-core` no longer needs to be a cdylib.** Built as one, it shipped an unused `libui_core.so` in the APK. The app crate is the only cdylib now.
+Measured against [architecture-principles.md](./architecture-principles.md):
+
+- **Direct native ownership holds.** Every visible widget is a real `View` that Rust creates and holds as a `GlobalRef`. Signals call its setters synchronously, with no intermediate tree or serialization. The Java side contains no widget logic: it only forwards lifecycle, layout and listener calls.
+- **Layout runs in the real native pass.** Flex takes part in Android's own `measure`/`layout` traversal through a `ViewGroup` subclass, and nests with any other `View`. Native widgets measure themselves, and Taffy only arranges them. The shared Taffy container ran unchanged; only the measure bridge and the px/dp conversion are Android-specific.
+- **The native parent-driven model maps cleanly, with one gap.** Android's `MeasureSpec` covers known sizes (`EXACTLY`), definite available space (`AT_MOST`) and max-content (`UNSPECIFIED`). It has no min-content query. Offering `AT_MOST 0` makes views report their minimum (a button's `minWidth`; zero for text), which behaves like CSS `min-width: 0`. Using the natural size instead would stop wrapping text from ever shrinking.
+- **Layout units need one boundary.** Modifier values are platform-neutral numbers. Treating them as dp and converting only inside the Flex bridge keeps them consistent with points on Apple and logical pixels on GTK.
+- **Modifier changes are not yet reactive for layout.** Prop setters such as `setText` invalidate layout natively through `requestLayout`. Modifier signals are only read during layout, so changing one doesn't trigger a relayout. This applies to every backend, not just Android.
+- **The window concept maps to the activity.** `Window` becomes the activity's content view and title; the initial size has no meaning. Edge-to-edge (enforced from API 35) means the window must keep content clear of system bars, done here with `fitsSystemWindows`.
+- **Activity lifetime is shorter than app lifetime.** Configuration changes recreate the activity, and the reactive scope currently lives and dies with it. Keeping state across recreation is an open design question (see below). The demo sidesteps it with `configChanges`.
+- **Async integrates without touching the JVM.** Wakers from any thread only write to a pipe watched by the main `ALooper`. The pipe's ends must outlive every waker, or a late wake raises `SIGPIPE`. Both ends live in the shared `TickSignal` for that reason.
+- **JNI cost is per call.** Each prop update or child measure is one or more JNI calls with a method lookup by name. That was fine for this demo but is the obvious cost centre (see below).
+- **The shared widget vocabulary has gaps.** `Image` has no `WithModifier`, so it can't be sized from a parent Flex on any platform.
 
 ## Verified
 
@@ -80,7 +85,7 @@ Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add
 - [ ] ProgressIndicator (`ProgressBar`), Slider (`SeekBar`) and Stack (`FrameLayout` plus alignment). These are `Unsupported` placeholders today.
 - [ ] TextInput (`EditText`) with UTF-16 selection and a `TextWatcher` through `NativeCallback`.
 - [ ] Lists (`RecyclerView`) driven by the shared list diffing.
-- [ ] `Image` sizing: the shared `Image` trait has no `WithModifier`, so images can't be sized from a Flex.
+- [ ] `Image` sizing: add `WithModifier` to the shared `Image` trait.
 
 **Runtime**
 - [ ] Activity recreation: without `configChanges` a rotation rebuilds the tree and loses state. Decide whether state should survive (for example a retained scope) or document `configChanges` as required.
@@ -95,6 +100,6 @@ Run the demo with `cd examples/flex-demo/android && ./gradlew installDebug`. Add
 - [ ] Child z-order and accessibility order follow insertion order, not component order.
 
 **Build**
-- [ ] Fix or remove `reactive-gradle-plugin` for Gradle 9, and decide whether `android-lib` is published or always consumed via `includeBuild`.
+- [ ] Fix or remove `reactive-gradle-plugin`: it uses `Project.exec`, which Gradle 9 removed. The demo uses its own `cargo ndk` task instead. Also decide whether `android-lib` is published or always consumed via `includeBuild`.
 - [ ] Decide the fate of `dexer`, `dexer-macros` and `android-macros`, which `ui-core` no longer uses.
 - [ ] Run the Android demo build in CI.
