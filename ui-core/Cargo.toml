@@ -3,9 +3,6 @@ name = "ui-core"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-crate-type = ["rlib", "cdylib"]
-
 [features]
 default = []
 appkit = [
@@ -23,12 +20,7 @@ uikit = [
     "dep:objc2-foundation",
     "dep:objc2-ui-kit",
 ]
-android = [
-    "dep:jni",
-    "dep:android-macros",
-    "dep:dexer",
-    "dep:dexer-macros",
-]
+android = ["dep:jni"]
 
 [dependencies]
 reactive_core = { path = "../core", package = "core" }
@@ -105,11 +97,4 @@ objc2-ui-kit = { version = "0.3", optional = true, features = [
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21.1", optional = true }
-android-macros = { version = "0.1.0", path = "../android-macros", optional = true }
-dexer = { version = "0.1.0", path = "../dexer", optional = true }
-dexer-macros = { version = "0.1.0", path = "../dexer-macros", optional = true }
 
-[dev-dependencies]
-tracing-subscriber = "0.3.23"
-dotenvy = "0"
-tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "time"] }

@@ -1,0 +1,23 @@
+[package]
+name = "flex-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+# cdylib is the Android entry point (`libflex_demo.so`).
+crate-type = ["rlib", "cdylib"]
+
+[features]
+appkit = ["ui-core/appkit"]
+gtk = ["ui-core/gtk"]
+
+[dependencies]
+reactive_core = { path = "../../core", package = "core" }
+ui-core = { path = "../../ui-core" }
+tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "time"] }
+tracing-subscriber = "0.3.23"
+dotenvy = "0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+ui-core = { path = "../../ui-core", features = ["android"] }

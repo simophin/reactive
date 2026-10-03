@@ -1,35 +1,33 @@
 use reactive_core::{IntoSignal, SetupContext, Show, Signal, SignalExt};
 use ui_core::widgets::{
     AlignContent, AlignItems, Button, CommonModifiers, EdgeInsets, Flex, FlexDirection, FlexProps,
-    FlexUnit, FlexWrap, JustifyContent, Label, Modifier, Platform, TextAlignment, Window,
-    WithModifier,
+    FlexUnit, FlexWrap, Image, ImageCodec, JustifyContent, Label, Modifier, Platform,
+    TextAlignment, Window, WithModifier,
 };
 
-fn main() {
-    let _ = dotenvy::dotenv();
-    tracing_subscriber::fmt::init();
+// Android entry point: `ReactiveActivity` loads `libflex_demo.so`.
+#[cfg(target_os = "android")]
+ui_core::android_main!(android_app);
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+#[cfg(target_os = "android")]
+fn android_app(ctx: &mut SetupContext) {
+    use std::sync::{LazyLock, Once};
 
-    let _guard = rt.enter();
-
-    #[cfg(feature = "appkit")]
-    run::<ui_core::appkit::platform::AppKit>();
-
-    #[cfg(feature = "gtk")]
-    run::<ui_core::gtk::platform::Gtk>();
-}
-
-fn run<P: Platform>() {
-    P::run_app(|ctx| {
-        setup_demo::<P>(ctx);
+    // The demo's resources use tokio timers, which need a runtime context on
+    // the main thread.
+    static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
     });
+    static ENTER: Once = Once::new();
+    ENTER.call_once(|| std::mem::forget(RUNTIME.enter()));
+
+    setup_demo::<ui_core::android::platform::Android>(ctx);
 }
 
-fn setup_demo<P: Platform>(ctx: &mut SetupContext) {
+pub fn setup_demo<P: Platform>(ctx: &mut SetupContext) {
     ctx.child(P::Window::new(
         "ui-core flex demo",
         flex_demo::<P>,
@@ -66,6 +64,11 @@ fn flex_demo<P: Platform>(ctx: &mut SetupContext) {
     ctx.child(
         P::Flex::new(root_props.clone())
             .modifier(Modifier::new().paddings(EdgeInsets::all(16)))
+            .with_child(|_| {
+                let badge = P::ImageCodec::decode_static(include_bytes!("../assets/badge.png"))
+                    .expect("decode badge");
+                P::Image::new(badge.into_signal(), Some("Badge"))
+            })
             .with_child(|flex| {
                 P::Label::new("Flex layout")
                     .font_size(font_size)

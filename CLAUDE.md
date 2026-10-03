@@ -147,11 +147,9 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 **`ViewParent` context** (`appkit/src/ui/context.rs`) — `Window | Stack`; `add_child()` / `remove_child()` polymorphic operations.
 
-### Android (`android/`, `android-macros/`)
+### Android (`ui-core/src/android/`, `android-lib/`)
 
-JNI entrypoints: `nativeCreate`, `nativeDestroy`, `nativeTick` (uses `Waker::noop()`).
-`PropDescriptor` — static descriptors with JNI class/method/signature strings.
-`view_props!` macro generates `PropDescriptor` instances with Rust→JNI type mapping.
+View-system backend over JNI; see `docs/android.md` and the Android section of AGENTS.md. Entry point is `ui_core::android_main!(setup_fn)`; demo app lives in `examples/flex-demo/android/`.
 
 ## UI Utilities (`ui-utils/`)
 

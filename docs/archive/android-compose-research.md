@@ -1,3 +1,5 @@
+> **Archived (2026-10-03).** We chose the classic View system for the first Android backend instead; see [android.md](../android.md). These notes are kept for reference if a Compose backend is revisited.
+
 # Android: Jetpack Compose Backend Research
 
 Status: research / not started. Captured 2026-09-28.

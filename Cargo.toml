@@ -8,4 +8,5 @@ members = [
     "android-macros",
     "dexer",
     "dexer-macros",
+    "examples/flex-demo",
 ]
