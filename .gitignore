@@ -6,3 +6,5 @@ target
 .gradle
 build/
 local.properties
+gen/
+.kotlin

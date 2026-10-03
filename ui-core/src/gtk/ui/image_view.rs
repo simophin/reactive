@@ -31,7 +31,7 @@ impl Image for ImageView {
         image: impl Signal<Value = ImageHandle> + 'static,
         desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |_| {
                 let picture = gtk4::Picture::new();
                 picture.set_can_shrink(true);

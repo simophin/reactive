@@ -29,7 +29,7 @@ impl widgets::Slider for Slider {
         range: impl Signal<Value = Range<usize>> + 'static,
         on_change: impl Fn(usize) + 'static,
     ) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let target = ActionTarget::new(

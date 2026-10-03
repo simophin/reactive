@@ -43,7 +43,7 @@ impl crate::widgets::Image for ImageView {
         image: impl Signal<Value = ImageHandle> + 'static,
         desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| NSImageView::new(MainThreadMarker::new().unwrap()),
             |view| view.into_super().into_super(),
             |_, _| {},

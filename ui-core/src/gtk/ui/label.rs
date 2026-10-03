@@ -26,7 +26,7 @@ pub static PROP_FONT_SIZE: Prop<Label, gtk4::Label, f64> = Prop::new(|label, siz
 
 impl widgets::Label for Label {
     fn new(text: impl Signal<Value = String> + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |_| {
                 let label = gtk4::Label::new(None);
                 label.set_wrap(true);

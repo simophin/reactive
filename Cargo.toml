@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "core",
     "ui-core",
+    "reactive",
+    "cargo-reactive",
     "resources",
     "resources-build",
     "android-macros",

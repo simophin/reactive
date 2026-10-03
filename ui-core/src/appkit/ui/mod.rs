@@ -17,7 +17,5 @@ pub mod stack;
 pub mod text_view;
 pub mod window;
 
-pub(crate) mod app_loop;
-
 static VIEW_REGISTRY_KEY: ContextKey<Rc<dyn NativeViewRegistry<Retained<NSView>>>> =
     ContextKey::new();

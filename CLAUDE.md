@@ -149,7 +149,7 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 ### Android (`ui-core/src/android/`, `android-lib/`)
 
-View-system backend over JNI; see `docs/android.md` and the Android section of AGENTS.md. Entry point is `ui_core::android_main!(setup_fn)`; demo app lives in `examples/flex-demo/android/`.
+View-system backend over JNI; see `docs/android.md` and the Android section of AGENTS.md. Entry point is `ui_core::android_main!(setup_fn)`; run the demo with `cargo reactive run --target android -p flex-demo`. Apps normally use the `reactive` facade crate and `reactive::app!`; see docs/getting-started.md.
 
 ## UI Utilities (`ui-utils/`)
 

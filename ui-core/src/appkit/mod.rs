@@ -5,7 +5,6 @@ pub use ui::*;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
 use reactive_core::{ReactiveScope, SetupContext};
-use std::sync::atomic::AtomicBool;
 
 /// Start the app. Initializes NSApplication, runs `setup` to build the
 /// component tree, then enters the macOS main run loop.
@@ -21,12 +20,8 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
     let scope = ReactiveScope::default();
     setup(&mut SetupContext::new_root(&scope));
 
-    let state = Box::into_raw(Box::new(app_loop::AppState {
-        scope,
-        tick_scheduled: AtomicBool::new(false),
-    }));
-
-    app_loop::schedule_tick(state);
+    let app_loop = crate::apple::app_loop::AppLoop::new(scope, mtm);
+    app_loop.schedule_tick();
 
     // Bring app to front
     app.activate();
@@ -35,8 +30,7 @@ pub fn run_app(setup: impl FnOnce(&mut SetupContext)) {
     // both AppKit UI events and the GCD main queue (where ticks are posted).
     app.run();
 
-    // Reclaim
-    unsafe { drop(Box::from_raw(state)) };
+    drop(app_loop);
 }
 
 /// Stop the app, causing [`run_app`] to return.

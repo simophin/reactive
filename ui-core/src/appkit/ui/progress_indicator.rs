@@ -29,7 +29,7 @@ pub static PROP_INDETERMINATE: Prop<ProgressIndicator, Retained<NSProgressIndica
 
 impl ProgressIndicator {
     fn build_bar(_value: impl Signal<Value = f64> + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let pi: Retained<NSProgressIndicator> =
@@ -45,7 +45,7 @@ impl ProgressIndicator {
     }
 
     fn build_spinner() -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let pi: Retained<NSProgressIndicator> =

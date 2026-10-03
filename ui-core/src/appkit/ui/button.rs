@@ -19,7 +19,7 @@ apple_view_props! {
 
 impl widgets::Button for Button {
     fn new(title: impl Signal<Value = String> + 'static, on_click: impl Fn() + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let target = ActionTarget::new(move |_| on_click(), mtm);

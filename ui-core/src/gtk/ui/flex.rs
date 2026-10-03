@@ -345,7 +345,7 @@ impl Component for Flex {
         );
         flex_view.set_layout_manager(Some(layout.clone()));
 
-        NativeView::new(
+        NativeView::from_parts(
             {
                 let flex_view = flex_view.clone();
                 move |_| flex_view

@@ -71,7 +71,7 @@ impl Component for GtkStack {
             alignment,
         } = *self;
 
-        let overlay = NativeView::new(
+        let overlay = NativeView::from_parts(
             |_| Overlay::new(),
             |w| w.upcast(),
             |_, _| {},

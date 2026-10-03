@@ -15,7 +15,7 @@ pub static PROP_ENABLED: Prop<Button, gtk4::Button, bool> =
 
 impl widgets::Button for Button {
     fn new(title: impl Signal<Value = String> + 'static, on_click: impl Fn() + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| {
                 let button = gtk4::Button::new();
                 button.connect_clicked(move |_| on_click());

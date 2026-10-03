@@ -25,7 +25,7 @@ pub static PROP_FONT_SIZE: Prop<Label, Retained<NSTextField>, f64> = Prop::new(|
 
 impl crate::widgets::Label for Label {
     fn new(text: impl Signal<Value = String> + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| {
                 let mtm = MainThreadMarker::new().expect("must be on main thread");
                 let label = NSTextField::wrappingLabelWithString(&NSString::new(), mtm);
