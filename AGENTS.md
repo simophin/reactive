@@ -184,7 +184,7 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 ### Android Backend (`ui-core/src/android/`, `android-lib/`)
 
-Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, no codegen).
+Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, no codegen). Design, findings and TODOs: [docs/android.md](docs/android.md).
 
 - **Entry point** — `ui_core::android_main!(setup_fn)` expands to `JNI_OnLoad`, which registers native methods and stores the setup fn. `com.reactive.ReactiveActivity` (named by `com.reactive.lib_name` manifest meta-data) calls `nativeCreate`/`nativeDestroy`; the activity is provided via the `ACTIVITY` context key.
 - **Tick loop** (`app.rs`) — a pipe registered on the main thread's `ALooper`; wakers (any thread) write one byte, the looper callback ticks the scope inside a JNI local frame.
