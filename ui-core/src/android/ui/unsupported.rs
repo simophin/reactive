@@ -39,7 +39,7 @@ impl Component for Unsupported {
             "{} is not implemented on Android yet",
             self.widget
         ));
-        NativeView::new(
+        NativeView::from_parts(
             |ctx| PlaceholderView(super::new_view(ctx, "android/view/View")),
             Into::<JavaObject>::into,
             |_, _| {},

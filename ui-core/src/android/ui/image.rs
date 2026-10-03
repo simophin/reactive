@@ -38,7 +38,7 @@ impl widgets::Image for Image {
         image: impl Signal<Value = Bitmap> + 'static,
         desc: Option<impl Signal<Value = S> + 'static>,
     ) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |ctx| {
                 let view = ImageView(super::new_view(ctx, "android/widget/ImageView"));
                 // Keep the measured size in the bitmap's aspect ratio when

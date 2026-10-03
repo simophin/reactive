@@ -29,7 +29,10 @@ pub mod encoding;
 pub mod prop;
 pub mod widgets;
 
-#[cfg(all(feature = "appkit", target_os = "macos"))]
+#[cfg(any(
+    all(feature = "appkit", target_os = "macos"),
+    all(feature = "uikit", target_os = "ios")
+))]
 pub(crate) mod apple;
 
 #[cfg(all(feature = "appkit", target_os = "macos"))]

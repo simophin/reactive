@@ -228,7 +228,7 @@ impl Component for Flex {
 
         attach(ctx, &layout, state.clone());
 
-        NativeView::new(
+        NativeView::from_parts(
             {
                 let layout = layout.clone();
                 move |_| layout

@@ -20,7 +20,7 @@ const SET_ON_CLICK_SIG: &str = "(Landroid/view/View$OnClickListener;)V";
 
 impl widgets::Button for Button {
     fn new(title: impl Signal<Value = String> + 'static, on_click: impl Fn() + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |ctx| {
                 let button = ButtonView(super::new_view(ctx, "android/widget/Button"));
                 let listener = new_callback(on_click);

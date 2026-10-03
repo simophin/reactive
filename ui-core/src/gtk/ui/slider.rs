@@ -21,7 +21,7 @@ impl widgets::Slider for Slider {
         range: impl Signal<Value = Range<usize>> + 'static,
         on_change: impl Fn(usize) + 'static,
     ) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             move |_| {
                 let scale = gtk4::Scale::new(gtk4::Orientation::Horizontal, gtk4::Adjustment::NONE);
                 scale.set_draw_value(false);

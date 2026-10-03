@@ -32,12 +32,14 @@ core/                     — Core reactive framework (primary logic)
 ui-core/                  — Cross-platform widget traits plus platform backends
 resources/                — Runtime resource loading infrastructure
 resources-build/          — Build-time resource utilities
-examples/flex-demo/       — Shared flex demo: desktop bin, Android cdylib + Gradle app (android/)
+reactive/                 — App-facing facade: re-exports, DefaultPlatform, prelude, `app!` entry macro
+cargo-reactive/           — `cargo reactive` CLI: new/run/build/eject; Gradle and Xcode project templates
+examples/flex-demo/       — Shared flex demo app (desktop, Android, iOS) built with `cargo reactive`
 android-lib/              — Java support classes for the Android backend
 android-macros/           — Android JNI binding codegen (not used by ui-core currently)
 dexer/                    — DEX/class generation utilities (not used by ui-core currently)
 dexer-macros/             — Macros for DEX/class generation
-reactive-gradle-plugin/   — Gradle plugin that builds Rust for Android targets
+reactive-gradle-plugin/   — `com.reactive.android` Gradle plugin: cargo-ndk per variant, adds android-lib
 ```
 
 `ui-core` owns the platform-specific UI modules behind feature gates:
@@ -179,7 +181,10 @@ Effects are physically moved out of `ComponentScope.active_effects` via `extract
 
 ### UIKit Backend (`ui-core/src/uikit/`)
 
-- iOS backend with `UIView`/`UIViewController` support and widgets for button, label, stack, text, and view controller integration.
+- `ui_core::uikit::platform::UIKit` implements `Platform`: Label, Button, Image, Slider, ProgressIndicator, Flex (Taffy in a `UIView` subclass) and Window are real; Stack and TextInput are `Unsupported` placeholders.
+- Scene lifecycle: `run_app`/`run_app_reconnectable` call `UIApplicationMain` with Rust-defined `ReactiveAppDelegate` and `ReactiveSceneDelegate`; setup runs per connected scene, which is provided via the `WINDOW_SCENE` context key. The Info.plist needs the `UIApplicationSceneManifest` that `cargo reactive` generates.
+- The GCD tick loop in `ui-core/src/apple/app_loop.rs` is shared with AppKit.
+- Type-checked only (`cargo check --target aarch64-apple-ios`); not yet run on a device or simulator.
 - Uses the same shared widget traits and `NativeView`/registry pattern as other backends.
 
 ### Android Backend (`ui-core/src/android/`, `android-lib/`)
@@ -193,7 +198,7 @@ Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, 
 - **Custom layouts** — `com.reactive.ReactiveLayout` (ViewGroup) forwards `onMeasure`/`onLayout` to any Rust `ViewGroupLayout` installed with `layout::attach` (`ui-core/src/android/ui/layout.rs`).
 - **Flex** — a `ViewGroupLayout` that runs `FlexTaffyContainer` in dp and measures children with `View.measure` (min-content approximated as `AT_MOST 0`).
 - **`android-lib/`** — Java only (`ReactiveActivity`, `ReactiveLayout`, `NativeCallback`); no Kotlin plugin needed.
-- **Demo** — `cd examples/flex-demo/android && ./gradlew installDebug` (`-Preactive.abis=arm64-v8a,x86_64` for emulators); requires `cargo-ndk`.
+- **Demo** — `cargo reactive run --target android -p flex-demo`; requires `cargo-ndk`. See docs/getting-started.md.
 
 ### GTK Backend (`ui-core/src/gtk/`)
 
@@ -202,6 +207,6 @@ Classic `android.view.View` backend; Rust owns real views via JNI (`jni` crate, 
 
 ## Android Build Support
 
-- **`reactive-gradle-plugin/`** — Gradle plugin and tests for building Rust artifacts for Android ABIs.
+- **`reactive-gradle-plugin/`** — `com.reactive.android` plugin (`reactive { crateDir; packageName }`); `gradlew -p reactive-gradle-plugin test publishToMavenLocal`.
 - **`dexer/`** — DEX/class definition writer utilities.
 - **`dexer-macros/`** — Validation and codegen macros for DEX generation.

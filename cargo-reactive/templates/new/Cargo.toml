@@ -1,0 +1,26 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# rlib for the desktop binary, cdylib for Android, staticlib for iOS.
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+reactive = {{reactive_dep}}
+
+[package.metadata.reactive]
+name = "{{app_name}}"
+identifier = "{{identifier}}"
+# Square PNG, 1024x1024 recommended. Used on every platform.
+# icon = "assets/icon.png"
+
+[package.metadata.reactive.android]
+min_sdk = 26
+# permissions = ["android.permission.INTERNET"]
+
+[package.metadata.reactive.ios]
+deployment_target = "16.0"
+# Needed to sign builds for a real device.
+# development_team = "ABCDE12345"

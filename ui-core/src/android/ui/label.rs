@@ -25,7 +25,7 @@ const TEXT_ALIGNMENT_VIEW_END: i32 = 6;
 
 impl widgets::Label for Label {
     fn new(text: impl Signal<Value = String> + 'static) -> Self {
-        NativeView::new(
+        NativeView::from_parts(
             |ctx| TextView(super::new_view(ctx, "android/widget/TextView")),
             Into::into,
             |_, _| {},

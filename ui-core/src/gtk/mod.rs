@@ -42,12 +42,21 @@ static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| {},
 );
 
+/// Start the GTK application with the default application ID. See
+/// [`run_app_with_id`].
+pub fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static) {
+    run_app_with_id("com.reactive.app", setup);
+}
+
 /// Start the GTK application. Initialises GTK, runs `setup` to build the
 /// component tree inside the `activate` signal, then enters the GLib main loop.
 /// Blocks until [`stop_app`] is called.
-pub fn run_app(setup: impl FnOnce(&mut SetupContext) + 'static) {
+///
+/// `application_id` is the reverse-DNS ID GTK uses for D-Bus registration and
+/// single-instance handling.
+pub fn run_app_with_id(application_id: &str, setup: impl FnOnce(&mut SetupContext) + 'static) {
     let app = gtk4::Application::builder()
-        .application_id("com.reactive.demo")
+        .application_id(application_id)
         .build();
 
     let setup = RefCell::new(Some(Box::new(setup) as Box<dyn FnOnce(&mut SetupContext)>));

@@ -57,7 +57,9 @@ where
         native_view
     }
 
-    pub fn new(
+    /// Builds a view component from its parts. Deliberately not named `new`,
+    /// so it doesn't shadow the widget traits' `new` on concrete widget types.
+    pub fn from_parts(
         create: impl FnOnce(&mut SetupContext) -> N + 'static,
         to_base: fn(N) -> BN,
         on_update: impl FnMut(&mut N, &ReactiveScope) + 'static,

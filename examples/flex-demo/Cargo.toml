@@ -5,19 +5,21 @@ edition = "2024"
 publish = false
 
 [lib]
-# cdylib is the Android entry point (`libflex_demo.so`).
-crate-type = ["rlib", "cdylib"]
+# cdylib is the Android library (`libflex_demo.so`), staticlib the iOS one.
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
-appkit = ["ui-core/appkit"]
-gtk = ["ui-core/gtk"]
+gtk = ["reactive/gtk"]
 
 [dependencies]
-reactive_core = { path = "../../core", package = "core" }
-ui-core = { path = "../../ui-core" }
-tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread", "time"] }
+reactive = { path = "../../reactive", features = ["tokio"] }
+tokio = { version = "1.52.2", features = ["time"] }
 tracing-subscriber = "0.3.23"
 dotenvy = "0"
 
-[target.'cfg(target_os = "android")'.dependencies]
-ui-core = { path = "../../ui-core", features = ["android"] }
+[package.metadata.reactive]
+name = "Flex Demo"
+identifier = "com.reactive.flexdemo"
+
+[package.metadata.reactive.android]
+min_sdk = 26

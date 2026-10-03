@@ -317,7 +317,7 @@ impl Component for Flex {
         let my_view = {
             let tree = tree.clone();
             let component_id = ctx.component_id();
-            NativeView::new(
+            NativeView::from_parts(
                 {
                     let modifier = modifier.clone();
                     move |_| {

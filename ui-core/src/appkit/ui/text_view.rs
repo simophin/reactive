@@ -3,7 +3,7 @@ use derive_more::Display;
 use futures::channel::mpsc::Receiver;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSTextDelegate, NSTextView, NSTextViewDelegate};
 use objc2_foundation::{
     NSMutableCopying, NSNotification, NSObject, NSObjectProtocol, NSRange, NSString,
@@ -129,7 +129,7 @@ impl Component for TextInput {
             modifier,
         } = *self;
 
-        let text_view = NativeView::new(
+        let text_view = NativeView::from_parts(
             |_| NSTextView::new(MainThreadMarker::new().unwrap()),
             |v| v.into_super().into_super(),
             |_, _| {},

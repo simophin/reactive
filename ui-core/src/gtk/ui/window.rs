@@ -33,7 +33,7 @@ impl Component for Window {
             ..
         } = *self;
 
-        let app_window = NativeView::new(
+        let app_window = NativeView::from_parts(
             move |_| {
                 let app = gtk4::gio::Application::default()
                     .and_then(|a| a.downcast::<gtk4::Application>().ok())

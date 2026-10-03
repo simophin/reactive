@@ -79,7 +79,7 @@ impl Component for GtkTextInputWidget {
         let on_text_changed = Rc::new(RefCell::new(on_text_changed));
         let on_selection_changed = Rc::new(RefCell::new(on_selection_changed));
 
-        let text_view = NativeView::new(
+        let text_view = NativeView::from_parts(
             {
                 let updating = updating.clone();
                 let on_text_changed = on_text_changed.clone();

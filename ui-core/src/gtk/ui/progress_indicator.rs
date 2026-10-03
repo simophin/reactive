@@ -16,7 +16,7 @@ static PROP_FRACTION: Prop<ProgressIndicator, gtk4::ProgressBar, f64> =
 
 fn new_bar_widget(value: impl Signal<Value = f64> + 'static) -> ProgressIndicator {
     ProgressIndicator::Bar(
-        NativeView::new(
+        NativeView::from_parts(
             |_| gtk4::ProgressBar::new(),
             |w| w.upcast(),
             |_, _| {},
@@ -28,7 +28,7 @@ fn new_bar_widget(value: impl Signal<Value = f64> + 'static) -> ProgressIndicato
 }
 
 fn new_spinner_widget() -> ProgressIndicator {
-    ProgressIndicator::Spinner(NativeView::new(
+    ProgressIndicator::Spinner(NativeView::from_parts(
         |_| {
             let spinner = gtk4::Spinner::new();
             spinner.start();

@@ -1,0 +1,30 @@
+[package]
+name = "reactive"
+version = "0.1.0"
+edition = "2024"
+description = "Fine-grained reactive native UI: one Rust crate, every platform."
+
+[features]
+default = []
+# Use the GTK backend on macOS instead of AppKit. Linux always uses GTK.
+gtk = ["ui-core/gtk"]
+# Enter a multi-threaded tokio runtime on the main thread before setup, so
+# tokio timers and IO work inside resources and effects.
+tokio = ["dep:tokio"]
+
+[dependencies]
+reactive_core = { path = "../core", package = "core" }
+ui-core = { path = "../ui-core" }
+tokio = { version = "1.52.2", features = ["rt", "rt-multi-thread"], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ui-core = { path = "../ui-core", features = ["appkit"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ui-core = { path = "../ui-core", features = ["gtk"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+ui-core = { path = "../ui-core", features = ["uikit"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ui-core = { path = "../ui-core", features = ["android"] }
